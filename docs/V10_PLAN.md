@@ -150,4 +150,5 @@ plan. Tasks 11-22 start only after the user says to continue (they may change th
 | 2 | done | Setup hashes follow file contents (cached by mtime); v9 stamps migrate on load. A save that bundles an outside part keeps the plan and the check (test); changing the file's content still flags them. |
 | 3 | done | `to_project(overrides)`; test: 30 snapshots against a concurrent reader, every session field the same object. |
 | 4 | done | Rail example round trip: track keeps `stretch: x`, axis length 6.6 m kept; 8 m rail -> track 8 m, travel +-3.7 m; carriage collision mesh kept (metres). No builder field for stretch (kept as authored). |
-| 5-22 | not started | |
+| 5 | done | New fingerprint component *collision settings* (arm padding, part collision mesh by content, kept faces); tool / carrier collision files through T2. Test: padding, carrier, tool and part collision files each flag the plan; jog scene + left overlay redraw with the 1.5x part collision mesh. Limitation: a project saved with arm padding is flagged once after loading in v10. |
+| 6-22 | not started | |

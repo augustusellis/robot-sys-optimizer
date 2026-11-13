@@ -27,8 +27,19 @@ class CellCollision:
 
         c = components(s, tool_nominal=True)
         geom = str(hash(repr(collision.geom_state())))  # collision geometry settings (2026-11-11)
+        # v10 #5: file contents (c["collision"], the meshes in the others) rebuild it when a
+        # collision file changes on disk
         return "|".join(
-            (c["robot"], c["carrier"], c["tool"], c["part"], c["stayout"], str(id(s.robot)), geom)
+            (
+                c["robot"],
+                c["carrier"],
+                c["tool"],
+                c["part"],
+                c["stayout"],
+                c["collision"],
+                str(id(s.robot)),
+                geom,
+            )
         )
 
     def scene(self):

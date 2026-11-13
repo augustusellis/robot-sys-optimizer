@@ -2,6 +2,7 @@
 
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 import viser
 
@@ -236,3 +237,70 @@ def test_rail_edit_round_trip_keeps_stretch(app, tmp_path):
     assert (
         abs(track.size[0] - 8.0) < 1e-9 and abs(s.base.joints.x[1] - 3.7) < 1e-6
     )  # 4 - carriage 0.25 - end stop 0.05
+
+
+# --- task 5: collision changes mark plans out of date --------------------------------------------
+
+
+def test_collision_changes_flag_plans(app):
+    """Done when: changing any of them flags plans, and the jog / left-panel overlay show the new
+    part collision mesh."""
+    import shutil
+
+    import trimesh
+
+    from core.schema import Solution, Station
+    from ui import staleness
+
+    s, coll, view = app["session"], app["collision"], app["collision_view"]
+    assert app["project"].load_example("rail_long_part")
+    assets = s.project_dir / "assets"
+    assets.mkdir(exist_ok=True)
+    # the part's own collision mesh, the tool in the project folder, a carrier body collision mesh
+    low = s.part_mesh().convex_hull
+    low.export(assets / "part_low.stl")
+    s.part.collision_mesh = "assets/part_low.stl"
+    shutil.copytree(s.resolve(s.tool.urdf).parent, assets / "sander")
+    s.set_tool(s.tool.model_copy(update={"urdf": "assets/sander/orbital_sander.urdf"}))
+    trimesh.creation.box((0.6, 0.6, 0.2)).export(assets / "carriage_low.stl")
+    bodies = [
+        x.model_copy(update={"collision_mesh": "assets/carriage_low.stl"}) if x.name == "carriage" else x
+        for x in s.base.bodies
+    ]
+    s.base = s.base.model_copy(update={"bodies": bodies})
+    coll.sync()
+    sol = Solution(label="P", stations=[Station(xyz=(0, 0, 0))])
+    s.results = [sol]
+
+    def stamp() -> None:
+        s.stamps["P"] = staleness.stamp_for(s, "plan")
+        assert staleness.solution_changes(s, sol) == []
+
+    stamp()
+    coll.pad_mm.value = 7.0  # arm padding
+    assert staleness.solution_changes(s, sol) == ["collision settings"]
+    coll.pad_mm.value = 0.0
+    assert staleness.solution_changes(s, sol) == []
+    trimesh.creation.box((0.7, 0.6, 0.2)).export(assets / "carriage_low.stl")  # carrier
+    assert staleness.solution_changes(s, sol) == ["external axis"]
+    stamp()
+    (assets / "sander" / "meshes" / "pad_link.stl").write_bytes(
+        trimesh.creation.cylinder(radius=0.08, height=0.02).export(file_type="stl")
+    )
+    assert staleness.solution_changes(s, sol) == ["tool"]
+    stamp()
+    # the part's collision mesh: the plans are flagged, the jog scene and the overlay follow
+    view.show["Part"].value = True
+    view.check()
+    sc = app["cell"].jog_panel.coll.scene()
+    before = sc.shape(sc.part_id).bounds.copy()
+    bigger = low.copy()
+    bigger.apply_scale(1.5)
+    bigger.export(assets / "part_low.stl")
+    assert staleness.solution_changes(s, sol) == ["collision settings"]
+    view.check()
+    sc2 = app["cell"].jog_panel.coll.scene()
+    assert sc2 is not sc and np.allclose(sc2.shape(sc2.part_id).bounds, before * 1.5)
+    gid = sc2.part_id
+    assert gid in view._handles and view._drawn[gid] == id(sc2.shape(gid))
+    view.show["Part"].value = False

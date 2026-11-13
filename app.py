@@ -437,6 +437,7 @@ def build_app(
         workflow.hooks.append(tool_opt.update_hint)  # pose-limits hint follows the tool type
         workflow.hooks.append(sim.check_targets)  # paths are cleared when the targets change
         workflow.hooks.append(clear_stale)  # and plans when the part, tool or targets change
+        workflow.hooks.append(coll_view.check)  # v10 #5: collision files changed on disk
         workflow.hooks.append(cable.follow_robot)  # the hose follows a robot change
         workflow.hooks.append(lambda: floor_grid(server).update(session))  # floor fits the cell
         workflow.start_watch()

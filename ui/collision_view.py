@@ -127,6 +127,21 @@ class CollisionView:
         self._handles.clear()
         self._drawn.clear()
 
+    def check(self) -> None:
+        """Watcher hook (v10 #5): redraw when the collision setup changed (e.g. a collision file
+        was rewritten), only while something is shown."""
+        jog = getattr(self.cell, "jog_panel", None) if self.cell is not None else None
+        coll = getattr(jog, "coll", None)
+        if coll is None or not self.wanted():
+            return
+        try:
+            key = coll._setup_key()
+        except Exception:  # a broken setup must not break the watcher
+            return
+        if key != getattr(self, "_seen_key", None):
+            self._seen_key = key
+            self._redraw()
+
     def on_moved(self, *_args) -> None:
         """Robot / carrier / part moved: follow it (only when something is shown)."""
         if self.wanted():

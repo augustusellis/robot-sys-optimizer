@@ -15,7 +15,7 @@ import numpy as np
 
 from ui.fingerprint import content
 
-COMPONENTS = ("robot", "carrier", "tool", "part", "targets", "stayout")
+COMPONENTS = ("robot", "carrier", "tool", "part", "targets", "stayout", "collision")
 LABELS = {
     "robot": "robot / mount",
     "carrier": "external axis",
@@ -23,11 +23,12 @@ LABELS = {
     "part": "part",
     "targets": "targets",
     "stayout": "stay-out zones",
+    "collision": "collision settings",
     "base_pose": "robot base pose",
 }
 # setup steps (tab names in app.TABS) and the components each one defines
 STEP_COMPONENTS = {
-    "Cell": ("robot", "part", "stayout"),
+    "Cell": ("robot", "part", "stayout", "collision"),
     "External Axis": ("carrier",),
     "Tool Setup": ("tool",),
     "Targets": ("targets",),
@@ -96,6 +97,17 @@ def components(s, base_pose: bool = False, tool_nominal: bool = True, legacy: bo
     if s.part is not None:
         mesh = s.part.mesh_path if legacy else content(s, s.part.mesh_path)
         out["part"] = _h([mesh, s.part.units, _pose(s.part.T_world_part)])
+    if not legacy:  # v10 #5: arm padding, the part's own collision mesh (content), kept faces
+        from core import collision
+
+        part = s.part
+        out["collision"] = _h(
+            [
+                round(float(collision.ARM_PAD), 6),
+                content(s, part.collision_mesh) if part is not None else None,
+                sorted(int(f) for f in part.collision_keep) if part is not None else [],
+            ]
+        )
     if base_pose:
         out["base_pose"] = _h(_pose(T))
     return out
@@ -110,7 +122,11 @@ def migrate(s) -> int:
         (components(s, legacy=True, tool_nominal=t), components(s, tool_nominal=t)) for t in (True, False)
     ]
     stamps = [s.stamps, *(c.get("stamps", {}) for c in (getattr(s, "compared", None) or {}).values())]
+    now = variants[0][1]
     for d in [v for st in stamps for v in st.values()] + list(s.steps.values()):
+        if "collision" not in d:  # v10 #5: new component, taken as it is now
+            d["collision"] = now["collision"]
+            n += 1
         for k in ("robot", "carrier", "tool", "part", "stayout"):
             for old, new in variants:
                 if k in d and d[k] == old[k] and old[k] != new[k]:
