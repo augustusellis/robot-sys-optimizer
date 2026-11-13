@@ -161,11 +161,36 @@ class FramePanel:
             self.use = gui.add_button("Use this frame", visible=False, hint="the carrier frame and its plans")
         self.run.on_click(lambda e: self.start(e))
         self.stop.on_click(lambda e: self._cancel.set())
-        self.use.on_click(lambda e: self.use_frame(e))
+        self.use.on_click(lambda e: self.confirm_use(e))
+        self._sig = None
         self.refresh()
+
+    def _carrier_sig(self) -> str:
+        """The carrier without its frame pose and mount (Use this frame changes those)."""
+        b = self.s.base
+        return b.model_dump_json(exclude={"pose", "T_mount", "joints", "align_to_part"})
+
+    def reset_range(self) -> None:
+        """v10 #6: the mount height range starts at the project's mount height (another project
+        opened; app.restore_work calls this before the saved panel settings)."""
+        b = self.s.base
+        z = b.T_mount.xyz[2] * 1000 if b.mode == "movable" else 0.0
+        self.z.value = (z, z)
+        self._sig = self._carrier_sig()
+
+    def watch(self) -> None:
+        """Watcher hook (v10 #6): the mount height range resets when the carrier changes."""
+        sig = self._carrier_sig()
+        if sig == self._sig:
+            return
+        b = self.s.base
+        if self._sig is not None and b.mode == "movable" and b.carrier in ("rail", "gantry"):
+            self.reset_range()
+        self._sig = sig
 
     def refresh(self) -> None:
         """Fields for the current carrier (rail / gantry); the mount height range follows it."""
+        self.watch()
         b = self.s.base
         kind = b.carrier if b.mode == "movable" else None
         ok = kind in ("rail", "gantry")
@@ -268,6 +293,27 @@ class FramePanel:
         self._thread.start()
         if block:
             self._thread.join()
+
+    def confirm_use(self, event=None) -> None:
+        """*Use this frame*: asks first when it would replace plans in Results (v10 #6)."""
+        client = getattr(event, "client", None)
+        if client is None or not self.s.results:
+            self.use_frame(event)
+            return
+        with client.gui.add_modal("Use this frame?") as modal:
+            client.gui.add_markdown(
+                f"This moves the {self.s.base.carrier} frame and **replaces the {len(self.s.results)} "
+                "plan(s) in Results** with this frame's plans."
+            )
+            go = client.gui.add_button("Use this frame", color="green")
+            stop = client.gui.add_button("Cancel")
+
+        @go.on_click
+        def _(ev) -> None:
+            modal.close()
+            self.use_frame(ev)
+
+        stop.on_click(lambda _ev: modal.close())
 
     def use_frame(self, event=None, index: int | None = None) -> bool:
         """The chosen frame becomes the project's carrier frame; its plans go to Results."""

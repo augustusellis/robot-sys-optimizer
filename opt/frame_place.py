@@ -10,7 +10,8 @@ each with the robot mount height (``T_mount`` z, the **z range** ``z_lo`` .. ``z
 values): how high the robot sits on the carriage (rail riser) or how low it hangs (gantry).
 
 A candidate is kept when the carrier's fixed bodies (track, legs, beams) keep the base's part
-standoff (``carrier_part_min``, 3D distance) and its stops can exist (the planner's admissible
+standoff (``carrier_part_min``, 3D distance), stay out of the floor keep-outs and away from the
+stay-out zones (v10 #6: the keep-out clearance) and its stops can exist (the planner's admissible
 stations: standoff, keep-outs, travel). It is scored like the planner's first step: the targets the
 admissible stops cover (reach maps) and the fewest stops that cover them (greedy set cover); ranked
 by (targets not covered, stops, mean manipulability). The best few are then planned in full by the
@@ -117,6 +118,23 @@ def with_frame(base: Base, pose: Pose, mount_z: float) -> Base:
     )
 
 
+def fixed_clear(c, obstacles=None) -> str:
+    """v10 #6: why the carrier's fixed bodies (track, legs, beams) may not stand there: in a floor
+    keep-out (with the keep-out clearance) or too close to a stay-out zone; "" = fine."""
+    from core.standoff import Zones
+    from core.stayout import carrier_clear
+
+    fixed = c.static_bodies()
+    if not fixed:
+        return ""
+    fp = c._hulls(fixed)
+    zones = Zones(c.base, None)
+    if zones.keepout_zone is not None and fp is not None and fp.intersects(zones.keepout_zone):
+        return "fixed bodies in a keep-out"
+    ok, what = carrier_clear(fixed, fp, list(obstacles or []), c.base.standoff_m.carrier_env_min)
+    return "" if ok else f"fixed bodies too close to the {what}"
+
+
 def score_frame(
     base: Base, rmap, t, part_mesh, T_part, st: FrameSettings, resolve=None, obstacles=None
 ) -> FrameScore:
@@ -132,6 +150,9 @@ def score_frame(
     fixed = c.static_bodies()
     if fixed and distance_3d(fixed, part_mesh, T_part) < base.standoff_m.carrier_part_min - 1e-6:
         return FrameScore(pose, mount_z, len(t.ids), 0, 0.0, "fixed bodies too close to the part", base)
+    why = fixed_clear(c, obstacles)
+    if why:
+        return FrameScore(pose, mount_z, len(t.ids), 0, 0.0, why, base)
     sites = CarrierSites(c, part_mesh, T_part, obstacles=obstacles)
     cand = sites.candidates(t.P_world, st.candidate_step)
     if not cand:

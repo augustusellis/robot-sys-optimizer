@@ -151,6 +151,8 @@ def build_app(
             panel.max_stations.value = float(min(max(n, 1), 40))
         state["stations"].costs.load()  # the project's cost weights
         state["tool_opt"].costs.load()  # and the tool optimizer's
+        if "frame" in state:
+            state["frame"].reset_range()  # v10 #6: this project's mount height, unless saved
         ui_settings.apply(state, session.ui)
         state["collision"].sync()
         t.refresh()
@@ -438,6 +440,7 @@ def build_app(
         workflow.hooks.append(sim.check_targets)  # paths are cleared when the targets change
         workflow.hooks.append(clear_stale)  # and plans when the part, tool or targets change
         workflow.hooks.append(coll_view.check)  # v10 #5: collision files changed on disk
+        workflow.hooks.append(frame.watch)  # v10 #6: the height range resets on carrier changes
         workflow.hooks.append(cable.follow_robot)  # the hose follows a robot change
         workflow.hooks.append(lambda: floor_grid(server).update(session))  # floor fits the cell
         workflow.start_watch()

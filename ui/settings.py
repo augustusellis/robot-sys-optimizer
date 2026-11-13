@@ -80,6 +80,8 @@ SAVED: dict[str, tuple[str, ...]] = {
         "lift_speed",
         "settle_s",
     ),
+    "picker": ("choice",),  # v10 #6: the chosen Optimizer
+    "frame": ("standoff", "step", "shift", "z", "z_steps", "top"),  # Gantry placement
     "results": ("choice", "show_lines", "show_ghosts", "show_areas"),
     "results.export": ("screenshot", "flange"),
     "sim": (

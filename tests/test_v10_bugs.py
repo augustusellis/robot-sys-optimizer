@@ -304,3 +304,54 @@ def test_collision_changes_flag_plans(app):
     gid = sc2.part_id
     assert gid in view._handles and view._drawn[gid] == id(sc2.shape(gid))
     view.show["Part"].value = False
+
+
+# --- task 6: gantry placement fixes --------------------------------------------------------------
+
+
+def test_fixed_bodies_against_keepouts_and_stayouts(tmp_path):
+    from core.carrier import Carrier
+    from core.schema import Keepout, Pose, Primitive
+    from core.stayout import obstacles
+    from opt.frame_place import fixed_clear
+
+    s = _example_copy(tmp_path, "gantry_overhead")
+    c = Carrier(s.base, resolve=s.resolve)
+    assert fixed_clear(c) == ""
+    # a floor keep-out at a post (post_3 stands at x 2.8, y 1.8)
+    ko = s.base.model_copy(update={"keepouts": [Keepout(min_xy=(2.5, 1.5), max_xy=(3.2, 2.2))]})
+    assert fixed_clear(Carrier(ko, resolve=s.resolve)) == "fixed bodies in a keep-out"
+    # a stay-out zone next to beam_b (y 1.8, top at 4.4 m)
+    zone = Primitive(shape="box", size=(0.5, 0.5, 0.5), name="lamp", pose=Pose(xyz=(0.0, 2.0, 4.2)))
+    assert fixed_clear(c, obstacles([zone])) == "fixed bodies too close to the stay-out zone lamp"
+    far = zone.model_copy(update={"pose": Pose(xyz=(0.0, 0.0, 0.0))})
+    assert fixed_clear(c, obstacles([far])) == ""
+
+
+def test_gantry_placement_fields(app):
+    from ui import settings as ui_settings
+
+    s, frame, picker = app["session"], app["frame"], app["picker"]
+    assert app["project"].load_example("gantry_overhead")
+    frame.refresh()
+    assert frame.z.value == (-850.0, -850.0)
+    frame.z.value = (-1200.0, -600.0)
+    picker.choice.value = "Gantry placement"
+    saved = ui_settings.collect(app)
+    assert saved["frame.z"] == [-1200.0, -600.0] and saved["picker.choice"] == "Gantry placement"
+    # another project: its own mount height
+    assert app["project"].load_example("rail_long_part")
+    z = s.base.T_mount.xyz[2] * 1000
+    assert frame.z.value == (z, z)
+    # a carrier change resets the range too; Use this frame (pose / mount only) does not
+    frame.z.value = (100.0, 900.0)
+    frame.watch()
+    s.base = s.base.model_copy(update={"T_mount": s.base.T_mount.model_copy(update={"xyz": (0, 0, 0.5)})})
+    frame.watch()
+    assert frame.z.value == (100.0, 900.0)
+    s.base = s.base.model_copy(update={"end_stop_m": 0.1})
+    frame.watch()
+    assert frame.z.value == (500.0, 500.0)
+    # the saved values come back with the project
+    ui_settings.apply(app, saved)
+    assert frame.z.value == (-1200.0, -600.0) and picker.choice.value == "Gantry placement"
