@@ -16,19 +16,19 @@ import numpy as np
 import viser
 
 from core.feasibility import CancelledError
+from ui import sim_build, sim_fields
 from ui.log_panel import log, took
 from ui.robot_view import quiet_remove
 from ui.session import Session
 from ui.sim_build import carrier_path as sim_carrier_path
 from ui.sim_build import path_checker
+from ui.sim_fields import BETWEEN_LABELS, PLANNER_ORDER  # noqa: F401 (re-export)
 from ui.widgets import Latest, notify
 
 ROOT = "/results/paths"
 ZONE_COLORS = [(250, 120, 30), (30, 160, 230), (200, 60, 200), (40, 200, 120), (230, 200, 40), (120, 90, 220)]
 ISSUE_COLOR = (230, 30, 30)
 MOVE_COLOR = (150, 150, 150)  # lifts, home and carrier moves
-BETWEEN_LABELS = {"Collision-free joint path": "direct", "Via home": "home"}
-PLANNER_ORDER = "Planner order"
 
 
 class SimPanel:
@@ -90,63 +90,23 @@ class SimPanel:
         self.clear_btn.on_click(lambda e: self.clear_paths())
 
     def _pattern_fields(self, gui) -> None:
-        from core.patterns import CORNERS, PATTERNS
-
-        self.pattern = gui.add_dropdown("Pattern", (*PATTERNS, PLANNER_ORDER), initial_value="Zigzag")
-        self.angle = gui.add_number("Raster angle (deg)", 0.0, min=-180.0, max=180.0, step=5.0)
-        self.corner = gui.add_dropdown("Start corner", CORNERS, hint="<along rows>-<across rows>")
-        self.row_tol = gui.add_number("Row tolerance (mm)", 0.0, min=0.0, step=1.0, hint="0 = automatic")
-        self.inward = gui.add_checkbox("Outside → in", True)
-        self.no_cross = gui.add_checkbox(
-            "Prevent crossing paths", False, hint="lift off for moves that cross"
-        )
-        self.lift = gui.add_number("Lift height (mm)", 30.0, min=1.0, step=5.0)
-        self.home = gui.add_checkbox(
-            "Home between stops", True, hint="arm to home before the carrier moves, back after"
-        )
-        self.between = gui.add_dropdown(  # keys of core.paths.BETWEEN
-            "Between groups", tuple(BETWEEN_LABELS), hint="to the next group / configuration at a stop"
-        )
-        self.drive = gui.add_checkbox(
-            "Drive carrier between stops",
-            True,
-            hint="plan the mobile base / external axis moves between stops (collision checked)",
-        )
-        from ui.method_picker import MethodPicker
-
-        self.order = MethodPicker(gui, "point_order", "Point order")  # v8 T14
-        self.motion = gui.add_checkbox(  # v8 T7
-            "Check moves between points",
-            True,
-            hint="collision check every 2° of joint motion between samples (flags 'motion')",
-        )
-        for w in (self.pattern, self.no_cross):
-            w.on_update(lambda e: self.show_pattern_fields())
-        self.show_pattern_fields()
+        sim_fields.build(self, gui)
 
     def show_pattern_fields(self) -> None:
-        from core.patterns import ROW_PATTERNS
-
-        p = self.pattern.value
-        on = p != PLANNER_ORDER
-        self.angle.visible = self.corner.visible = self.no_cross.visible = on
-        self.row_tol.visible = p in (*ROW_PATTERNS, "Concentric", "Spiral")
-        self.inward.visible = p in ("Concentric", "Spiral")
-        self.lift.visible = on and self.no_cross.value
+        sim_fields.show(self)
 
     def pattern_settings(self):
-        from core.patterns import PatternSettings
+        return sim_fields.pattern_settings(self)
 
-        if self.pattern.value == PLANNER_ORDER:
+    def _spin(self, res):
+        """v10 #9: the allowed spin per point for core.path_spin (None: the planned spins)."""
+        if not self.spin_opt.value:
             return None
-        return PatternSettings(
-            self.pattern.value,
-            self.angle.value,
-            self.corner.value,
-            self.row_tol.value / 1000,
-            self.inward.value,
-            self.no_cross.value,
-        )
+        from core.path_spin import allowed_from
+
+        s = self.s
+        groups = {g.name: g for g in s.targets.groups}
+        return allowed_from(groups, res, {p.id: p.group for p in s.targets.points})
 
     def _carrier_path(self, sol, step: float, checker=None, home=None):
         """ui.sim_build.carrier_path, the arm held at ``home`` unless the call gives arm_q."""
@@ -200,13 +160,7 @@ class SimPanel:
                 if self.on_home is not None:
                     self.on_home()
                 home = home_q if self.home.value else None
-                plan = trace(  # local until done: the 1 s targets watcher must not see it half-built
-                    checker,
-                    mesh,
-                    sol,
-                    res,
-                    pts,
-                    poses,
+                kw = dict(
                     step=self.step.value / 1000,
                     jump_deg=self.jump.value,
                     cancelled=self._cancel.is_set,
@@ -221,6 +175,15 @@ class SimPanel:
                     cycle=s.cycle,
                     between=BETWEEN_LABELS[self.between.value],
                 )
+                # local until done: the 1 s targets watcher must not see it half-built
+                plan = trace(checker, mesh, sol, res, pts, poses, **kw)
+                spin, self.spin_used = self._spin(res), None
+                if spin is not None:  # v10 #9: also with the spin chosen along the path; keep
+                    alt = trace(checker, mesh, sol, res, pts, poses, **kw, spin=spin)  # the better
+                    better = sim_build.score(alt, self._cycle_of(alt)) < sim_build.score(
+                        plan, self._cycle_of(plan)
+                    )
+                    plan, self.spin_used = (alt, True) if better else (plan, False)
                 if self.motion.value:  # v8 T7: the arm sweeps between clear samples
                     from core.motion_check import check_moves
 
@@ -251,16 +214,25 @@ class SimPanel:
         self.progress.value = 100.0 * f
         self.info.content = f"_Building paths… {100 * f:.0f} % · {took(self._t0)}_"
 
-    def _cycle_line(self, plan) -> str:
-        """v8 T6: cycle time of the built paths (Optimize -> Cycle time speeds)."""
+    def _cycle_of(self, plan) -> dict:
         from core.cycle_time import CycleSettings, path_time
         from ui.safety_ui import reduced_speed_fn
 
         vlim = self.s.robot.model.velocityLimit if self.s.robot else None
-        slow = reduced_speed_fn(self.s, plan)  # v8 T18: reduced-speed zones
-        self.cycle = c = path_time(plan, self.s.cycle or CycleSettings(), vlim, slow)
+        return path_time(plan, self.s.cycle or CycleSettings(), vlim, reduced_speed_fn(self.s, plan))
+
+    def _cycle_line(self, plan) -> str:
+        """v8 T6: cycle time of the built paths (Optimize -> Cycle time speeds; v8 T18 reduced-speed
+        zones). v10 #9: whether the optimized tool spin was used."""
+        self.cycle = c = self._cycle_of(plan)
         parts = ", ".join(f"{k} {v:.0f} s" for k, v in c.items() if k != "total" and v > 0.05)
-        return f"  \nCycle time: **{c['total']:.0f} s** ({parts})."
+        used = getattr(self, "spin_used", None)
+        spin = ""
+        if used is not None:
+            spin = (
+                " Tool spin: **optimized along the path**." if used else " Tool spin: as planned (no better)."
+            )
+        return f"  \nCycle time: **{c['total']:.0f} s** ({parts}).{spin}"
 
     def _after_build(self) -> None:
         plan = self.plan

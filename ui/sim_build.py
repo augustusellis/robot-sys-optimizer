@@ -72,3 +72,10 @@ def carrier_path(s: Session, sol, step: float, checker=None):
         return first  # nothing clear: the lowest height, its problems flagged
 
     return path
+
+
+def score(plan, cycle: dict) -> tuple:
+    """v10 #9: how good built paths are: (problem samples, cycle time); planned configuration
+    changes (reconfigure) are not problems."""
+    bad = sum(v for k, v in plan.counts().items() if k != "reconfigure")
+    return (bad, round(float(cycle["total"]), 3))

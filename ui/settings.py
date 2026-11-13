@@ -99,6 +99,7 @@ SAVED: dict[str, tuple[str, ...]] = {
         "home",
         "between",
         "drive",
+        "spin_opt",
     ),
 }
 

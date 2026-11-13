@@ -36,7 +36,6 @@ planned collision-free (core.joint_plan). Pure geometry + core.feasibility: no v
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
 
 import numpy as np
 import trimesh
@@ -48,64 +47,14 @@ from core.patterns import (
     PatternSettings,
 )
 
-ISSUES = ("unreachable", "config_flip", "jump", "collision", "reconfigure", "carrier_blocked", "motion")
 HOME_STEP = np.radians(3.0)  # joint step of the moves to / from home
 RETREAT = 0.15  # m the tool backs off the surface before a planned joint move
 COPIES = 6  # other 2*pi copies of a joint move's end tried when no way is found
 BETWEEN = ("direct", "home")  # moves between groups at a stop: planned joint path / via home
 
 
-@dataclass
-class PathSample:
-    station: int
-    zone: int | None
-    a: int  # point id the segment starts at
-    b: int  # point id it ends at (a == b: the first point of a sequence)
-    s: float  # 0..1 along the segment
-    T_part_tcp: np.ndarray
-    tcp: str
-    q: np.ndarray | None
-    issue: str = ""
-    kind: str = ""  # "" on the surface, "lift", "home" (joint move), "retreat", "carrier" (between stops)
-    carrier: dict | None = None  # carrier values of this sample (None = its stop's)
-    T_world_base: np.ndarray | None = None  # base pose when it differs from the stop's
-
-
-@dataclass
-class StationPath:
-    station: int
-    T_world_base: np.ndarray
-    carrier: dict
-    samples: list[PathSample] = field(default_factory=list)
-
-
-@dataclass
-class PathPlan:
-    stations: list[StationPath]
-    step: float
-
-    @property
-    def samples(self) -> list[PathSample]:
-        return [p for st in self.stations for p in st.samples]
-
-    def counts(self) -> dict[str, int]:
-        out = dict.fromkeys(ISSUES, 0)
-        for p in self.samples:
-            if p.issue:
-                out[p.issue] += 1
-        return out
-
-    def length(self) -> float:
-        """TCP path length (m) on the surface (no lifts, home or carrier moves)."""
-        total = 0.0
-        for st in self.stations:
-            for p0, p1 in zip(st.samples[:-1], st.samples[1:], strict=True):
-                if p1.issue != "reconfigure" and p1.a != p1.b and not p1.kind and not p0.kind:
-                    total += float(np.linalg.norm(p1.T_part_tcp[:3, 3] - p0.T_part_tcp[:3, 3]))
-        return total
-
-
 from core.path_order import Seq, ordered_sequences, sequences  # noqa: E402,F401 (re-export)
+from core.path_types import ISSUES, PathPlan, PathSample, StationPath  # noqa: E402,F401 (re-export)
 
 
 class _Tracer:
@@ -329,6 +278,30 @@ def _bad(samples: list[PathSample]) -> int:
     return n
 
 
+def _better_spin(tr, k, zone, sq, results, points, q, label, lift, dp, ref=None, leave=None):
+    """``dp`` (core.path_spin) unless the planned spins (from q, as the tracer does) have fewer
+    problem samples, or as many and less joint motion; None = take the planned ones."""
+    from core.path_spin import STATS, motion
+
+    pids, plain = sq.pids, []
+    r0 = results[pids[0]]
+    plain.append(PathSample(k, zone, pids[0], pids[0], 0.0, tr.tcp_pose(r0), r0.tcp, q))
+    for m, (a, b) in enumerate(zip(pids[:-1], pids[1:], strict=True)):
+        (Pa, Na), (Pb, Nb) = points[a], points[b]
+        h = lift if sq.lifts[m] else 0.0
+        seg = tr.segment(k, zone, results[a], results[b], Pa, Pb, Na, Nb, q, label, h)
+        seg = tr.around(seg, k, zone, q, results[b])
+        plain += seg
+        q = next((p.q for p in reversed(seg) if p.q is not None), q)
+    bd, bp = _bad(dp), _bad(plain)
+    md, mp = motion(dp, ref, leave), motion(plain, ref, leave)
+    if bd < bp or (bd == bp and md <= mp * 1.001 + 1e-9):  # ties: dp keeps away from the limits
+        STATS["spin"] += 1
+        return dp
+    STATS["planned"] += 1
+    return None
+
+
 def _drive_hits(checker, moves, q, tcp: str) -> bool:
     """The arm at q collides somewhere along the carrier poses ``moves``."""
     for _, T, _ in moves or []:
@@ -358,6 +331,7 @@ def trace(
     order: str = "pattern",
     cycle=None,
     between: str = "direct",
+    spin=None,
 ) -> PathPlan:
     """Paths of solution ``sol``. ``points``: point id -> (p, n) in the part frame;
     ``base_poses``: world base pose per station (core.export.station_pose). ``pattern``
@@ -372,7 +346,9 @@ def trace(
     ``cycle``: CycleSettings of the joint move times). ``between`` (``BETWEEN``): from one
     group (zone, face, joint configuration) to the next at a stop, "direct" = a planned
     collision-free joint path (via home only when no clear way is found), "home" = always via
-    home (``park`` without one). Stops always start and end at home when ``home`` is given."""
+    home (``park`` without one). Stops always start and end at home when ``home`` is given.
+    ``spin(pid)`` (v10 #9, core.path_spin): the tool spin is chosen per sample where it is free
+    (None) or a range ((lo, hi) rad around the planned spin); None = the planned spins."""
     if between not in BETWEEN:
         raise ValueError(f"between must be one of {BETWEEN}")
     tr = _Tracer(checker, part_mesh, step, jump_deg)
@@ -428,6 +404,18 @@ def trace(
             label_prev = None if q_prev is None else config_label(checker.ik, q_prev)
             label = config_label(checker.ik, q)
             first = "reconfigure" if j > 0 and label != label_prev else ""
+            dp = None
+            if spin is not None and len(pids) > 1:  # v10 #9: the spin per sample (path_spin)
+                from core.path_spin import optimize_sequence
+
+                leave = home if j == len(seqs[k]) - 1 else None  # back home after the last group
+                dp = optimize_sequence(
+                    tr, k, zone, pids, results, points, label, ref, spin, sq.lifts, lift, leave
+                )
+                if dp is not None:  # keep the planned spins when they do no worse
+                    dp = _better_spin(tr, k, zone, sq, results, points, q, label, lift, dp, ref, leave)
+                if dp is not None:
+                    q = np.asarray(dp[0].q, float)
             if home is not None and j == 0:  # from home to the stop's first point
                 sp.samples += tr.joint_move(k, zone, home, q, r0.tcp, 0, pids[0], (False, True))
             elif j == 0 and carry is not None and carrier_path is not None:  # no home: from the
@@ -438,7 +426,18 @@ def trace(
                 sp.samples += tr.change_move(k, zone, q_prev, q, r0.tcp, last.b, pids[0], home, group=True)
             if sp.samples and sp.samples[-1].kind == "home":  # arrived at another 2*pi copy?
                 q = np.asarray(sp.samples[-1].q, float)
-            sp.samples.append(PathSample(k, zone, pids[0], pids[0], 0.0, tr.tcp_pose(r0), r0.tcp, q, first))
+            if dp is not None:
+                turn = q - np.asarray(dp[0].q, float)  # the joint move came to another 2*pi copy
+                for smp in dp:
+                    smp.q = np.asarray(smp.q, float) + turn
+                dp[0].issue = first
+                sp.samples += dp
+                q = np.asarray(dp[-1].q, float)
+                pids = []  # done
+            else:
+                sp.samples.append(
+                    PathSample(k, zone, pids[0], pids[0], 0.0, tr.tcp_pose(r0), r0.tcp, q, first)
+                )
             for m, (a, b) in enumerate(zip(pids[:-1], pids[1:], strict=True)):
                 if cancelled is not None and cancelled():
                     raise CancelledError
