@@ -34,7 +34,8 @@ class ToolMeshPanel:
         self.server, self.tab, self.s = server, tab, tab.s
         self.datums: list = []
         gui = server.gui
-        with gui.add_folder("Mesh / STEP tool", expand_by_default=False):
+        self.folder = gui.add_folder("Mesh / STEP tool", expand_by_default=False)
+        with self.folder:
             gui.add_markdown(
                 "_A tool from one file: the mesh is the tool head, on the flange mount. A STEP "
                 "file's named coordinate systems can place the TCP and the mount._"

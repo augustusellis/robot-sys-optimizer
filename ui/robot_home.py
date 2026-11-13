@@ -26,6 +26,12 @@ class HomePanel:
         self._busy = False
         with server.gui.add_folder("Home position", expand_by_default=False):
             self.info = server.gui.add_markdown("")
+            # v10 #8: everything about the home in this folder
+            self.go = server.gui.add_button("Go to home", hint="jog the arm to the home pose")
+            self.suggested = server.gui.add_markdown("", visible=False)
+            self.use_suggested = server.gui.add_button(
+                "Use the paths' home", visible=False, hint="the clear pose the last paths used"
+            )
             self.joints = server.gui.add_text(
                 "Home joints (deg)", "", hint="one value per joint, comma separated"
             )
@@ -46,6 +52,19 @@ class HomePanel:
         @self.default.on_click
         def _(_e) -> None:
             self.set_home(None)
+
+        self.go.on_click(lambda _e: self.cell.go_home())
+        self.use_suggested.on_click(lambda e: self.take_suggested(e))
+
+    def take_suggested(self, event=None) -> bool:
+        """v10 #8: keep the clear pose the paths used as the project's home."""
+        q = getattr(self.s, "suggested_home", None)
+        if q is None:
+            return False
+        self.s.suggested_home = None
+        self.set_home(list(np.degrees(q)))
+        notify(event, "Home saved", "the paths' clear pose is the robot's home", ok=True)
+        return True
 
     def take_current(self, event=None) -> bool:
         """Save the current (jogged) joint pose as home."""
@@ -88,5 +107,12 @@ class HomePanel:
             self.joints.value = ", ".join(f"{v:g}" for v in np.round(np.degrees(q), 3))
             src = "saved in this project" if self.s.home_deg is not None else "robot default"
             self.info.content = f"Home ({src}). The paths use it between stops."
+            sug = getattr(self.s, "suggested_home", None)
+            self.suggested.visible = self.use_suggested.visible = sug is not None
+            if sug is not None:
+                deg = ", ".join(f"{v:g}" for v in np.round(np.degrees(sug), 1))
+                self.suggested.content = (
+                    f"⚠ The last paths could not use this home and took a clear pose instead: **{deg}** deg."
+                )
         finally:
             self._busy = False

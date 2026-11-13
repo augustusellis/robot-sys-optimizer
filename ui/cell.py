@@ -72,11 +72,11 @@ class CellTab:
             )
             self.base = PoseWidgets(server, BASE_NODE, session.T_world_base, self._on_base)
             self.joint_folder = server.gui.add_folder("Joints (deg)")
-            self.home = server.gui.add_button("Go to home", hint="the home pose below")
             self.readout = server.gui.add_markdown("")
             from ui.robot_home import HomePanel
 
             self.home_panel = HomePanel(server, self)
+            self.home = self.home_panel.go  # v10 #8: Go to home lives in Home position
             from ui.robot_limits import LimitsPanel
 
             self.limits_panel = LimitsPanel(server, self)
@@ -142,10 +142,6 @@ class CellTab:
                 self.base.set(T)
                 self._update_readout()
             self.s.mount = self.mount.value
-
-        @self.home.on_click
-        def _(_e) -> None:
-            self.go_home()
 
         @self.part_choice.on_update
         def _(_e) -> None:

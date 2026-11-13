@@ -79,7 +79,10 @@ class PackageBuilder:
             "robot flange (tool), the part's own frame, or the carrier frame on the floor. User guide: "
             "*Building URDF packages*._"
         )
-        self.tabs = gui.add_button_group("Package", tuple(TABS))  # v9 #1: a tab per package type
+        from ui.package_tabs import TabBar
+
+        # v9 #1: a tab per package type; v10 #8: an HTML bar that shows the open one
+        self.tab_bar = TabBar(gui, TABS, lambda kind: self._set_kind(kind))
         self.kind_md = gui.add_markdown("")
         self.kind = gui.add_dropdown(
             "Package type", tuple(KIND_LABELS), initial_value=KIND_OF["tool"], visible=False
@@ -174,7 +177,6 @@ class PackageBuilder:
             return h
 
         self.kind.on_update(guard(lambda e: self._set_kind(KIND_LABELS[self.kind.value])))
-        self.tabs.on_click(lambda e: self._set_kind(TABS[e.target.value]))
         self.name.on_update(guard(lambda e: self._update(name=self.name.value.strip() or "package")))
         self.part.on_update(guard(lambda e: self._select(self.part.value)))
         self.add_box.on_click(
@@ -220,6 +222,7 @@ class PackageBuilder:
         try:
             self.kind.value = KIND_OF[p.kind]
             self.kind_md.content = f"**{TAB_OF[p.kind]}** package"
+            self.tab_bar.show(p.kind)
             self.name.value = p.name
             names = [x.name for x in p.parts]
             self.part.options = tuple(names) or (NONE,)

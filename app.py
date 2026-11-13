@@ -188,6 +188,7 @@ def build_app(
     log_panel = LogPanel(server)  # errors, finished runs, setup status, unreached points
     workflow = Workflow(server, session)
     state["workflow"] = workflow
+    workflow.status_strip()  # v10 #8: each step's state and what is out of date, above the tabs
     tabs = server.gui.add_tab_group()
     tab_handles = {name: tabs.add_tab(f"{i + 1} {TAB_TITLES[i]}") for i, name in enumerate(TABS)}
     with tab_handles["Cell"]:
@@ -310,6 +311,7 @@ def build_app(
             set_q=cell.set_q,
             order=results.export.folder.order - 0.5,  # above Export
         )
+        sim.on_home = cell.home_panel.refresh  # v10 #8: the paths' clear home is offered there
         from ui.tolerance_ui import TolerancePanel
 
         tolerance = TolerancePanel(server, session, results.selected)  # v8 T5

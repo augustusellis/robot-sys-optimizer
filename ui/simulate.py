@@ -48,6 +48,7 @@ class SimPanel:
         self.set_base, self.show_q = set_base, show_q
         self.set_q = set_q or show_q  # syncs the joint sliders (scrubbing, end of playback)
         self.plan = None
+        self.on_home: Callable[[], None] | None = None  # v10 #8: the paths found another home
         self.label = None  # solution the paths belong to
         self._handles: list = []
         self._thread: threading.Thread | None = None
@@ -194,6 +195,10 @@ class SimPanel:
         def work() -> None:
             try:  # the project's home (Robot & cell), or a clear folded pose when it collides
                 home_q, self.home_note = pick_home(checker, s.home_q(), sol, res, poses)
+                # v10 #8: Robot & cell -> Home position offers it (the home is set in one place)
+                s.suggested_home = None if not self.home_note else np.asarray(home_q, float).copy()
+                if self.on_home is not None:
+                    self.on_home()
                 home = home_q if self.home.value else None
                 plan = trace(  # local until done: the 1 s targets watcher must not see it half-built
                     checker,

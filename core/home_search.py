@@ -176,7 +176,7 @@ def choose_home(
     )  # fmt: skip
     return q, (
         f"The home pose {why}, so these paths use a clear folded pose instead: **{deg}** deg "
-        "(Robot & cell → Robot → *Home position*: type it and *Apply typed values* to keep it)."
+        "(Robot & cell → Robot → *Home position* → **Use the paths' home** keeps it)."
     )
 
 

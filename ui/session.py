@@ -50,6 +50,7 @@ class Session:
     T_world_base: np.ndarray = field(default_factory=lambda: np.eye(4))
     q: np.ndarray | None = None
     home_deg: list | None = None  # project home pose (deg); None = the robot's spec home
+    suggested_home: np.ndarray | None = None  # v10 #8: the clear pose the paths used (not saved)
     part: PartState | None = None
     tool: schema.EndEffector | None = None
     tool_model: ToolModel | None = None

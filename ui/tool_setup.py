@@ -25,6 +25,18 @@ from ui.widgets import MAX_UPLOAD, PoseWidgets, notify, safe_name
 NONE = "(none)"
 
 
+SOURCES = ("Library or URDF", "Mesh / STEP file", "Package builder")
+SOURCE_NOTES = {
+    SOURCES[0]: "_A tool from the library, or a URDF (zip) of the tool head._",
+    SOURCES[1]: "_A tool from one mesh or STEP file (below)._",
+    SOURCES[2]: (
+        "_Build the tool from parts in the **Package builder** (its window): **End effector**, then "
+        "**Use in this project**. To change this project's tool there: **From the project → Edit the "
+        "project's tool**._"
+    ),
+}
+
+
 class ToolSetupTab:
     def __init__(self, server: viser.ViserServer, session: Session):
         self.server = server
@@ -40,14 +52,19 @@ class ToolSetupTab:
         self.nominal_listeners: list = []  # (key, SI value) after a rough-placement slider edit
         gui = server.gui
 
-        with gui.add_folder("Library"):
+        # v10 #8: where the tool comes from; only that source's fields are shown
+        self.source = gui.add_dropdown("Tool type", SOURCES, initial_value=SOURCES[0])
+        self.source_md = gui.add_markdown("")
+        self.lib_folder = gui.add_folder("Library")
+        with self.lib_folder:
             self.choice = gui.add_dropdown("Tool", (NONE, *list_tools()), initial_value=NONE)
             self.upload = gui.add_upload_button("Upload tool URDF (.zip)", mime_type="application/zip")
-            self.name = gui.add_text("Name", "")
-            self.save = gui.add_button("Save to library")
+        self.name = gui.add_text("Name", "")
+        self.save = gui.add_button("Save to library")
         from ui.tool_mesh_ui import ToolMeshPanel
 
         self.mesh_panel = ToolMeshPanel(server, self)  # a tool from one STL / STEP file
+        self.source.on_update(lambda _e: self.show_source())
         with gui.add_folder("Process"):
             self.process = gui.add_dropdown("Type", tuple(PRESETS), initial_value="custom")
             self.notes = gui.add_markdown("")
@@ -361,8 +378,39 @@ class ToolSetupTab:
         finally:
             self._busy = False
 
+    def show_source(self) -> None:
+        """v10 #8: only the chosen tool type's fields (library / mesh file / package builder)."""
+        src = self.source.value
+        self.lib_folder.visible = src == SOURCES[0]
+        self.mesh_panel.folder.visible = src == SOURCES[1]
+        self.mesh_panel.folder.expand_by_default = src == SOURCES[1]
+        self.source_md.content = SOURCE_NOTES[src]
+
+    def _source_of(self, ee) -> str:
+        """The tool type a loaded tool came from (its URDF's folder)."""
+        if ee is None or not ee.urdf:
+            return self.source.value
+        try:
+            folder = self.s.resolve(ee.urdf).parent
+        except FileNotFoundError:
+            return self.source.value
+        if (folder / "package.yaml").is_file():
+            return SOURCES[2]
+        if (folder / "datums.json").is_file() or (folder / "head.stl").is_file():
+            return SOURCES[1]
+        return SOURCES[0]
+
     def _refresh(self) -> None:
         ee = self.s.tool
+        src = self._source_of(ee)
+        if src != self.source.value:
+            self.source.value = src  # its on_update shows that type's fields
+        else:
+            self.show_source()
+        # contact faces / links only matter when something may touch the part
+        contact = ee is not None and PRESETS[ee.process].contact != "none"
+        for w in (self.pick, self.pick_angle, self.clear_faces, self.links_folder):
+            w.visible = contact
         for h in self._dyn:
             h.remove()
         self._dyn, self._nominal, self._link_boxes = [], {}, {}

@@ -39,6 +39,27 @@ ICON = {
     "changed": "✎ changed since you confirmed it",
     "todo": "○ not confirmed yet",
 }
+MARK = {"confirmed": "✔", "changed": "✎", "todo": "○"}  # v10 #8: status strip
+
+
+def strip_text(states: dict, n_results: int, sol_changes: list, feas: list, has_feas: bool) -> str:
+    """The status strip: each setup step's state, then whether the plan and the check are up to
+    date (v10 #8)."""
+    steps = " · ".join(f"{MARK[states[st]]} {i + 1} {TITLES[st]}" for i, st in enumerate(STEPS))
+    if not n_results:
+        plan = "no plan yet"
+    elif sol_changes:
+        plan = f"⚠ plan out of date ({', '.join(sol_changes)})"
+    else:
+        plan = "✔ plan up to date"
+    check = (
+        f"⚠ check out of date ({', '.join(feas)})"
+        if feas
+        else "✔ check up to date"
+        if has_feas
+        else "no check"
+    )
+    return f"{steps}  \n{plan} · {check}"
 
 
 def setup_reason(s: Session) -> str:
@@ -104,6 +125,7 @@ class Workflow:
         self.headers: dict[str, tuple] = {}
         self.opt_md = None
         self.results_md = None
+        self.strip_md = None  # v10 #8: status strip above the tabs (app.py)
         self.cell = None  # set by app.py
         self.carrier = None
         self.results = None
@@ -153,6 +175,9 @@ class Workflow:
                 b.disabled = bool(reason)
             md.content = f"⚠ {reason}." if reason else ""
             md.visible = bool(reason)
+
+    def status_strip(self) -> None:
+        self.strip_md = self.server.gui.add_markdown("")
 
     def optimize_header(self) -> None:
         self.opt_md = self.server.gui.add_markdown("")
@@ -207,6 +232,8 @@ class Workflow:
                 sol.label if sol else None,
                 tuple(sol_changes),
                 tuple(feas),
+                len(s.results),
+                bool(s.feasibility),
             )
             if key == self._last and not force:
                 return
@@ -225,6 +252,10 @@ class Workflow:
                 ok.disabled = states[step] == "confirmed"
                 if edit is not None:
                     ok.visible, edit.visible = not locked, locked
+            if self.strip_md is not None:
+                self.strip_md.content = strip_text(
+                    states, len(s.results), sol_changes, feas, bool(s.feasibility)
+                )
             if self.carrier is not None:
                 self.carrier.set_locked(locked)
             if self.cell is not None:
