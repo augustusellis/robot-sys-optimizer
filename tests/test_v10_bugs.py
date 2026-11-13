@@ -191,3 +191,48 @@ def test_snapshot_never_touches_the_session(tmp_path):
         th.join()
     assert seen == {("ur10e", "UR10e plan")}
     assert all(s.__dict__[k] is v for k, v in before.items())
+
+
+# --- task 4: carrier edits keep "stretch with the axis" and collision meshes ---------------------
+
+
+def test_rail_edit_round_trip_keeps_stretch(app, tmp_path):
+    """Done when: the rail example's track still follows the travel after an edit round trip."""
+    import trimesh
+
+    from ui import package_edit
+
+    s, b, cp = app["session"], app["builder"], app["carrier"]
+    assert app["project"].load_example("rail_long_part")
+    # give the carriage a mesh with its own collision mesh (metres), as the builder writes it
+    box = trimesh.creation.box((0.5, 0.5, 0.15))
+    box.apply_translation((0, 0, 0.075))
+    (s.project_dir / "assets").mkdir(exist_ok=True)
+    (box.copy().apply_scale(1000)).export(s.project_dir / "assets" / "carriage.stl")
+    hull = trimesh.creation.box((0.6, 0.6, 0.2))
+    hull.apply_translation((0, 0, 0.1))
+    hull.export(s.project_dir / "assets" / "carriage_low.stl")
+    bodies = list(s.base.bodies)
+    k = next(i for i, x in enumerate(bodies) if x.name == "carriage")
+    bodies[k] = bodies[k].model_copy(
+        update={"shape": "mesh", "size": None, "mesh": "assets/carriage.stl", "units": "mm",
+                "collision_mesh": "assets/carriage_low.stl"}
+    )  # fmt: skip
+    cp.load(s.base.model_copy(update={"bodies": bodies}))
+    assert cp.commit(E)
+    assert package_edit.edit_carrier(b, E)
+    part = next(x for x in b.pkg.parts if x.name == "carriage")
+    assert part.collision_file and next(x for x in b.pkg.parts if x.name == "track").stretch == "x"
+    assert b._use(E)
+    track = next(x for x in s.base.bodies if x.name == "track")
+    assert track.stretch == "x" and s.base.axis_length_m == {"x": 6.6} and not s.base.manual_travel
+    car = next(x for x in s.base.bodies if x.name == "carriage")
+    low = s.carrier().collision_mesh(s.base.bodies.index(car))
+    assert low is not None and abs(low.bounds[1, 2] - 0.2) < 1e-6  # metres, as before
+    # the track and the travel still follow the rail length
+    cp.len_x.value = 8000.0
+    assert cp.commit(E)
+    track = next(x for x in s.base.bodies if x.name == "track")
+    assert (
+        abs(track.size[0] - 8.0) < 1e-9 and abs(s.base.joints.x[1] - 3.7) < 1e-6
+    )  # 4 - carriage 0.25 - end stop 0.05

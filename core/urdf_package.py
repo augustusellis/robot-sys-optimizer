@@ -85,6 +85,8 @@ class Part(_M):
     # v10 #1 (tools): the URDF link the part is written to (read from the URDF: contact links of
     # the project's tool keep pointing at it); None = a link named after the part
     link: str | None = Field(default=None, max_length=64)
+    # v10 #4 (rails / gantries): the body follows an axis length (core.schema_base.Primitive.stretch)
+    stretch: Literal["", "x", "y"] = ""
 
 
 def tool_link(part: Part) -> str:
@@ -374,6 +376,7 @@ def to_base(p: Package, mesh_rel: str, current: Base, collision: dict[str, str] 
             units=part.units,
             attach=ATTACH[part.stage],
             pose=part.pose,
+            stretch=part.stretch if p.kind in ("rail", "gantry") else "",
         )
         for part in p.parts
     ]
@@ -385,29 +388,13 @@ def to_base(p: Package, mesh_rel: str, current: Base, collision: dict[str, str] 
         joints = CarrierJoints(x=x, y=y, yaw_deg=j.yaw_deg or (-180.0, 180.0), lift=p.lift)
     else:
         joints = CarrierJoints(x=p.x, y=p.y if p.kind == "gantry" else None, lift=p.lift)
-    keep = current.model_dump(
-        exclude={
-            "mode",
-            "carrier",
-            "bodies",
-            "joints",
-            "T_mount",
-            "chassis",
-            "riser",
-            "track",
-            "axis_length_m",
-            "manual_travel",
-        }
-    )
-    return Base(
-        mode="movable",
-        carrier=p.kind,
-        bodies=bodies,
-        joints=joints,
-        T_mount=p.mount,
-        manual_travel=True,
-        **keep,
-    )
+    # v10 #4: bodies that follow an axis keep the project's axis lengths (and their travel rule)
+    lengths = any(b.stretch for b in bodies) and current.carrier == p.kind and current.axis_length_m
+    drop = {"mode", "carrier", "bodies", "joints", "T_mount", "chassis", "riser", "track"}
+    keep = current.model_dump(exclude=drop if lengths else drop | {"axis_length_m", "manual_travel"})
+    if not lengths:
+        keep["manual_travel"] = True
+    return Base(mode="movable", carrier=p.kind, bodies=bodies, joints=joints, T_mount=p.mount, **keep)
 
 
 def to_tool(p: Package, urdf_rel: str) -> EndEffector:

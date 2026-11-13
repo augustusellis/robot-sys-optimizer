@@ -200,6 +200,7 @@ def open_package(data: bytes, dest: Path) -> tuple[Package, Path]:
         authored = [x for x in meta.get("parts") or [] if isinstance(x, dict)]
         modes = {str(x.get("name")): x.get("collision") for x in authored}
         files = {str(x.get("name")): x.get("collision_file") for x in authored}
+        stretch = {str(x.get("name")): x.get("stretch") for x in authored}
         mesh_dir = info.path.parent / "meshes"
         parts = []
         for x in pkg.parts:
@@ -208,6 +209,8 @@ def open_package(data: bytes, dest: Path) -> tuple[Package, Path]:
             f = files.get(x.name)
             if f and (mesh_dir / f).is_file():  # an imported collision mesh, as authored
                 x = x.model_copy(update={"collision_file": f})
+            if stretch.get(x.name) in ("x", "y"):  # v10 #4: follows an axis length
+                x = x.model_copy(update={"stretch": stretch[x.name]})
             parts.append(x)
         upd["parts"] = parts
     except ValueError:

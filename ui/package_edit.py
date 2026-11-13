@@ -143,6 +143,12 @@ def edit_carrier(b, e=None) -> bool:
                 fname = f"{safe(p.name or f'body{k}')}{src.suffix.lower()}"
                 shutil.copy(src, mesh_dir / fname)
                 upd["mesh"] = fname
+                if p.collision_mesh:  # v10 #4: the body's collision mesh (metres) in its units
+                    c = trimesh.load(str(b.s.resolve(p.collision_mesh)), force="mesh")
+                    c.apply_scale(1.0 / UNIT_SCALE[p.units])
+                    upd["collision_file"] = f"collision_src/{safe(p.name or f'body{k}')}.stl"
+                    (mesh_dir / "collision_src").mkdir(exist_ok=True)
+                    c.export(mesh_dir / upd["collision_file"])
             parts.append(
                 Part(
                     name=safe(p.name or f"body{k}"),
@@ -153,6 +159,7 @@ def edit_carrier(b, e=None) -> bool:
                     height=p.height,
                     units=p.units,
                     pose=p.pose,
+                    stretch=p.stretch,
                     **upd,
                 )
             )
