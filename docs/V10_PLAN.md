@@ -7,7 +7,7 @@ Agreed with the user on 2026-11-13 after the v9 code review. **Start a new sessi
 
 **Stop after task 10 and ask the user for confirmation before starting task 11.** Report what tasks
 1-10 did (with measurements), what was not verified in a browser, and anything that changed the
-plan. Tasks 11-20 start only after the user says to continue (they may change the order or scope).
+plan. Tasks 11-22 start only after the user says to continue (they may change the order or scope).
 
 ## Ground rules
 
@@ -63,7 +63,7 @@ plan. Tasks 11-20 start only after the user says to continue (they may change th
 
 7. **Reuse worker processes** across robots in Compare and across frames in Gantry placement (one
    checker pool per job, re-targeted per robot / frame), instead of starting a pool per run. Needed by
-   task 15. *Done when* the gantry placement run (247 s for 50 frames + 2 plans with the UR20 on
+   task 17. *Done when* the gantry placement run (247 s for 50 frames + 2 plans with the UR20 on
    gantry_overhead, v9) is measurably faster.
 8. **The rest of #10:** the Tool tab shows only the chosen tool type's fields; the home pose is set in
    one place; a status strip (each workflow step's state and what is out of date); the package builder
@@ -83,46 +83,67 @@ plan. Tasks 11-20 start only after the user says to continue (they may change th
 
 **-> Checkpoint: stop here and ask the user before task 11.**
 
+## Part C2: tool contact and surface fit (added 2026-11-13)
+
+11. **What may touch the part, chosen in the package builder.** For tool packages, per TCP: tick whole
+    **parts** that may touch the part (the pad, a brush, a nozzle tip) and / or **pick STL faces** on a mesh
+    part in the builder's 3D view (click, brush and box select like Targets; the one-ring tolerance of
+    core.collision). Shown in the builder preview (green = may touch); saved in package.yaml; *Use in this
+    project* writes them into the tool's TCPs (``contact_links`` = those parts' links, one link per part
+    from task 1; ``contact_faces`` = face ids of that link's visual mesh). Editing the project's tool
+    brings them back. Everything not picked still collides with the part. *Done when* a sander built from
+    STL parts with only its pad face picked reaches its points, and the body still counts as a collision.
+12. **Minimum surface radius per tool.** Each tool gets a **minimum surface radius** (mm; per TCP when a
+    tool has several): set in the package builder for packages and in the Tool tab for library tools,
+    saved with the tool. The local surface radius at every target is estimated from the part mesh over
+    the tool's contact footprint (curvature from a quadric fit to the surface around the point; concave
+    and convex separately, with an option for which ones the limit applies to: concave by default). A
+    point whose radius is below the tool's minimum is **incompatible with the tool**: shown in Targets /
+    *Colour part by* and the unreached view, listed in the log, and in the report ("N points not
+    compatible with the tool's minimum radius R mm: surface radius r at points ..."); an option leaves
+    them out of planning instead of only reporting them. *Done when* a part with a fillet tighter than the
+    minimum flags exactly the fillet points in Results and the report.
+
 ## Part D: path algorithms
 
-11. **Trajectory optimisation for the moves between points** (home, groups, configuration changes):
+13. **Trajectory optimisation for the moves between points** (home, groups, configuration changes):
     smoother and shorter joint paths with clearance as a cost (CHOMP / TrajOpt style, numpy), seeded by
     the current RRT-connect + shortcut, which stays as the fallback.
-12. **Time-parameterised trajectories** with joint velocity, acceleration and jerk limits (TOPP-style)
+14. **Time-parameterised trajectories** with joint velocity, acceleration and jerk limits (TOPP-style)
     for an accurate cycle time and smooth playback; the cycle-time panel and report use it.
-13. **Coverage patterns:** contour-parallel and spiral passes for curved faces, raster passes with
+15. **Coverage patterns:** contour-parallel and spiral passes for curved faces, raster passes with
     turn-arounds sized to the tool footprint; chosen per target group.
-14. **Coordinated gantry / rail motion, as an option.** A **Carrier motion** setting: **Uncoordinated**
+16. **Coordinated gantry / rail motion, as an option.** A **Carrier motion** setting: **Uncoordinated**
     (current stop-and-go: the carrier moves, then the arm works) or **Coordinated** (the carrier moves
     while the arm works: long parts in continuous passes). Coordinated planning splits each pass between
     the carrier axes and the arm within each axis's limits; paths, cycle time, playback, the report and
-    the program export (task 19) support both. *Done when* the rail example can be built both ways and
+    the program export (task 21) support both. *Done when* the rail example can be built both ways and
     the cycle times are compared.
 
 ## Part E: comparisons
 
-15. **Compare setups** (generalises Compare robots): tick robots and / or tools (library tools and builder
+17. **Compare setups** (generalises Compare robots): tick robots and / or tools (library tools and builder
     packages), plan each combination, one table, any of them viewable in Results with the existing viewer
     (ui.compare_view); the project's own setup always included.
-16. **Gantry placement improvements:** continuous refinement of the best frame after the grid search;
+18. **Gantry placement improvements:** continuous refinement of the best frame after the grid search;
     distinct top frames (v9 planned two frames 300 mm apart with identical results); optional gantry beam
     height with legs that stretch.
 
 ## Part F: builder and collision details
 
-17. **Collision options:** padding per robot link (e.g. forearm and wrist only); surfaces kept exact on
+19. **Collision options:** padding per robot link (e.g. forearm and wrist only); surfaces kept exact on
     parts with several meshes; Cancel for Simplify.
-18. **Importing:** Cancel for STEP import; guess a mesh's units from its size (ask when unsure).
+20. **Importing:** Cancel for STEP import; guess a mesh's units from its size (ask when unsure).
 
 ## Part G: outputs
 
-19. **Robot programs:** export URScript (UR), TP (FANUC CRX) and RAPID (ABB) from the built paths,
+21. **Robot programs:** export URScript (UR), TP (FANUC CRX) and RAPID (ABB) from the built paths,
     coordinated or not, with user frames and tool definitions.
-20. **Report:** the comparison always includes the project's setup, with a picture per setup; gantry
+22. **Report:** the comparison always includes the project's setup, with a picture per setup; gantry
     placement results get their own section; coordinated vs uncoordinated cycle time when both exist.
 
 ## Status
 
 | Task | State | Notes |
 |---|---|---|
-| 1-20 | not started | |
+| 1-22 | not started | |
