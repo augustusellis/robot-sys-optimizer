@@ -13,6 +13,8 @@ import json
 
 import numpy as np
 
+from ui.fingerprint import content
+
 COMPONENTS = ("robot", "carrier", "tool", "part", "targets", "stayout")
 LABELS = {
     "robot": "robot / mount",
@@ -41,39 +43,81 @@ def _pose(T: np.ndarray, digits: int = 6) -> list:
     return np.round(np.asarray(T, float), digits).tolist()
 
 
-def components(s, base_pose: bool = False, tool_nominal: bool = True) -> dict[str, str]:
+def _prims(s, prims, legacy: bool) -> list:
+    """Primitives (carrier bodies, stay-out zones) with mesh paths replaced by their content."""
+    out = []
+    for p in prims:
+        d = p.model_dump(mode="json")
+        if not legacy:
+            for k in ("mesh", "collision_mesh"):
+                if d.get(k):
+                    d[k] = content(s, d[k])
+        out.append(d)
+    return out
+
+
+def components(s, base_pose: bool = False, tool_nominal: bool = True, legacy: bool = False) -> dict[str, str]:
     """Hash per setup component of session ``s``.
 
     ``base_pose``: include the full robot base pose (the feasibility check runs from it;
     plans choose their own stations). In static mode the base height and orientation always
     count, because the planner keeps them. ``tool_nominal=False`` leaves out the tool's
     rough placement (the tool optimizer chooses it: applying its result must not make the
-    result itself out of date)."""
+    result itself out of date). Files count by content (v10 #2: ui.fingerprint), so copying
+    them into the project on save changes nothing; ``legacy``: the v9 hashes (by path), only
+    to recognise stamps saved by v9 (``migrate``)."""
     T = np.asarray(s.T_world_base, float)
-    robot = {"name": s.robot_name, "urdf": s.robot_urdf, "mount": s.mount}
+    urdf = s.robot_urdf if legacy else content(s, s.robot_urdf, folder=True)
+    robot = {"name": s.robot_name, "urdf": urdf, "mount": s.mount}
     if s.robot is not None and s.robot.spec.limits_deg is not None:  # v6: user joint limits
         robot["limits"] = s.robot.spec.limits_deg
     if s.base.mode != "movable":
         robot["base_z"] = round(float(T[2, 3]), 6)  # the planner keeps height and orientation
         robot["base_R"] = _pose(T[:3, :3])
+    if legacy:
+        carrier = s.base.model_dump_json()
+    else:
+        carrier = {**s.base.model_dump(mode="json"), "bodies": _prims(s, s.base.bodies, legacy)}
     out = {
         "robot": _h(robot),
-        "carrier": _h(s.base.model_dump_json()),
+        "carrier": _h(carrier),
         "tool": "",
         "part": "",
         "targets": _h(s.targets.model_dump_json()),
-        "stayout": _h([p.model_dump(mode="json") for p in getattr(s, "stayouts", [])]),
+        "stayout": _h(_prims(s, getattr(s, "stayouts", []), legacy)),
     }
     if s.tool is not None:
         tool = s.tool.model_dump(mode="json")
         if not tool_nominal:
             tool["extension"].pop("nominal", None)
+        if not legacy:
+            tool["urdf"] = content(s, tool.get("urdf"), folder=True)
         out["tool"] = _h(tool)
     if s.part is not None:
-        out["part"] = _h([s.part.mesh_path, s.part.units, _pose(s.part.T_world_part)])
+        mesh = s.part.mesh_path if legacy else content(s, s.part.mesh_path)
+        out["part"] = _h([mesh, s.part.units, _pose(s.part.T_world_part)])
     if base_pose:
         out["base_pose"] = _h(_pose(T))
     return out
+
+
+def migrate(s) -> int:
+    """v10 #2: stamps and confirmed steps saved by v9 hash files by path. Where a stored hash
+    equals the v9 hash of the current setup it is replaced by today's (content) hash, so loading
+    an older project does not flag every plan. Returns how many hashes were replaced."""
+    n = 0
+    variants = [
+        (components(s, legacy=True, tool_nominal=t), components(s, tool_nominal=t)) for t in (True, False)
+    ]
+    stamps = [s.stamps, *(c.get("stamps", {}) for c in (getattr(s, "compared", None) or {}).values())]
+    for d in [v for st in stamps for v in st.values()] + list(s.steps.values()):
+        for k in ("robot", "carrier", "tool", "part", "stayout"):
+            for old, new in variants:
+                if k in d and d[k] == old[k] and old[k] != new[k]:
+                    d[k] = new[k]
+                    n += 1
+                    break
+    return n
 
 
 def stamp_for(s, kind: str) -> dict[str, str]:

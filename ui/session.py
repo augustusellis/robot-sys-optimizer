@@ -331,6 +331,9 @@ class Session:
         self.targets = project.targets
         self.set_tool(project.end_effector)
         self._apply_work(project.work)
+        from ui.staleness import migrate
+
+        migrate(self)  # v10 #2: stamps saved by v9 hashed files by path
 
     def _apply_work(self, w: schema.WorkState) -> None:
         from core.feasibility import result_from_data

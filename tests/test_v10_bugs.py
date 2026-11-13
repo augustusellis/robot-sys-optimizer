@@ -89,3 +89,62 @@ def test_edited_sander_keeps_its_pad(app):
     s.set_tool(ee.model_copy(update={"tcps": [ee.tcps[0].model_copy(update={"contact_links": []})]}))
     opt.start(block=True)
     assert any(r.reason == "collision" for r in s.feasibility.values())
+
+
+# --- task 2: saving no longer clears plans ------------------------------------------------------
+
+
+def _example_copy(tmp_path, name="rail_long_part"):
+    import shutil
+    from pathlib import Path
+
+    from ui.session import Session, load_project
+
+    src = Path(__file__).resolve().parents[1] / "examples" / name
+    shutil.copytree(src, tmp_path / name)
+    s = Session()
+    load_project(s, tmp_path / name)
+    return s
+
+
+def test_save_that_bundles_the_part_keeps_plans(tmp_path):
+    """Done when: a save that bundles an outside part keeps the plans and feasibility results."""
+    import shutil
+
+    from ui import staleness
+    from ui.session import save_project
+
+    s = _example_copy(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    shutil.copy(s.resolve(s.part.mesh_path), outside / "my_part.stl")
+    s.part.mesh_path = (outside / "my_part.stl").as_posix()
+    from core.schema import Solution, Station
+
+    s.results = [Solution(label="P", stations=[Station(xyz=(0, 0, 0))])]
+    s.stamps = {"P": staleness.stamp_for(s, "plan"), "feasibility": staleness.stamp_for(s, "feasibility")}
+    fresh: set[str] = set()
+    assert not staleness.drop_stale_results(s, fresh) and fresh == {"P"}
+    save_project(s)
+    assert s.part.mesh_path.startswith("assets/imported/") and s.bundled
+    assert staleness.solution_changes(s, s.results[0]) == []
+    assert staleness.feasibility_changes(s) == []
+    assert not staleness.drop_stale_results(s, fresh) and [r.label for r in s.results] == ["P"]
+    # a real change of the file still counts
+    m = s.part_mesh().copy()
+    m.apply_translation((0.0, 0.0, 0.001))
+    m.export(s.resolve(s.part.mesh_path))
+    assert staleness.solution_changes(s, s.results[0]) == ["part"]
+
+
+def test_v9_stamps_migrate(tmp_path):
+    from ui import staleness
+
+    s = _example_copy(tmp_path)
+    old = staleness.components(s, legacy=True)
+    s.stamps = {"P": dict(old)}
+    s.steps = {"Cell": {k: old[k] for k in staleness.STEP_COMPONENTS["Cell"]}}
+    assert staleness.changed(s.stamps["P"], staleness.components(s))  # paths vs contents
+    assert staleness.migrate(s) > 0
+    assert staleness.changed(s.stamps["P"], staleness.components(s)) == []
+    assert staleness.step_state(s, "Cell") == "confirmed"
