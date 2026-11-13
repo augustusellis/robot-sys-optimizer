@@ -183,17 +183,9 @@ class Session:
         saved."""
         for fn in self.before_save:
             fn()
-        stash = self.view_stash
-        if not stash:
-            return self.to_project()
-        cur = {k: getattr(self, k) for k in stash}
-        try:
-            for k, v in stash.items():
-                setattr(self, k, v)
-            return self.to_project()
-        finally:
-            for k, v in cur.items():
-                setattr(self, k, v)
+        # v10 #3: the stash goes in as overrides; the live session is never swapped (autosave
+        # runs this on a background thread while the GUI reads the viewed robot)
+        return self.to_project(self.view_stash or None)
 
     def compared_data(self) -> list:
         from core.feasibility import result_to_data
@@ -216,42 +208,52 @@ class Session:
             for name, c in self.compared.items()
         ]
 
-    def work_state(self) -> schema.WorkState:
+    def work_state(self, overrides: dict | None = None) -> schema.WorkState:
         from core.feasibility import result_to_data
 
+        o = overrides or {}
+        q, results = o.get("q", self.q), o.get("results", self.results)
+        result_points, stamps = o.get("result_points", self.result_points), o.get("stamps", self.stamps)
         sel_mesh, sel = self.selection if self.selection else (None, [])
         return schema.WorkState(
-            q=None if self.q is None else [float(v) for v in self.q],
+            q=None if q is None else [float(v) for v in q],
             selection_mesh=sel_mesh,
             selection=[int(f) for f in sel],
             feasibility=[result_to_data(r) for r in self.feasibility.values()],
             result_points={
                 label: [result_to_data(r) for r in pts.values()]
-                for label, pts in self.result_points.items()
-                if label in {sol.label for sol in self.results}
+                for label, pts in result_points.items()
+                if label in {sol.label for sol in results}
             },
             ui=dict(self.ui),
             stamps={
                 k: dict(v)
-                for k, v in self.stamps.items()
-                if k == "feasibility" or k in {sol.label for sol in self.results}
+                for k, v in stamps.items()
+                if k == "feasibility" or k in {sol.label for sol in results}
             },
             steps={k: dict(v) for k, v in self.steps.items()},
         )
 
-    def to_project(self) -> schema.Project:
-        r = self.robot
+    def to_project(self, overrides: dict | None = None) -> schema.Project:
+        """The project file of this session; ``overrides`` (field name -> value, e.g. the
+        compare view's stash) replace session fields without touching the session."""
+        o = overrides or {}
+
+        def g(k):
+            return o[k] if k in o else getattr(self, k)
+
+        r = g("robot")
         robot = (
             None
             if r is None
             else schema.Robot(
-                name=self.robot_name,
-                urdf=self.robot_urdf,
+                name=g("robot_name"),
+                urdf=g("robot_urdf"),
                 flange_link=r.spec.flange_link,
                 mount=self.mount,
                 base_pose=matrix_to_pose(self.T_world_base),
                 ik=r.spec.ik,
-                home_deg=None if self.home_deg is None else [float(v) for v in self.home_deg],
+                home_deg=None if g("home_deg") is None else [float(v) for v in g("home_deg")],
                 joint_limits_deg=r.spec.limits_deg,
             )
         )
@@ -269,10 +271,10 @@ class Session:
             part=part,
             end_effector=self.tool,
             targets=self.targets,
-            results=self.results,
+            results=g("results"),
             base=self.base,
             stayouts=list(self.stayouts),
-            work=self.work_state(),
+            work=self.work_state(o),
             compared=self.compared_data(),
             **self.extra,
         )

@@ -148,3 +148,46 @@ def test_v9_stamps_migrate(tmp_path):
     assert staleness.migrate(s) > 0
     assert staleness.changed(s.stamps["P"], staleness.components(s)) == []
     assert staleness.step_state(s, "Cell") == "confirmed"
+
+
+# --- task 3: no session swap while viewing a compared robot -------------------------------------
+
+
+def test_snapshot_never_touches_the_session(tmp_path):
+    """Done when: snapshot leaves every session field untouched (a concurrent reader)."""
+    import threading
+
+    from core.schema import Solution, Station
+
+    s = _example_copy(tmp_path)
+    own = [Solution(label="own plan", stations=[Station(xyz=(0, 0, 0))])]
+    viewed = [Solution(label="UR10e plan", stations=[Station(xyz=(1, 0, 0))])]
+    s.view_stash = {
+        "robot": s.robot,
+        "robot_name": "ur20",
+        "robot_urdf": None,
+        "q": s.q,
+        "home_deg": None,
+        "results": own,
+        "result_points": {},
+        "stamps": {},
+    }
+    s.robot_name, s.results = "ur10e", viewed  # what the compare view shows
+    before = dict(s.__dict__)
+    seen, stop = set(), threading.Event()
+
+    def reader() -> None:
+        while not stop.is_set():
+            seen.add((s.robot_name, s.results[0].label))
+
+    th = threading.Thread(target=reader)
+    th.start()
+    try:
+        for _ in range(30):
+            p = s.snapshot()
+            assert p.robot.name == "ur20" and [r.label for r in p.results] == ["own plan"]
+    finally:
+        stop.set()
+        th.join()
+    assert seen == {("ur10e", "UR10e plan")}
+    assert all(s.__dict__[k] is v for k, v in before.items())

@@ -148,4 +148,5 @@ plan. Tasks 11-22 start only after the user says to continue (they may change th
 |---|---|---|
 | 1 | done | One URDF link per tool part; contacts carried over or reported. Found and fixed: yourdfpy drops a `<collision>` origin when the element is named like its link. Sander edited through the builder: 25/25 reached from the quick plan's stops; without the pad as contact all 25 collide. |
 | 2 | done | Setup hashes follow file contents (cached by mtime); v9 stamps migrate on load. A save that bundles an outside part keeps the plan and the check (test); changing the file's content still flags them. |
-| 3-22 | not started | |
+| 3 | done | `to_project(overrides)`; test: 30 snapshots against a concurrent reader, every session field the same object. |
+| 4-22 | not started | |
