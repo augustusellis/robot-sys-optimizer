@@ -11,8 +11,12 @@ the serial loop then reads them from the memo. Results are identical to the seri
 "point" (``check_point``) or "configs" (``check_point_configs``; clearance ignored), and an
 optional 9th entry, the part pose for that call (tolerance samples, ``opt.tolerance``).
 
-Pools are kept per spec (``pool_for``): building one costs a few seconds (imports, robot,
-collision scene per worker), so later plans with the same setup reuse it. Workers end
+Workers are kept between runs (v10 #7): one process pool (``_executor``, per worker count) lives
+as long as the process that made it, and a ``CheckPool`` is a light handle for one setup. Its spec
+is pickled once to a file; each task carries the setup's key and that file, and a worker whose
+current setup has another key re-targets (loads the spec, builds that checker) before it runs the
+calls. Compare (one setup per robot) and Gantry placement (one per frame) therefore start the
+processes once instead of once per robot / frame (a Windows spawn is ~3 s per worker). Workers end
 themselves when the process that made the pool ends (watchdog on the parent).
 """
 
@@ -22,9 +26,11 @@ import hashlib
 import multiprocessing as mp
 import os
 import pickle
+import tempfile
 import threading
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 
@@ -82,7 +88,8 @@ class CheckerSpec:
         return hashlib.sha1(pickle.dumps(self, protocol=5)).hexdigest()
 
 
-_CHECKER = None  # in a pool worker
+_CHECKER = None  # in a pool worker: the checker of the current setup
+_KEY = None  # its key
 
 
 def _watch_parent() -> None:  # pragma: no cover - runs in pool workers
@@ -92,16 +99,27 @@ def _watch_parent() -> None:  # pragma: no cover - runs in pool workers
         os._exit(0)
 
 
-def _init(spec: CheckerSpec) -> None:  # pragma: no cover - runs in pool workers
-    global _CHECKER
+def _init() -> None:  # pragma: no cover - runs in pool workers
     threading.Thread(target=_watch_parent, daemon=True).start()
-    _CHECKER = spec.build()
+    import core.collision  # noqa: F401  (warm imports: the first re-target is faster)
+    import core.feasibility  # noqa: F401
 
 
-def _run(settings, calls: list) -> list:  # pragma: no cover - runs in pool workers
+def _target(key: str, path: str):  # pragma: no cover - runs in pool workers
+    """This worker's checker for setup ``key`` (built from the spec file when it changed)."""
+    global _CHECKER, _KEY
+    if key != _KEY:
+        with open(path, "rb") as f:
+            spec = pickle.load(f)
+        _CHECKER, _KEY = None, None  # the old setup's robot / scene go first (memory)
+        _CHECKER, _KEY = spec.build(), key
+    return _CHECKER
+
+
+def _run(key: str, path: str, settings, calls: list) -> list:  # pragma: no cover - in pool workers
     from opt.tolerance import set_part
 
-    c = _CHECKER
+    c = _target(key, path)
     c.settings = settings
     T_part0 = getattr(c, "_T_part0", None)
     if T_part0 is None:
@@ -118,18 +136,59 @@ def _run(settings, calls: list) -> list:  # pragma: no cover - runs in pool work
     return out
 
 
+def _noop() -> None:  # pragma: no cover - runs in pool workers
+    return None
+
+
+def warm(workers: int) -> None:
+    """Start the pool's processes in the background (a spawn blocks ~3 s per worker): the caller
+    goes on with work that needs no pool (set cover, frame scoring) meanwhile."""
+    if workers > 1:
+        threading.Thread(target=lambda: _executor(workers).submit(_noop), daemon=True).start()
+
+
+_EXECUTORS: dict[int, ProcessPoolExecutor] = {}
+_LOCK = threading.Lock()
+SPEC_DIR = Path(tempfile.gettempdir()) / f"rso_check_specs_{os.getpid()}"
+
+
+def _executor(workers: int) -> ProcessPoolExecutor:
+    """The persistent process pool with ``workers`` processes (one at a time: each worker holds a
+    robot + scene). A pool that broke (a worker died) is replaced."""
+    with _LOCK:
+        ex = _EXECUTORS.get(workers)
+        if ex is not None and not getattr(ex, "_broken", False):
+            return ex
+        for old in _EXECUTORS.values():
+            old.shutdown(wait=False, cancel_futures=True)
+        _EXECUTORS.clear()
+        ex = _EXECUTORS[workers] = ProcessPoolExecutor(
+            max_workers=workers, mp_context=mp.get_context("spawn"), initializer=_init
+        )
+        return ex
+
+
 class CheckPool:
+    """The check pool for one setup (a handle on the shared processes, see the module docstring)."""
+
     def __init__(self, spec: CheckerSpec, workers: int):
         self.workers = int(workers)
         self.key = spec.key()
-        self._ex = ProcessPoolExecutor(
-            max_workers=self.workers, mp_context=mp.get_context("spawn"), initializer=_init, initargs=(spec,)
-        )
+        SPEC_DIR.mkdir(parents=True, exist_ok=True)
+        self.path = str(SPEC_DIR / f"{self.key}.pkl")
+        if not os.path.exists(self.path):
+            tmp = f"{self.path}.{threading.get_ident()}.tmp"
+            with open(tmp, "wb") as f:
+                pickle.dump(spec, f, protocol=5)
+            os.replace(tmp, self.path)
+        self._ex = _executor(self.workers)
 
     def run(self, settings, calls: list, cancelled=None) -> list:
         """Results of ``calls`` in order (``cancelled`` is polled between chunks)."""
+        if getattr(self._ex, "_broken", False):
+            self._ex = _executor(self.workers)
         chunks = [calls[i : i + CHUNK] for i in range(0, len(calls), CHUNK)]
-        futs = [self._ex.submit(_run, settings, ch) for ch in chunks]
+        futs = [self._ex.submit(_run, self.key, self.path, settings, ch) for ch in chunks]
         out = []
         for f in futs:
             if cancelled is not None and cancelled():
@@ -142,24 +201,29 @@ class CheckPool:
         return out
 
     def shutdown(self) -> None:
-        self._ex.shutdown(wait=False, cancel_futures=True)
+        """Forget this setup (the processes stay for the next one: ``shutdown_all`` ends them)."""
+        try:
+            os.remove(self.path)
+        except OSError:
+            pass
 
 
 _POOLS: dict[str, CheckPool] = {}
 
 
 def pool_for(spec: CheckerSpec, workers: int) -> CheckPool | None:
-    """The pool for this setup (reused while it is the same), or None for ``workers <= 1``."""
+    """The pool for this setup (re-targets the shared workers), or None for ``workers <= 1``."""
     if workers <= 1:
         return None
     key = spec.key()
     p = _POOLS.get(key)
-    if p is not None and p.workers == workers:
+    if p is not None and p.workers == workers and os.path.exists(p.path):
         return p
-    for old in _POOLS.values():  # one pool at a time: workers hold a robot + scene each
+    for old in _POOLS.values():  # one setup at a time (its spec file)
         old.shutdown()
     _POOLS.clear()
     p = _POOLS[key] = CheckPool(spec, workers)
+    warm(workers)  # v10 #7: the processes start while the planner's first steps run
     return p
 
 
@@ -167,6 +231,10 @@ def shutdown_all() -> None:
     for p in _POOLS.values():
         p.shutdown()
     _POOLS.clear()
+    with _LOCK:
+        for ex in _EXECUTORS.values():
+            ex.shutdown(wait=False, cancel_futures=True)
+        _EXECUTORS.clear()
 
 
 def prefetch(checker, calls: list) -> None:

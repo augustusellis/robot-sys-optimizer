@@ -152,4 +152,5 @@ plan. Tasks 11-22 start only after the user says to continue (they may change th
 | 4 | done | Rail example round trip: track keeps `stretch: x`, axis length 6.6 m kept; 8 m rail -> track 8 m, travel +-3.7 m; carriage collision mesh kept (metres). No builder field for stretch (kept as authored). |
 | 5 | done | New fingerprint component *collision settings* (arm padding, part collision mesh by content, kept faces); tool / carrier collision files through T2. Test: padding, carrier, tool and part collision files each flag the plan; jog scene + left overlay redraw with the 1.5x part collision mesh. Limitation: a project saved with arm padding is flagged once after loading in v10. |
 | 6 | done | Fixed bodies checked against keep-outs and stay-outs (test on gantry_overhead posts / beam); range resets per project and carrier change; Use this frame asks (modal not verified in a browser); Optimizer + fields saved. |
-| 7-22 | not started | |
+| 7 | done | Persistent check processes re-targeted per setup + background spawn. gantry_overhead UR20, 50 frames + 2 plans, 4 workers (this PC, `scripts/profile_frame.py`): v9 223 s -> 197 s (scoring 31 s, plans 98 + 94 s -> 86 + 80 s), same plans. Compare UR20 / UR10e / UR30 on rail_long_part: 55.1 s -> 51.0 s, same rows. Spawn was ~12.6 s per pool (Windows spawn ~3 s per worker, blocking). |
+| 8-22 | not started | |

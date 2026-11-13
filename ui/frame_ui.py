@@ -39,6 +39,9 @@ def frame_job(payload: dict, emit, cancelled) -> list[dict]:
     spec = payload["spec"]
     fs: FrameSettings = spec["frame"]
     s0 = session_from(payload)
+    from opt.parallel import warm
+
+    warm(int(spec.get("workers", 1)))  # v10 #7: check processes start while frames are scored
     emit("progress", ("loading reachability map", 0.0))
     rmap = map_for_tcps(
         Robot(s0.robot.spec),
