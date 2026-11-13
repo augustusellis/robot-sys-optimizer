@@ -82,6 +82,14 @@ class Part(_M):
     # v9 #3: an imported collision mesh (file in meshes/, same units and frame as ``mesh``); when
     # set it is the part's collision shape (with the package padding), instead of a simplified copy
     collision_file: str | None = None
+    # v10 #1 (tools): the URDF link the part is written to (read from the URDF: contact links of
+    # the project's tool keep pointing at it); None = a link named after the part
+    link: str | None = Field(default=None, max_length=64)
+
+
+def tool_link(part: Part) -> str:
+    """The URDF link of a tool part (v10 #1: one link per part, ``mount`` is the root)."""
+    return safe(part.link or part.name)
 
 
 class Collision(_M):
@@ -137,6 +145,8 @@ def check(p: Package) -> list[str]:
         out.append("a part needs a mesh (STL / OBJ / PLY / STEP)")
     if len({t.name for t in p.tcps}) != len(p.tcps):
         out.append("TCP names must differ")
+    if p.kind == "tool" and {f"tcp_{safe(t.name)}" for t in p.tcps} & {tool_link(x) for x in p.parts}:
+        out.append("a part's link may not be named like a TCP frame (tcp_<name>)")
     if p.kind in ("rail", "gantry") and p.x is None:
         out.append(f"a {p.kind} needs an X travel range")
     if p.kind == "gantry" and p.y is None:
@@ -220,6 +230,11 @@ def build_urdf(p: Package, collision: dict[str, str] | None = None) -> str:
     if p.kind in CARRIERS and p.lift is None:
         stages.remove("lift")
     links: dict[str, list[str]] = {LINK[s]: [] for s in stages}
+    owner = {}  # tool: part name -> its own link under the mount (v10 #1)
+    if p.kind == "tool":
+        owner = {part.name: tool_link(part) for part in p.parts}
+        for n in owner.values():
+            links.setdefault(n, [])
     for part in p.parts:
         g, T = _geometry(part)
         o = f"<origin {_xyz_rpy(T)}/>"
@@ -227,10 +242,11 @@ def build_urdf(p: Package, collision: dict[str, str] | None = None) -> str:
         cf = collision.get(part.name)
         cel = f'<geometry><mesh filename="meshes/{cf}"/></geometry>' if cf else el
         co = f"<origin {_xyz_rpy(pose_to_matrix(part.pose))}/>" if cf else o  # file: the part frame
-        links[LINK[part.stage]].append(
-            f'    <visual name="{safe(part.name)}">{o}{el}</visual>\n'
-            f'    <collision name="{safe(part.name)}">{co}{cel}</collision>\n'
-        )
+        ln = owner.get(part.name, LINK[part.stage])
+        # an element named like its link loses its origin in yourdfpy's scene graph (node name
+        # clash): leave it unnamed, reading names it after the link
+        nm = "" if safe(part.name) == ln else f' name="{safe(part.name)}"'
+        links[ln].append(f"    <visual{nm}>{o}{el}</visual>\n    <collision{nm}>{co}{cel}</collision>\n")
     head = f'<?xml version="1.0"?>\n<!-- {p.kind} package {safe(p.name)} (Package builder) -->\n'
     out = [head + f'<robot name="{safe(p.name)}">']
     for name, geo in links.items():
@@ -245,6 +261,9 @@ def build_urdf(p: Package, collision: dict[str, str] | None = None) -> str:
         return s + "</joint>"
 
     if p.kind == "tool":
+        for n in links:  # part links: frames coincide with the mount (parts are posed in it)
+            if n != "mount":
+                out.append(joint(f"mount-{n}", "fixed", "mount", n))
         for t in p.tcps:
             out.append(f'  <link name="tcp_{safe(t.name)}"/>')
             out.append(

@@ -63,7 +63,10 @@ def edit_tool(b, e=None) -> bool:
         notify(e, "No tool to edit", "The project's tool has no URDF (Tool tab)")
         return False
     try:
+        from core.tool_contacts import link_faces
+
         urdf = b.s.resolve(ee.urdf)
+        b.edit_faces = link_faces(ee, urdf)  # v10 #1: contact faces are checked against these
         pkg = load_zip(b, zip_folder(urdf.parent))
     except Exception as err:  # an unusual URDF: report, keep the builder as it was
         notify(e, "Could not load the tool", f"{type(err).__name__}: {err}")

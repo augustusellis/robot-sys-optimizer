@@ -146,4 +146,5 @@ plan. Tasks 11-22 start only after the user says to continue (they may change th
 
 | Task | State | Notes |
 |---|---|---|
-| 1-22 | not started | |
+| 1 | done | One URDF link per tool part; contacts carried over or reported. Found and fixed: yourdfpy drops a `<collision>` origin when the element is named like its link. Sander edited through the builder: 25/25 reached from the quick plan's stops; without the pad as contact all 25 collide. |
+| 2-22 | not started | |

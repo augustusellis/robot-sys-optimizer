@@ -161,6 +161,8 @@ def read_urdf(urdf_path: Path, kind: str | None = None, name: str | None = None)
                     part = part.model_copy(update={"collision_file": cf})
             else:
                 continue
+            if kind == "tool":  # v10 #1: written back to the same link (contact links stay valid)
+                part = part.model_copy(update={"link": safe(lk.name)})
             parts.append(part)
     lim = {r: None for r in ("x", "y", "lift")}
     for j in u.robot.joints:

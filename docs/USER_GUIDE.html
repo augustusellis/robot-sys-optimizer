@@ -601,7 +601,7 @@ $PY scripts/make_portable.py          # -&gt; dist/robot-sys-optimizer-portable-
 </tr>
 <tr>
 <td><strong>From the project</strong></td>
-<td><strong>Edit the project's tool / part / external axis</strong> loads what the project uses into the builder: the tool's URDF and TCPs, the part mesh (or the part package made here before, with its settings), the carrier's bodies, travel and robot mount. <strong>Use in this project</strong> then replaces it; a tool edited this way keeps its process, extension and contact settings.</td>
+<td><strong>Edit the project's tool / part / external axis</strong> loads what the project uses into the builder: the tool's URDF and TCPs, the part mesh (or the part package made here before, with its settings), the carrier's bodies, travel and robot mount. <strong>Use in this project</strong> then replaces it; a tool edited this way keeps its process, extension and contact settings. Each part of a tool is written to its own URDF link (named as in the tool's URDF), so contact parts such as a sanding pad stay contact parts; contact parts or faces that no longer exist (a renamed part, a changed mesh) are listed in the builder status and the log as <strong>Contact settings not carried over</strong>.</td>
 </tr>
 <tr>
 <td><strong>Parts</strong></td>

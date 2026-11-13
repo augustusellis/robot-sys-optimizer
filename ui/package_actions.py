@@ -104,9 +104,14 @@ def export(self, e) -> None:
     notify(e, "Package exported", zp.name, ok=True)
 
 
-def _tool_from(self, urdf_rel: str):
+def _tool_from(self, urdf_rel: str, urdf: Path | None = None):
     """The package as the project's tool. Editing the project's tool (``edit_source``) keeps its
-    process, extension and per-TCP contact settings; only the geometry and the TCP poses change."""
+    process, extension and per-TCP contact settings; only the geometry and the TCP poses change.
+    v10 #1: contact parts / faces that the new URDF no longer has are dropped and listed in
+    ``self.contact_lost``."""
+    from core.tool_contacts import carry_contacts, link_faces
+
+    self.contact_lost = []
     new = to_tool(self.pkg, urdf_rel)
     src = getattr(self, "edit_source", None)
     if not src or src[0] != "tool" or src[1] is None:
@@ -117,6 +122,10 @@ def _tool_from(self, urdf_rel: str):
         by_name[t.name].model_copy(update={"T_head_tcp": t.T_head_tcp}) if t.name in by_name else t
         for t in new.tcps
     ]
+    if urdf is not None:
+        tcps, self.contact_lost = carry_contacts(
+            tcps, getattr(self, "edit_faces", None), link_faces(new, urdf)
+        )
     return old.model_copy(update={"urdf": urdf_rel, "tcps": tcps})
 
 
@@ -128,10 +137,16 @@ def use(self, e) -> bool:
     try:
         urdf = write(self, dest)
         if self.pkg.kind == "tool":
-            self.s.set_tool(_tool_from(self, self.s.relative(urdf)))
+            self.s.set_tool(_tool_from(self, self.s.relative(urdf), urdf))
             if self.tool_tab is not None:
                 self.tool_tab.refresh()
             where = "Tool tab: set the process and the extension ranges, then **Save to library**"
+            if self.contact_lost:  # v10 #1
+                from ui.log_panel import log
+
+                for msg in self.contact_lost:
+                    log(f"Tool contact not carried over: {msg}", "warn")
+                where += ".  \n⚠ **Contact settings not carried over:** " + "; ".join(self.contact_lost)
         elif self.pkg.kind == "part":
             where = use_part(self, dest)
         else:

@@ -69,11 +69,11 @@ def test_package_writes_collision_meshes_and_reads_back(tmp_path):
     assert collision_files(_tool_pkg(), tmp_path / "spindle") == {"head": "collision/head.stl"}
     # the tool uses the package's collision mesh; the viewer keeps the visual one
     tm = ToolModel(to_tool(_tool_pkg(), str(urdf)), urdf)
-    hl = tm.link("mount")
+    hl = tm.link("head")  # v10 #1: one link per part
     assert hl.collision is not None and len(hl.collision.faces) < len(hl.mesh.faces) / 5
     sc = CollisionScene(Robot.from_registry("ur20"), tm, None, np.eye(4), None)
     tris = sum(sc.gm.geometryObjects[g].geometry.num_tris for g in sc.tool_ids)
-    assert tris == len(hl.collision.faces)
+    assert tris == sum(len((x.collision if x.collision is not None else x.mesh).faces) for x in tm.links)
     # reopened: the full visual mesh as the part, the collision settings as authored
     pkg, _ = open_package(zip_folder(urdf.parent), tmp_path / "reopen")
     head = next(x for x in pkg.parts if x.name == "head")
@@ -117,9 +117,10 @@ def test_package_padding(tmp_path):
         "flange",
     }
     tm = ToolModel(to_tool(p, str(urdf)), urdf)
-    hl = tm.link("mount")
-    assert np.all(hl.collision.bounds[0] < hl.mesh.bounds[0] - 0.009)  # the whole tool padded, in place
-    assert np.all(hl.collision.bounds[1] > hl.mesh.bounds[1] + 0.009)
+    for hl in (tm.link("box"), tm.link("flange")):  # padded in place (v10 #1: one link per part;
+        # the reduced head is checked against its unpadded copy above)
+        assert np.all(hl.collision.bounds[0] < hl.mesh.bounds[0] - 0.009)
+        assert np.all(hl.collision.bounds[1] > hl.mesh.bounds[1] + 0.009)
 
 
 def test_carrier_package_collision_meshes(tmp_path):
