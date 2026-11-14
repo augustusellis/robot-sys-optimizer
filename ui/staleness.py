@@ -54,7 +54,7 @@ def _h(x) -> str:
 
 
 def _pose(T: np.ndarray, digits: int = 6) -> list:
-    return np.round(np.asarray(T, float), digits).tolist()
+    return (np.round(np.asarray(T, float), digits) + 0.0).tolist()  # + 0.0: -0.0 hashes as 0.0
 
 
 def _prims(s, prims, legacy: bool) -> list:
