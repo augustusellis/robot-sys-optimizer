@@ -76,6 +76,8 @@ class Session:
     edge_check: object = None  # v10 T10: last core.edge_check.EdgeResult (not saved)
     skip_unfit: bool = False  # v10 T12: planners leave out points below the tool's minimum radius
     cycle: object = None  # v8 T6: core.cycle_time.CycleSettings (Optimize -> Cycle time)
+    max_manip: float | None = None  # best manipulability of the last plan's map (not saved)
+    load_warnings: list = field(default_factory=list)  # things a load dropped or changed (not saved)
     before_save: list = field(default_factory=list)  # GUI hooks that copy their state in here
 
     # --- assets ---------------------------------------------------------------
@@ -313,8 +315,10 @@ class Session:
                 try:  # limits that do not fit this robot are dropped
                     self.robot.set_limits(pr.joint_limits_deg)
                     self.q = np.clip(self.q, self.robot.lower, self.robot.upper)
-                except ValueError:
-                    pass
+                except ValueError as err:
+                    self.load_warnings.append(
+                        f"Joint limits in the project were ignored ({err}); the robot's own limits are used."
+                    )
         self.part = None
         if project.part is not None:
             self.part = PartState(

@@ -21,7 +21,7 @@ from core.transforms import make_T, wxyz_to_matrix
 from ui.session import Session
 from ui.surface_select_ui import SurfaceTools
 from ui.target_preview import draw_preview, target_tcp_pose  # noqa: F401 (re-export)
-from ui.target_tools_ui import PointTools
+from ui.target_tools_ui import PointTools, ask_delete_all, delete_all
 from ui.unreached_view import LEGEND, draw_unreached, unreached_ids
 from ui.widgets import MAX_UPLOAD, notify
 
@@ -296,8 +296,7 @@ class TargetsTab:
 
         @self.delete_all.on_click
         def _(e) -> None:
-            self.s.targets = self.s.targets.model_copy(update={"points": []})
-            self.refresh()
+            self._ask_delete_all(e)
 
         @self.csv.on_upload
         def _(e) -> None:
@@ -394,6 +393,12 @@ class TargetsTab:
         h = self._handles.pop(key, None)
         if h is not None:
             h.remove()
+
+    def _ask_delete_all(self, event) -> None:
+        ask_delete_all(self, event)  # confirm, then delete (undoable): ui/target_tools_ui.py
+
+    def _delete_all(self, event=None) -> None:
+        delete_all(self, event)
 
     def refresh(self) -> None:
         self._busy = True
