@@ -9,6 +9,7 @@ binned into ``BINS`` colours, one mesh per bin, drawn just above the surface und
 from __future__ import annotations
 
 import math
+from types import SimpleNamespace
 
 import numpy as np
 from scipy.spatial import cKDTree
@@ -42,7 +43,21 @@ def colour(f: float) -> tuple[int, int, int]:
     return (int(220 - 2 * (f - 0.5) * 180), 220, 40)
 
 
-def point_scores(s, what: str, sel: dict) -> dict[int, float]:
+def tolerance_for(s, sol, tol=None):
+    """The session's tolerance result if it belongs to ``sol`` (a plan, or None = the result's own
+    label) *as it is now*: same label and the plan stamp recorded when it was computed equals
+    ``s.stamps[label]`` (review R8). No recorded stamp = unknown = not shown."""
+    tol = getattr(s, "tolerance", None) if tol is None else tol
+    if tol is None:
+        return None
+    own = getattr(tol, "key", "") or tol.label  # v12 #8: plans are keyed by id (label before v12)
+    k = own if sol is None else (getattr(sol, "id", None) or sol.label)
+    if own != k or not hasattr(tol, "plan_stamp"):
+        return None
+    return tol if (tol.plan_stamp or {}) == (s.stamps.get(k) or {}) else None
+
+
+def point_scores(s, what: str, sel: dict, label: str | None = None) -> dict[int, float]:
     """{point id: score} for ``what`` from the selected plan's results (else the feasibility
     check); the tolerance rate from the session's last tolerance check."""
     res = sel or s.feasibility or {}
@@ -59,6 +74,8 @@ def point_scores(s, what: str, sel: dict) -> dict[int, float]:
         return fit_scores(s)
     if what == "Tolerance reach rate":
         tol = getattr(s, "tolerance", None)
+        if tol is not None:
+            tol = tolerance_for(s, SimpleNamespace(label=label or tol.label), tol)
         return {int(p): 100 * t.rate for p, t in tol.points.items()} if tol is not None else {}
     return {}
 

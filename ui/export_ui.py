@@ -5,6 +5,7 @@ the browser that clicked as downloads."""
 from __future__ import annotations
 
 import io
+import logging
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
@@ -12,11 +13,14 @@ from pathlib import Path
 import viser
 
 from core import export as ex
-from core.report import ReportInput, build_report, png_data_uri
+from core.report import PdfError, ReportInput, build_report, png_data_uri
 from core.robot import Robot
+from ui.part_heatmap import tolerance_for
 from ui.plan_ids import key as plan_key
 from ui.session import Session
 from ui.widgets import notify
+
+log = logging.getLogger(__name__)
 
 # v10 T21: Program format label -> core.robot_program format (None = from the robot)
 PROGRAM_FORMATS = {
@@ -36,6 +40,7 @@ class ExportPanel:
         length_samples: Callable[[object], list] | None = None,
     ):
         self.s = session
+        self.stale: list[str] = []  # components changed, when exported after 'Export anyway'
         self.selected = selected
         self.length_samples = length_samples or (lambda sol: [])
         gui = server.gui
@@ -93,10 +98,16 @@ class ExportPanel:
         client = getattr(event, "client", None)
         if changes and not confirmed and client is not None:
             return self._ask(event, fn, changes)
+        self.stale = list(changes) if changes else []
         try:
             path, data = fn(sol, getattr(event, "client", None))
         except (OSError, ValueError, KeyError) as err:
             return notify(event, "Export failed", str(err))
+        except Exception as err:  # R14: never fail silently; the cause goes to the log
+            log.exception("export failed")
+            return notify(
+                event, "Export failed", f"{type(err).__name__}: {str(err)[:200]} (nothing was exported)"
+            )
         self.info.content = f"Saved `{path}`"
         client = getattr(event, "client", None)
         if client is not None:
@@ -143,7 +154,12 @@ class ExportPanel:
     # --- exports -----------------------------------------------------------------------------------
 
     def export_csv(self, sol, client=None) -> tuple[Path, bytes]:
-        data = ex.rows_to_csv(self.rows(sol)).encode("utf-8")
+        geo, _ = self.geometry()
+        info = "; ".join(
+            f"{g['name']} {g['mode']}/{g['kind']} dev {g['deviation_m'] * 1000:.1f} mm" for g in geo
+        )
+        text = ex.rows_to_csv(self.rows(sol), ex.csv_comments(self.stale, info))
+        data = text.encode("utf-8")
         self.out_dir.mkdir(parents=True, exist_ok=True)
         path = self.out_dir / "tcp_poses.csv"
         path.write_bytes(data)
@@ -265,8 +281,8 @@ class ExportPanel:
             from ui.report_sections import gantry_placement
 
             out.append(("Gantry placement", gantry_placement(s, frame.rows)))
-        tol = getattr(s, "tolerance", None)
-        if tol is not None and (tol.key or tol.label) == plan_key(sol):
+        tol = tolerance_for(s, sol)  # review R8: this plan's, and only while the plan is unchanged
+        if tol is not None:
             from ui.tolerance_ui import summary
 
             out.append(("Tolerance check", md_html(summary(tol))))
@@ -285,9 +301,39 @@ class ExportPanel:
 
         html_path, _ = self.export_report(sol, client)
         pdf = self.out_dir / "report.pdf"
-        if not html_to_pdf(html_path, pdf):
-            raise ValueError("no Edge / Chrome found to print the PDF; the HTML report was written")
+        try:
+            html_to_pdf(html_path, pdf)
+        except PdfError as err:
+            raise ValueError(str(err)) from err
         return pdf, pdf.read_bytes()
+
+    def margins_clearance(self) -> float:
+        """The clearance the checks used: optimizer.margins, else the default."""
+        opt = self.s.extra.get("optimizer") if isinstance(self.s.extra, dict) else None
+        m = getattr(opt, "margins", None)
+        if m is not None and hasattr(m, "clearance_m"):
+            return float(m.clearance_m)
+        from core.schema import Margins
+
+        return Margins().clearance_m
+
+    def geometry(self) -> tuple[list[dict], str | None]:
+        """The part's collision copy as built from the current geometry settings (disk-cached),
+        plus core.collision_mesh.deviation_warning for it. Carrier and robot copies are not
+        rebuilt here (the report says so)."""
+        s = self.s
+        if s.part is None:
+            return [], None
+        try:
+            from core.collision import PART_KEEP, _geom
+            from core.collision_mesh import collision_mesh_info, deviation_warning
+
+            _, info = collision_mesh_info(s.part_mesh(), _geom("part"), keep=PART_KEEP)
+        except Exception as err:  # the report must still be written
+            log.warning("collision geometry info unavailable: %s", err)
+            return [], None
+        row = {"name": "part", "component": "part", **info.as_dict()}
+        return [row], deviation_warning({"part": row}, self.margins_clearance())
 
     def export_report(self, sol, client=None) -> tuple[Path, bytes]:
         s = self.s
@@ -312,7 +358,17 @@ class ExportPanel:
                 "re-run the plan for the full point table."
             )
         tool = s.tool
+        geo, geo_warn = self.geometry()
+        sim = getattr(self, "sim", None)
+        motion = None
+        if sim is not None and sim.plan is not None and sim.label == sol.label:
+            motion = getattr(sim.plan, "motion_checked", None)
         report = ReportInput(
+            stale=list(self.stale),
+            geometry=geo,
+            geometry_warning=geo_warn,
+            motion_checked=motion,
+            mesh_license=s.robot.spec.mesh_license,
             title=f"Cell plan: {sol.label}",
             robot=s.robot.spec.name,
             tool=tool.name if tool else "-",

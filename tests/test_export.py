@@ -180,6 +180,7 @@ def test_report_is_self_contained(plate_plan, sander):
             envelope_svg=ex.envelope_svg(tm, V_OPT),
             images=[("view", png_data_uri(img))],
             notes=["n1"],
+            mesh_license="ur",
         )
     )
     assert "<h2>Points</h2>" not in html  # v9 #8: the CSV export has every point
