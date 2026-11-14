@@ -16,7 +16,7 @@ import numpy as np
 from ui.fingerprint import content
 from ui.plan_ids import key as plan_key
 
-COMPONENTS = ("robot", "carrier", "tool", "part", "targets", "stayout", "collision")
+COMPONENTS = ("robot", "carrier", "tool", "part", "targets", "stayout", "collision", "margins")
 LABELS = {
     "robot": "robot / mount",
     "carrier": "external axis",
@@ -25,6 +25,7 @@ LABELS = {
     "targets": "targets",
     "stayout": "stay-out zones",
     "collision": "collision settings",
+    "margins": "clearance / joint margins",
     "base_pose": "robot base pose",
 }
 # setup steps (tab names in app.TABS) and the components each one defines
@@ -58,6 +59,16 @@ def _prims(s, prims, legacy: bool) -> list:
     return out
 
 
+def _margins(s) -> dict:
+    """The project's clearance / joint margins (defaults when the session has none; review R13)."""
+    try:
+        from core.schema import Optimizer
+
+        return (s.extra.get("optimizer") or Optimizer()).margins.model_dump()
+    except (AttributeError, TypeError, ValueError):
+        return {}
+
+
 def components(s, base_pose: bool = False, tool_nominal: bool = True, legacy: bool = False) -> dict[str, str]:
     """Hash per setup component of session ``s``.
 
@@ -87,6 +98,7 @@ def components(s, base_pose: bool = False, tool_nominal: bool = True, legacy: bo
         "part": "",
         "targets": _h(s.targets.model_dump_json()),
         "stayout": _h(_prims(s, getattr(s, "stayouts", []), legacy)),
+        "margins": _h(_margins(s)),
     }
     if s.tool is not None:
         tool = s.tool.model_dump(mode="json")

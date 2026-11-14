@@ -3,7 +3,6 @@ open a zip, start a new package. ``self`` is the PackageBuilder."""
 
 from __future__ import annotations
 
-import shutil
 import tempfile
 import threading
 from pathlib import Path

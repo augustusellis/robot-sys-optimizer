@@ -35,7 +35,7 @@ SAVED: dict[str, tuple[str, ...]] = {
     ),
     "targets.heat": ("choice", "cones"),  # v8 T8
     "targets.tools": ("row", "col", "row_dir", "radius", "max_angle", "max_edge"),
-    "optimize": ("clearance", "joint_margin", "check_from"),
+    "optimize": ("check_from",),  # the margins are saved in optimizer.margins, not here
     "objects": ("gizmo_size", "gizmo_top"),
     "placement": ("res", "grid", "half"),
     "stations": (
