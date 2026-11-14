@@ -1,9 +1,8 @@
 """Report, CSV and userframe CSV for a solution, without a GUI (batch runner + Export panel).
 
 Everything here takes a ``Session`` and a ``schema.Solution`` and returns text, so the Export
-panel and a worker process produce identical files. This module does not import viser at
-import time. ``sections`` imports ``ui.log_panel`` (for the unreached-points text), which
-imports the viser library (no server is created or needed).
+panel and a worker process produce identical files. Nothing here imports viser (the texts
+come from the viser-free ``ui.report_text``).
 """
 
 from __future__ import annotations
@@ -83,7 +82,7 @@ def _sim_of(sim, sol):
 def sections(session, sol, sim=None, frame=None) -> list[tuple[str, str]]:
     """The report's extra sections as HTML (from the GUI's own texts). ``sim``: the paths panel
     (its built paths count when they are this plan's); ``frame``: the Gantry placement panel."""
-    from ui.log_panel import unreached_report
+    from ui.report_text import unreached_report
     from ui.summary_card import card
 
     s, out = session, []
@@ -111,9 +110,9 @@ def sections(session, sol, sim=None, frame=None) -> list[tuple[str, str]]:
         out.append(("Gantry placement", gantry_placement(s, frame.rows)))
     tol = tolerance_for(s, sol)  # review R8: this plan's, and only while the plan is unchanged
     if tol is not None:
-        from ui.tolerance_ui import summary
+        from ui.report_text import tolerance_summary
 
-        out.append(("Tolerance check", md_html(summary(tol))))
+        out.append(("Tolerance check", md_html(tolerance_summary(tol))))
     from ui.radius_ui import report_md
 
     fit = report_md(s)  # v10 T12: points the tool cannot fit

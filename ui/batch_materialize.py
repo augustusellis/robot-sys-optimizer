@@ -32,7 +32,7 @@ def materialize(manifest: bt.BatchManifest, job: bt.BatchJob, batch_dir: Path) -
     reason = bt.check_job(job, batch_dir)
     if reason:
         raise ValueError(reason)
-    cell = Path(manifest.cell_project)
+    cell = bt.cell_path(manifest, batch_dir)
     if not manifest.cell_project or not (cell / "project.json").is_file():
         raise ValueError(f"{who}: the cell project '{manifest.cell_project}' has no project.json")
     out = batch_dir / job.id

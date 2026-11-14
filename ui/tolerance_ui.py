@@ -13,6 +13,7 @@ from core.feasibility import CancelledError
 from opt.tolerance import ToleranceSettings
 from ui.log_panel import log
 from ui.plan_ids import key as plan_key
+from ui.report_text import tolerance_summary as summary  # re-export (viser-free)
 from ui.session_lock import LOCK
 from ui.widgets import notify
 
@@ -122,26 +123,3 @@ class TolerancePanel:
         self._thread.start()
         if block:
             self._thread.join()
-
-
-def summary(r) -> str:
-    st = r.settings
-    head = (
-        f"**{100 * r.all_reached:.0f} %** of {st.samples} samples reach every planned point "
-        f"(part ±{st.part_mm:g} mm, {st.part_deg:g}°, stops ±{st.station_mm:g} mm)."
-    )
-    worst = [p for p in r.worst(10) if p.rate < 1.0]
-    if not worst:
-        return head + "  \nEvery point was reached in every sample."
-    rows = "\n".join(
-        f"| {p.pid} | {p.station + 1} | {100 * p.rate:.0f} % | "
-        f"{'—' if p.fail_mm is None else f'{p.fail_mm:.1f}'} | {p.clearance_mm:.0f} | {p.limit_deg:.0f} |"
-        for p in worst
-    )
-    return (
-        head
-        + "\n\n**Least robust points** (fails from = the point's shift in the smallest failing sample):\n\n"
-        + "| point | stop | reached | fails from (mm) | clearance (mm) | limit margin (°) |\n"
-        + "|---|---|---|---|---|---|\n"
-        + rows
-    )

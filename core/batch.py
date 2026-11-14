@@ -149,3 +149,121 @@ def check_job(job: BatchJob, batch_dir: Path) -> str | None:
     if bad:
         return f"{who}: {len(bad)} selected face id(s) out of range (mesh has {nf} faces, e.g. {bad[0]})"
     return None
+
+
+# --- B4: paths, per-job updates and the batch summary ------------------------------------------
+
+
+def rel_cell(cell: Path | str, batch_dir: Path) -> str:
+    """``cell_project`` as stored: relative to the batch folder when possible (both on one
+    drive, e.g. ``../study_x``), so moving the workspace keeps the link; else absolute."""
+    cell, batch_dir = Path(cell).resolve(), Path(batch_dir).resolve()
+    try:
+        return Path(os.path.relpath(cell, batch_dir)).as_posix()
+    except ValueError:  # another drive (Windows)
+        return str(cell)
+
+
+def cell_path(manifest: BatchManifest, batch_dir: Path) -> Path:
+    """The cell study folder: ``cell_project`` resolved against the batch folder."""
+    p = Path(manifest.cell_project)
+    return p if p.is_absolute() else (Path(batch_dir) / p).resolve()
+
+
+def update_job(path: Path, job: BatchJob, fallback: BatchManifest | None = None) -> bool:
+    """Write one job's entry into the manifest on disk, keeping every other job as the file has
+    it (the GUI may queue or reorder jobs while one runs). A job no longer in the file (removed
+    meanwhile) is not written back: False. ``fallback`` is saved whole when the file is
+    missing or unreadable."""
+    path = Path(path)
+    try:
+        current = load_manifest(path)
+    except ValueError:
+        if fallback is None:
+            raise
+        save_manifest(fallback, path)
+        return True
+    for i, j in enumerate(current.jobs):
+        if j.id == job.id:
+            current.jobs[i] = job.model_copy(deep=True)
+            save_manifest(current, path)
+            return True
+    return False
+
+
+SUMMARY_COLUMNS = ("job", "name", "part", "status", "stations", "reached", "total", "cost", "run_s")
+SUMMARY_COLUMNS += ("error", "report")
+
+
+def summary_rows(manifest: BatchManifest) -> list[dict]:
+    """One row per job (SUMMARY_COLUMNS); empty cells for what a job does not have."""
+    rows = []
+    for j in manifest.jobs:
+        s = j.summary or {}
+        cost = s.get("cost")
+        rows.append(
+            {
+                "job": j.id,
+                "name": j.name,
+                "part": j.part,
+                "status": j.status,
+                "stations": s.get("stations", ""),
+                "reached": s.get("reached", ""),
+                "total": s.get("total", ""),
+                "cost": "" if cost is None else f"{cost:.3f}",
+                "run_s": f"{j.run_s:.1f}" if j.run_s else "",
+                "error": j.error,
+                "report": s.get("report", ""),
+            }
+        )
+    return rows
+
+
+def summary_csv(manifest: BatchManifest) -> str:
+    import csv
+    import io
+
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, SUMMARY_COLUMNS, lineterminator="\n")
+    w.writeheader()
+    w.writerows(summary_rows(manifest))
+    return buf.getvalue()
+
+
+def summary_html(manifest: BatchManifest) -> str:
+    """A self-contained page (no scripts, no external links except the per-job reports)."""
+    import html
+
+    def cell(k: str, v) -> str:
+        v = str(v)
+        if k == "report" and v:
+            return f'<td><a href="{html.escape(v, quote=True)}">report</a></td>'
+        return f"<td>{html.escape(v)}</td>"
+
+    head = "".join(f"<th>{c}</th>" for c in SUMMARY_COLUMNS)
+    body = "\n".join(
+        f'<tr class="{html.escape(r["status"])}">' + "".join(cell(k, r[k]) for k in SUMMARY_COLUMNS) + "</tr>"
+        for r in summary_rows(manifest)
+    )
+    return (
+        '<!doctype html><html><head><meta charset="utf-8"><title>Batch summary</title><style>'
+        "body{font-family:sans-serif;margin:16px}table{border-collapse:collapse}"
+        "td,th{border:1px solid #999;padding:3px 8px}.failed td{color:#c62828}"
+        ".partial td,.cancelled td{color:#b26a00}@media(prefers-color-scheme:dark){body{background:#1e1e1e;"
+        "color:#ddd}.failed td{color:#ef5350}}</style></head><body>"
+        f"<h1>Batch summary</h1><p>Cell study: {html.escape(manifest.cell_project)}; created "
+        f"{html.escape(manifest.created)}.</p><table><tr>{head}</tr>\n{body}</table></body></html>"
+    )
+
+
+def write_summary(manifest: BatchManifest, batch_dir: Path) -> tuple[Path, Path]:
+    """``summary.csv`` and ``summary.html`` in the batch folder."""
+    batch_dir = Path(batch_dir)
+    out = []
+    for name, text in (("summary.csv", summary_csv(manifest)), ("summary.html", summary_html(manifest))):
+        p = batch_dir / name
+        tmp = p.with_name(name + ".tmp")
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, p)
+        out.append(p)
+    return out[0], out[1]
