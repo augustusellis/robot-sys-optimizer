@@ -224,6 +224,8 @@ The tabs are numbered in setup order: **1 Robot & cell → 2 External axis → 3
 - **Project**: *Folder* (relative to the repo, or absolute), **Save** / **Load** (`<folder>/project.json`), **Download project.json**, **Open project.json** (upload). Loading never half-applies: a broken project leaves the current session untouched.
   - **Autosave** (on by default) saves to the current project folder every *Autosave every (min)* minutes (default 2) when something changed. The line under it shows the last save time.
   - **Open a project at start**: the app opens on an **empty cell** (the robot on a static base, no part, tool or targets) and the first browser that connects gets the **Open a project** window: **Reopen last project** (folder and date), **Recent projects** (the last five you saved, loaded or autosaved; *Open recent*), **Examples** (*Open example*), **New empty cell** (a new folder `workspace/study_<date-time>`) and **Close** (keep the empty cell). A project that fails to load shows the error in the window, which stays open. The empty start-up cell is not autosaved until you open, create or save a project. Start with `--open <folder>` (e.g. `scripts\run_app.bat --open workspace\examples\rail_long_part`) to open a project directly without the window; `--fresh` is still accepted but does nothing now.
+  - **Open project.json** (the file picker) loads into a **new folder** (`workspace/<stem>_<time>`) and never overwrites the current project; autosave and **Save** are blocked while it loads.
+  - **Uploads** (meshes, URDF zips) are checked before they replace anything: a rejected upload keeps the old file, and replacing a file shows a "replaced existing" notice. A part's fingerprint includes its mesh content, so plans made with an older version show as out of date once after the upgrade.
   - A project brings back the whole cell **and** where you were: the arm's joint pose, the surface selection, feasibility colours, every plan's joint solutions (ghost robots, CSV export without re-planning), the selected solution, and the panel settings (spacing, brush, check and planner settings, display options, dark mode). *Examples* + **Open example** opens a working copy of a shipped example (see Quickstart). To add or update an example, type a *New example name* and click **Save as example** (tick *Overwrite existing example* to replace one); this is the only way the app writes into `examples/`. Saving a project to another folder takes its uploaded meshes (`assets/`) along. Every save also copies any file the project uses from outside its folder (a part, tool, carrier or stay-out mesh, an uploaded robot, loaded from another project or from anywhere on the PC) into `<project>/assets/imported/` and refers to the copy, so the project keeps working when that folder is moved or deleted. Plans and check results stay up to date across that copy: the app compares files by their contents, not by where they are. Files shipped with the app (`assets/`, `examples/`) are not copied. Opening a project whose file is missing no longer fails: the project opens without that item (the part, the tool, a carrier body or stay-out zone; a missing uploaded robot falls back to the UR20), and the log and a message say what to load again. Before leaving an item out, the app looks for a file of the same name anywhere in the project folder (for a project copied to another PC with its files put next to it) and uses it. A missing part, carrier body or stay-out mesh then opens the **Locate missing files** dialog: give each file with its *Locate …* button and the project is saved and opened again with it (the file is copied into `<project>/assets/imported/`), or **Close** to go on without them. Until then, saving keeps the left-out items in `project.json` with their old paths, so an autosave does not drop them.
 
 ### 1 Robot & cell tab
@@ -280,6 +282,8 @@ Sample tools: **orbital_sander** (bent extension range, pad as the contact link)
 
 Points are stored **in the part frame**, so moving the part moves them with it.
 
+**Delete all points** asks for confirmation, and **Undo** brings the points back. A points CSV saved with a byte-order mark (BOM, e.g. from Excel) keeps its first row.
+
 ### 5 Optimize tab
 
 **The optimizers need a confirmed setup.** *Plan stations*, *Quick plan* and *Optimize tool* stay greyed out until steps 1 to 4 are confirmed; a line under each button says what is missing, e.g. "Confirm **2 External axis** first" or "**3 Tool** changed since you confirmed it — confirm it again". The feasibility check and the base heatmap work at any time.
@@ -331,6 +335,7 @@ Output folder: `<part>/project.json` (+ `assets/`: opens with Project -> Open, p
 cancelled run still lists what finished). Without the GUI: `python scripts/batch_run.py <project
 folder> <parts folder> <output folder> [--parts a,b] [--frame-search] [--workers N]` (exit code 1
 when a part failed).
+**Margins and re-runs:** the *clearance* and *joint margin* on the Optimize tab are the project's single setting (`optimizer.margins`): the feasibility check, every planner, the tool optimizer and the paths all use it, and it is saved in the report's provenance. Changing it marks the existing plans **out of date**. **Plan stations** and **Quick plan** keep showing the previous results until the first new plan arrives, and a failed run restores them; a station run never removes designs from the tool optimizer. A cancelled Pareto or robust step keeps its plain label with "(cancelled before the ... step)". **Compare robots** keeps the rows that finished when you cancel, and uses the station planner's collision settings. Errors show as one line in the status text; the full traceback goes to the log. If the separate planner process crashes, the message gives its exit code and the likely cause; if the parallel check pool breaks, the run continues with serial checks and a warning.
 
 ### Optimization methods
 
@@ -425,6 +430,7 @@ reason). Pick a **Part** and press **Open this part**: its solved project replac
 (asks first when the open project has unsaved changes), so its plans are in the list above to view,
 inspect, check and simulate; with **Build paths when opened** its paths are built straight away
 (paths are not saved in a project). **Download report** sends the part's PDF report.
+  **What the exports say (v8 review):** the HTML report ends with a **Not checked** section: payload / torque / dynamics, transit between stops, kinematic-only motion, sampled spin / tilt and collision geometry are not guaranteed by the plan. The TCP CSV starts with `#` comment rows (provenance and warnings): **skip lines starting with `#` in your own CSV readers**. An unmeasured clearance is an empty cell. **Export anyway** on an out-of-date plan writes files with an **OUT OF DATE** banner. The Universal Robots graphics notice appears only for robots with `mesh_license: ur` in their spec.yaml. If the PDF fails, the message says whether the browser was missing or failed.
 
 ### Collision geometry
 
@@ -443,6 +449,8 @@ Every collision check (planner, tool optimizer, paths, jog) uses a **collision c
 **Left panel → Collision geometry**: **Show robot / tool / part / external axis** draws each component's collision shapes in orange, exactly as they are checked.
 
 Simplified meshes are cached in `cache/collision` (per PC), so a large mesh is only simplified once. The ABB GoFa 10, GoFa 12 and PoWa 30 ship with wrapped collision meshes (their URDFs used the CAD meshes, which made each check about 10× slower than for a UR or CRX).
+
+For a simplified (decimated) mesh the largest deviation from the visual mesh is measured and cached; a warning appears when it exceeds half the clearance. The report lists the collision geometry used for each body. In the Jog panel, if the collision scene cannot be built, steps are blocked unless **Allow collisions** is on, and the readout shows a warning.
 
 ### Package builder tab
 
@@ -694,6 +702,7 @@ For carriers, pass `sites=CarrierSites(Carrier(base), part_mesh, T_world_part)` 
 | `conda env create` fails or `import pinocchio` errors | Use Miniforge (conda-forge), not pip. Keep the OpenBLAS line in `environment.yml`. |
 | Python crashes silently on matrix maths | The MKL BLAS problem: run `conda install -n rso "libblas=*=*openblas"`. |
 | The first heatmap or plan takes ~1 min | The reachability map is being built (once per tool shape); later runs are fast. |
+| A plan shows "out of date" after upgrading, or after changing the margins | Expected: the part fingerprint now includes the mesh content, and the margins are part of the plan. Plan again. |
 | "Software WebGL rendering" banner | The browser has no GPU acceleration; enable hardware acceleration in its settings. |
 | Port already in use | `app.py --port 8090`. Viser may also pick the next free port by itself; check the console output. |
 | **Open user guide** does nothing or shows an error page | The guide server uses the app's port + 1; the console prints its address at start-up. If that port is blocked (firewall when opening from another PC), use **Download user guide (HTML)** or open `docs/USER_GUIDE.html` directly. |
@@ -701,6 +710,7 @@ For carriers, pass `sites=CarrierSites(Carrier(base), part_mesh, T_world_part)` 
 | The planner puts a mobile base under a raised part | Standoff is 3D; add the part's stand to the mesh or draw a keep-out. |
 
 **Known limitations (v1)**
+- Tool-optimizer costs now include carrier travel and the standoff penalty, so values differ from earlier versions; numeric IK (uploaded robots) is deterministic; contour mode supports multi-body carriages. Reachability lookups are memory-budgeted, so huge cases run in blocks rather than failing.
 - Planning features (heatmap, station planner, tool optimizer) need an **analytic IK solver** (`ur_analytic`, `opw` or `offset_wrist`) and a full-turn base joint. Robots with numeric IK (uploads) can be displayed, jogged and feasibility-checked. See [Adding a robot](#adding-a-robot).
 - No payload, torque or tip-over checks (removed in v7 to keep the tool robot-agnostic): check the tool mass and the mobile base's stability with the manufacturer's tools. Older projects that still carry those settings load; the fields are dropped.
 - Collisions are checked at each point only; the motion **between** points and stations is not checked (zones give an ordered path with continuous joints, but the path itself is not collision-checked). Travel distance ignores obstacles.

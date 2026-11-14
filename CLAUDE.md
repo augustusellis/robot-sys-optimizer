@@ -116,8 +116,8 @@ core/             schema, golden_parts, robot, ik/{ur,opw,numeric}, transforms, 
                   tool (parametric EE + library I/O), process (presets), mesh_select (pick + region grow),
                   targets (selection, normals, generators, CSV, target-set edits), target_tools (lattice,
                   brush dab, dedupe, refine_mesh),
-                  collision (Coal via Pinocchio), payload (static torque), feasibility (per-point check),
-                  carrier (rail/gantry/mobile from primitives, URDF, tip-over), standoff (shapely zones)
+                  collision (Coal via Pinocchio), feasibility (per-point check),
+                  carrier (rail/gantry/mobile from primitives, URDF), standoff (shapely zones)
 opt/              reachability (map, offset map, lookup, voting, coverage matrix), placement (stations),
                   sites (floor / carrier search spaces), tool_geometry (L bisection + shape CMA-ES), cost
 tools/            tool library (one YAML per EE)
