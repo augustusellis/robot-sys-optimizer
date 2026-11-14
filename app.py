@@ -156,6 +156,7 @@ def build_app(
         state["tool_opt"].costs.load()  # and the tool optimizer's
         if "frame" in state:
             state["frame"].reset_range()  # v10 #6: this project's mount height, unless saved
+        state["optimize"].load_margins()  # the project's clearance / joint margins (not a GUI setting)
         ui_settings.apply(state, session.ui)
         state["collision"].sync()
         t.refresh()
