@@ -58,7 +58,7 @@ def sent(fn) -> tuple[collections.Counter, collections.Counter]:
     return n, b
 
 
-HEAVY = ("MeshMessage", "PointCloudMessage", "LineSegmentsMessage", "LabelMessage")
+HEAVY = ("MeshMessage", "PointCloudMessage", "LineSegmentsMessage", "LabelMessage", "GlbMessage")
 
 
 def chunk_faces(tab) -> list[np.ndarray]:
@@ -164,13 +164,13 @@ def test_unreached_and_heatmap_redraw_only_when_their_inputs_change(app):
     assert not any(n[k] for k in HEAVY)  # nothing changed: heatmap and markers stay
     s.feasibility[ids[10]] = PointResult(ids[10], "reachable", q=q, clearance=0.2)
     n, _ = sent(tab.refresh)
-    assert n["MeshMessage"] >= 1 and not n["LabelMessage"]  # heatmap only
+    assert n["GlbMessage"] >= 1 and not n["LabelMessage"]  # heatmap only (one vertex-coloured GLB)
     s.feasibility[ids[20]] = PointResult(ids[20], "unreachable", "collision")
     n, _ = sent(tab.refresh)
     assert n["LabelMessage"] == 4 and len(tab._handles["unreached"].points) == 4
     tab.heat.choice.value = "Joint-limit margin"  # the dropdown redraws it itself ...
     n, _ = sent(tab.refresh)
-    assert not n["MeshMessage"]  # ... so the next refresh does not draw it again
+    assert not n["GlbMessage"]  # ... so the next refresh does not draw it again
     tab.heat.clear()  # drawn away from the tab (e.g. a draw/clear from another panel)
     tab.refresh()
     assert tab.heat._handles
