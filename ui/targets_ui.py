@@ -20,14 +20,19 @@ from ui.session import Session
 from ui.surface_select_ui import SurfaceTools
 from ui.target_preview import draw_preview, target_tcp_pose  # noqa: F401 (re-export)
 from ui.target_tools_ui import PointTools, ask_delete_all, delete_all
-from ui.unreached_view import LEGEND, draw_unreached, unreached_ids
+from ui.targets_draw import (  # noqa: F401 (colours re-exported)
+    PALETTE,
+    SEL_COLOR,
+    STATUS_COLORS,
+    UNCHECKED,
+    SelectionLayer,
+    draw_points,
+    track_heat,
+)
+from ui.unreached_view import LEGEND
 from ui.widgets import MAX_UPLOAD, notify
 
 PART = "/cell/part"
-SEL_COLOR = (60, 200, 120)
-PALETTE = [(230, 60, 60), (40, 120, 230), (240, 170, 20), (150, 70, 200), (20, 170, 170), (120, 120, 120)]
-STATUS_COLORS = {"reachable": (40, 180, 70), "marginal": (240, 170, 20), "unreachable": (220, 40, 40)}
-UNCHECKED = (150, 150, 150)
 GEN_FIELDS = (
     "row",
     "col",
@@ -59,6 +64,8 @@ class TargetsTab:
         self._mesh: trimesh.Trimesh | None = None
         self._mesh_key = None
         self._handles: dict[str, object] = {}
+        self._fp: dict[str, object] = {}  # what is drawn now (ui.targets_draw): redraw on change
+        self.sel_layer = SelectionLayer(server, f"{PART}/selection")
         self._busy = False
         self.selected_results = None  # set by the app: point results of the selected solution
         gui = server.gui
@@ -131,6 +138,7 @@ class TargetsTab:
             from ui.part_heatmap import HeatmapLayer
 
             self.heat = HeatmapLayer(gui, self)  # v8 T8: Colour part by
+            track_heat(self)  # R1a: refresh() skips redrawing an unchanged heatmap
             self.show_normals = gui.add_checkbox("Show normals", True)
             self.normal_len = gui.add_number("Normal length (mm)", 20.0, min=1.0, step=1.0)
             self.point_size = gui.add_number("Point size (mm)", 4.0, min=0.5, step=0.5)
@@ -367,7 +375,7 @@ class TargetsTab:
 
     def _drop(self, key: str) -> None:
         h = self._handles.pop(key, None)
-        if h is not None:
+        if h is not None and not h._impl.removed:  # a parent's removal took it already
             h.remove()
 
     def _ask_delete_all(self, event) -> None:
@@ -406,75 +414,16 @@ class TargetsTab:
         self.g_pattern.value = g.pattern if g is not None and g.pattern else self.g_pattern.options[0]
 
     def _draw_selection(self) -> None:
-        self._drop("sel")
+        """Selection chunks (ui.targets_draw.SelectionLayer: an add sends only the new faces)."""
         m = self.mesh()
         n = len(self.selection)
-        if m is not None and n:
-            sub = m.submesh([self.selection], append=True)
-            verts = sub.vertices + 5e-4 * sub.vertex_normals  # draw just above the part
-            self._handles["sel"] = self.server.scene.add_mesh_simple(
-                f"{PART}/selection", verts, sub.faces, color=SEL_COLOR, opacity=0.6, side="double"
-            )
+        self._handles["sel"] = self.sel_layer.update(m, self.selection)
         area = m.area_faces[self.selection].sum() * 1e4 if m is not None and n else 0.0
         self.sel_info.content = f"Selected: {n} faces, {area:.1f} cm²" if n else "_Nothing selected._"
 
     def _draw_points(self) -> None:
-        self.heat.draw()  # v8 T8: the part's colours follow the selected plan too
-        for key in ["points", "normals", *(k for k in self._handles if k.startswith("unreached"))]:
-            self._drop(key)
-        ids, P, N, G = tg.as_arrays(self.s.targets)
-        names = [g.name for g in self.s.targets.groups]
-        counts = {g: G.count(g) for g in names}
-        self.count.content = f"**{len(P)} points**  \n" + ", ".join(f"{k}: {v}" for k, v in counts.items())
-        self.preview_idx.max = max(1, len(P) - 1)
-        if len(P) == 0:
-            return
-        sel = self.selected_results() if self.selected_results else {}
-        if self.color_by.value == "feasibility" and self.s.feasibility:
-            res = self.s.feasibility
-            colors = np.array([STATUS_COLORS[res[i].status] if i in res else UNCHECKED for i in ids])
-        elif self.color_by.value in ("zone", "configuration") and sel:
-            # selected solution (Results tab): zone index, or one colour per joint configuration
-            labels = sorted({r.config for r in sel.values() if r.config})
-            key = (lambda r: r.zone) if self.color_by.value == "zone" else (lambda r: labels.index(r.config))
-            colors = np.array(
-                [
-                    PALETTE[key(sel[i]) % len(PALETTE)]
-                    if i in sel and sel[i].config and sel[i].zone is not None
-                    else UNCHECKED
-                    for i in ids
-                ]
-            )
-        else:
-            colors = np.array(
-                [PALETTE[names.index(g) % len(PALETTE)] if g in names else PALETTE[-1] for g in G]
-            )
-        self._handles["points"] = self.server.scene.add_point_cloud(
-            f"{PART}/targets",
-            P,
-            colors.astype(np.uint8),
-            point_size=self.point_size.value / 1000,
-            point_shape="circle",
-            precision="float32",
-        )
-        if self.show_normals.value:
-            seg = np.stack([P, P + N * self.normal_len.value / 1000], axis=1)
-            self._handles["normals"] = self.server.scene.add_line_segments(
-                f"{PART}/normals", seg, (30, 30, 30), thickness=1.5, thickness_units="screen"
-            )
-        if self.show_unreached.value:  # v6 feedback: make the points the plan misses obvious
-            from ui.staleness import feasibility_changes
-
-            # an out-of-date feasibility check (points, tool, part or base changed since) would
-            # mark the wrong points: only the selected plan's results are used then
-            feas = self.s.feasibility if self.s.feasibility and not feasibility_changes(self.s) else {}
-            bad = unreached_ids(ids, sel, feas)
-            self._handles.update(
-                draw_unreached(self.server, PART, ids, P, N, bad, self.point_size.value / 1000, sel or feas)
-            )
-            from ui.unreached_view import draw_extras
-
-            self._handles.update(draw_extras(self, PART, ids, P, N))  # v10 T10 gaps, T12 tool fit
+        """Points, normals, unreached markers and heatmap; only what changed is re-sent."""
+        draw_points(self)
 
     def _draw_preview(self) -> None:
         draw_preview(self)
