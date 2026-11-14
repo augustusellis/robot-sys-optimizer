@@ -155,19 +155,19 @@ def test_margin_or_collision_mode_change_marks_plan_stale(app):
     s = app["session"]
     _set(s, 0.010)
     old = stamp_for(s, "plan")
-    assert {"collision", "margins"} <= set(old)
+    assert {"collision", "collision_geom", "margins"} <= set(old)
     assert changed(old, stamp_for(s, "plan")) == []
     _set(s, 0.025)
     assert changed(old, stamp_for(s, "plan")) == ["clearance / joint margins"]
     _set(s, 0.010)
-    state = collision.geom_state()
+    from core import collision_config
+
+    before = collision_config.current()
     try:
-        g = dict(state[0])
-        g["part"] = Geom(mode="low")
-        collision.set_geom_state((g, state[1], state[2]))
+        collision_config.update(geom={**before.geom, "part": Geom(mode="low")})
         assert changed(old, stamp_for(s, "plan")) == ["collision geometry"]
     finally:
-        collision.set_geom_state(state)
+        collision_config.use(before)
 
 
 def test_old_stamp_without_new_keys_is_not_flagged(app):
@@ -286,6 +286,6 @@ def test_undo_restores_a_delete_all(app):
 
 def test_collision_report_names_stay_importable():
     from core.collision import HITS, describe_hits
-    from core.collision_report import describe_hits as d2
+    from core.collision_hits import describe_hits as d2  # v12 name of the split-out module
 
     assert describe_hits is d2 and HITS.startswith("collides")

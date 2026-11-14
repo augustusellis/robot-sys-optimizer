@@ -16,7 +16,17 @@ import numpy as np
 from ui.fingerprint import content
 from ui.plan_ids import key as plan_key
 
-COMPONENTS = ("robot", "carrier", "tool", "part", "targets", "stayout", "collision", "margins")
+COMPONENTS = (
+    "robot",
+    "carrier",
+    "tool",
+    "part",
+    "targets",
+    "stayout",
+    "collision",
+    "collision_geom",
+    "margins",
+)
 LABELS = {
     "robot": "robot / mount",
     "carrier": "external axis",
@@ -25,12 +35,13 @@ LABELS = {
     "targets": "targets",
     "stayout": "stay-out zones",
     "collision": "collision settings",
+    "collision_geom": "collision geometry",
     "margins": "clearance / joint margins",
     "base_pose": "robot base pose",
 }
 # setup steps (tab names in app.TABS) and the components each one defines
 STEP_COMPONENTS = {
-    "Cell": ("robot", "part", "stayout", "collision"),
+    "Cell": ("robot", "part", "stayout", "collision", "collision_geom"),
     "External Axis": ("carrier",),
     "Tool Setup": ("tool",),
     "Targets": ("targets",),
@@ -122,6 +133,9 @@ def components(s, base_pose: bool = False, tool_nominal: bool = True, legacy: bo
                 sorted(int(f) for f in part.collision_keep) if part is not None else [],
             ]
         )
+        # review R11: the simplified-copy mode per component (reduce / hull / wrap, triangles). Its own
+        # key, so stamps saved without it are not flagged (``changed`` compares the stamp's keys)
+        out["collision_geom"] = _h(sorted((k, v.key()) for k, v in cfg.geom.items()))
     if base_pose:
         out["base_pose"] = _h(_pose(T))
     return out
@@ -138,9 +152,10 @@ def migrate(s) -> int:
     stamps = [s.stamps, *(c.get("stamps", {}) for c in (getattr(s, "compared", None) or {}).values())]
     now = variants[0][1]
     for d in [v for st in stamps for v in st.values()] + list(s.steps.values()):
-        if "collision" not in d:  # v10 #5: new component, taken as it is now
-            d["collision"] = now["collision"]
-            n += 1
+        for k in ("collision", "collision_geom"):  # v10 #5 / review R11: new components, taken as now
+            if k not in d:
+                d[k] = now[k]
+                n += 1
         for k in ("robot", "carrier", "tool", "part", "stayout"):
             for old, new in variants:
                 if k in d and d[k] == old[k] and old[k] != new[k]:

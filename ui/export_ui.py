@@ -13,9 +13,9 @@ from pathlib import Path
 import viser
 
 from core import export as ex
-from core.report import PdfError, ReportInput, build_report, png_data_uri
-from core.robot import Robot
-from ui.part_heatmap import tolerance_for
+from core.report import PdfError
+from ui import report_make as rm
+from ui.part_heatmap import tolerance_for  # noqa: F401  (re-exported; tests import it from here)
 from ui.plan_ids import key as plan_key
 from ui.session import Session
 from ui.widgets import notify
@@ -132,53 +132,19 @@ class ExportPanel:
         stop.on_click(lambda e: modal.close())
 
     def _tool(self, sol):
-        tm = self.s.tool_model
-        if tm is None:
-            raise ValueError("no tool loaded")
-        return tm
+        return rm.tool_of(self.s)
 
     def rows(self, sol) -> list[dict]:
-        s = self.s
-        if s.robot is None:
-            raise ValueError("no robot in this study (tab 1 Robot & cell)")
-        return ex.tcp_rows(
-            sol,
-            s.result_points.get(plan_key(sol), {}),
-            s.targets,
-            Robot(s.robot.spec),
-            self._tool(sol),
-            s.base,
-            s.T_world_base,
-        )
+        return rm.rows(self.s, sol)
 
     # --- exports -----------------------------------------------------------------------------------
 
     def export_csv(self, sol, client=None) -> tuple[Path, bytes]:
-        geo, _ = self.geometry()
-        info = "; ".join(
-            f"{g['name']} {g['mode']}/{g['kind']} dev {g['deviation_m'] * 1000:.1f} mm" for g in geo
-        )
-        text = ex.rows_to_csv(self.rows(sol), ex.csv_comments(self.stale, info))
-        data = text.encode("utf-8")
-        self.out_dir.mkdir(parents=True, exist_ok=True)
-        path = self.out_dir / "tcp_poses.csv"
-        path.write_bytes(data)
-        return path, data
+        return rm.write_text(self.out_dir, "tcp_poses.csv", rm.make_csv(self.s, sol, self.stale))
 
     def export_userframes(self, sol, client=None) -> tuple[Path, bytes]:
         """Robot base -> part frame per stop, in the loaded robot's frame convention."""
-        from core.userframe import userframe_csv, userframe_rows
-
-        s = self.s
-        if s.robot is None or s.part is None:
-            raise ValueError("needs a robot and a part")
-        conv = s.robot.spec.frame_convention
-        rows = userframe_rows(sol, s.base, s.T_world_base, s.part.T_world_part, conv)
-        data = userframe_csv(rows, conv).encode("utf-8")
-        self.out_dir.mkdir(parents=True, exist_ok=True)
-        path = self.out_dir / "userframes.csv"
-        path.write_bytes(data)
-        return path, data
+        return rm.write_text(self.out_dir, "userframes.csv", rm.make_userframes(self.s, sol))
 
     def export_program(self, sol, client=None) -> tuple[Path, bytes]:
         """v10 T21: URScript / FANUC TP / ABB RAPID from the selected plan's built paths."""
@@ -247,53 +213,7 @@ class ExportPanel:
 
     def sections(self, sol) -> list[tuple[str, str]]:
         """v8 T19: the report's extra sections, as HTML (from the GUI's own texts)."""
-        from core.report import md_html
-        from ui.log_panel import unreached_report
-        from ui.summary_card import card
-
-        s, out = self.s, []
-        out.append(("Summary", md_html(card(s, sol))))
-        cyc = [f"Estimated cycle time: **{sol.cycle_s:.0f} s**" if sol.cycle_s is not None else ""]
-        sim = getattr(self, "sim", None)
-        if (
-            sim is not None
-            and sim.plan is not None
-            and sim.key == plan_key(sol)
-            and getattr(sim, "cycle", None)
-        ):
-            c = sim.cycle
-            parts = ", ".join(f"{k} {v:.0f} s" for k, v in c.items() if k != "total" and v > 0.05)
-            cyc.append(f"Cycle time of the built paths: **{c['total']:.0f} s** ({parts}).")
-        if any(cyc):
-            out.append(("Cycle time", md_html("  \n".join(x for x in cyc if x))))
-        if sim is not None:  # v10 T16 / T22: both carrier motions built for this plan
-            from ui.sim_fields import motion_line
-
-            line = motion_line(sim, sol.label)
-            if line:
-                out.append(("Carrier motion", md_html(line)))
-        if s.compared:  # v9 #7 / v10 T22: Optimize -> Compare setups, the project's setup always in
-            from ui.report_sections import setup_comparison
-
-            out.append(("Setup comparison", setup_comparison(s, sol)))
-        frame = getattr(self, "frame", None)
-        if frame is not None and frame.rows:  # v10 T22: Optimize -> Gantry placement
-            from ui.report_sections import gantry_placement
-
-            out.append(("Gantry placement", gantry_placement(s, frame.rows)))
-        tol = tolerance_for(s, sol)  # review R8: this plan's, and only while the plan is unchanged
-        if tol is not None:
-            from ui.tolerance_ui import summary
-
-            out.append(("Tolerance check", md_html(summary(tol))))
-        from ui.radius_ui import report_md
-
-        fit = report_md(s)  # v10 T12: points the tool cannot fit
-        if fit:
-            out.append(("Tool fit", md_html(fit)))
-        msg = unreached_report(s.result_points.get(plan_key(sol), {}), sol.unreached, sol.label)
-        out.append(("Unreached points", md_html(msg) if msg else "<p>Every point is reached.</p>"))
-        return out
+        return rm.sections(self.s, sol, getattr(self, "sim", None), getattr(self, "frame", None))
 
     def export_pdf(self, sol, client=None) -> tuple[Path, bytes]:
         """v8 T19: the HTML report printed to PDF by Edge headless."""
@@ -308,92 +228,26 @@ class ExportPanel:
         return pdf, pdf.read_bytes()
 
     def margins_clearance(self) -> float:
-        """The clearance the checks used: optimizer.margins, else the default."""
-        opt = self.s.extra.get("optimizer") if isinstance(self.s.extra, dict) else None
-        m = getattr(opt, "margins", None)
-        if m is not None and hasattr(m, "clearance_m"):
-            return float(m.clearance_m)
-        from core.schema import Margins
-
-        return Margins().clearance_m
+        return rm.margins_clearance(self.s)
 
     def geometry(self) -> tuple[list[dict], str | None]:
-        """The part's collision copy as built from the current geometry settings (disk-cached),
-        plus core.collision_mesh.deviation_warning for it. Carrier and robot copies are not
-        rebuilt here (the report says so)."""
-        s = self.s
-        if s.part is None:
-            return [], None
-        try:
-            from core.collision import PART_KEEP, _geom
-            from core.collision_mesh import collision_mesh_info, deviation_warning
-
-            _, info = collision_mesh_info(s.part_mesh(), _geom("part"), keep=PART_KEEP)
-        except Exception as err:  # the report must still be written
-            log.warning("collision geometry info unavailable: %s", err)
-            return [], None
-        row = {"name": "part", "component": "part", **info.as_dict()}
-        return [row], deviation_warning({"part": row}, self.margins_clearance())
+        return rm.geometry(self.s)
 
     def export_report(self, sol, client=None) -> tuple[Path, bytes]:
-        s = self.s
-        tm = self._tool(sol)
-        rows = self.rows(sol)
-        images = []
-        notes = []
+        shot, notes = None, []
         if self.screenshot.value and client is not None:
             try:
-                img = client.camera.get_render(720, 1280, transport_format="png", timeout=10.0)
-                images.append(("3D view at export time", png_data_uri(img)))
+                shot = client.camera.get_render(720, 1280, transport_format="png", timeout=10.0)
             except Exception as err:  # renderer unavailable / timed out: the report still works
                 notes.append(f"3D snapshot not included ({type(err).__name__}).")
-        # per-point notes (if any) go into the report
-        flagged = sorted(
-            {n for r in s.result_points.get(plan_key(sol), {}).values() for n in getattr(r, "notes", [])}
-        )
-        notes += flagged
-        if not s.result_points.get(plan_key(sol)):
-            notes.append(
-                "Per-point joint solutions are not stored for this solution (loaded from a project): "
-                "re-run the plan for the full point table."
-            )
-        tool = s.tool
-        geo, geo_warn = self.geometry()
-        sim = getattr(self, "sim", None)
-        motion = None
-        if sim is not None and sim.plan is not None and sim.label == sol.label:
-            motion = getattr(sim.plan, "motion_checked", None)
-        report = ReportInput(
-            stale=list(self.stale),
-            geometry=geo,
-            geometry_warning=geo_warn,
-            motion_checked=motion,
-            mesh_license=s.robot.spec.mesh_license,
-            title=f"Cell plan: {sol.label}",
-            robot=s.robot.spec.name,
-            tool=tool.name if tool else "-",
-            process=tool.process if tool else "-",
-            base_mode=f"{s.base.mode}" + (f" ({s.base.carrier})" if s.base.mode == "movable" else ""),
-            solution=sol,
-            rows=rows,
-            station_poses=[ex.station_pose(s.base, st, s.T_world_base) for st in sol.stations],
-            envelope_svg=ex.envelope_svg(tm, sol.tool_values),
-            images=images,
+        text = rm.make_report(
+            self.s,
+            sol,
+            screenshot=shot,
+            stale=self.stale,
+            sim=getattr(self, "sim", None),
+            frame=getattr(self, "frame", None),
             length_samples=self.length_samples(sol),
             notes=notes,
-            sections=self.sections(sol),
-            settings={
-                "part": s.part.mesh_path if s.part else "-",
-                "targets": f"{len(s.targets.points)} points in {len(s.targets.groups)} group(s)",
-                "standoff min / preferred (m)": f"{s.base.standoff_m.carrier_part_min} / "
-                f"{s.base.standoff_m.carrier_part_preferred}",
-                "tool values": sol.tool_values.model_dump()
-                if sol.tool_values
-                else tool.extension.nominal.model_dump(),
-            },
         )
-        data = build_report(report).encode("utf-8")
-        self.out_dir.mkdir(parents=True, exist_ok=True)
-        path = self.out_dir / "report.html"
-        path.write_bytes(data)
-        return path, data
+        return rm.write_text(self.out_dir, "report.html", text)
