@@ -19,6 +19,7 @@ from core.robot import Robot, list_robots
 from core.tool import ToolModel, load_tool
 from core.transforms import matrix_to_pose, pose_to_matrix
 from core.urdf_import import inspect_urdf
+from ui import display_lod
 
 REPO = data_paths.resources()  # read-only bundled files (the repo folder in a source checkout)
 # where projects live; RSO_WORKSPACE moves it (the test suite uses a temporary one so it never
@@ -78,6 +79,8 @@ class Session:
     max_manip: float | None = None  # best manipulability of the last plan's map (not saved)
     load_warnings: list = field(default_factory=list)  # things a load dropped or changed (not saved)
     before_save: list = field(default_factory=list)  # GUI hooks that copy their state in here
+    _mesh_cache: object = field(default_factory=display_lod.MeshCache, repr=False)  # part meshes
+    _display_cache: object = field(default_factory=display_lod.MeshCache, repr=False)  # drawn copies
 
     # --- assets ---------------------------------------------------------------
 
@@ -178,7 +181,24 @@ class Session:
     def part_mesh(self) -> trimesh.Trimesh:
         if self.part is None:
             raise ValueError("no part loaded")
-        return load_mesh(self.resolve(self.part.mesh_path), self.part.units)
+        path = self.resolve(self.part.mesh_path)
+        key = display_lod.file_key(path, self.part.units)
+        # a copy: callers may change their mesh; the cached one stays as loaded
+        return self._mesh_cache.get(key, lambda: load_mesh(path, self.part.units)).copy()
+
+    def part_display(self) -> tuple[trimesh.Trimesh, int]:
+        """(mesh to draw, triangles of the full part mesh). Parts above display_lod.DISPLAY_FACES
+        are drawn simplified; the full mesh stays the one for planning and picking."""
+        if self.part is None:
+            raise ValueError("no part loaded")
+        path = self.resolve(self.part.mesh_path)
+        key = display_lod.file_key(path, self.part.units)
+
+        def make():
+            full = self._mesh_cache.get(key, lambda: load_mesh(path, self.part.units))
+            return display_lod.display_copy(full)[0], len(full.faces)
+
+        return self._display_cache.get(key, make)
 
     # --- project file -----------------------------------------------------------
 

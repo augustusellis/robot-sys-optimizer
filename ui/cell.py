@@ -19,6 +19,7 @@ from core.transforms import (
     rpy_to_matrix,
 )
 from core.urdf_import import URDFImportError, import_urdf_zip
+from ui import display_lod
 from ui.robot_view import RobotView
 from ui.session import MESH_EXTS, MOUNT_RPY, UNIT_SCALE, PartState, Session, load_mesh
 from ui.widgets import MAX_UPLOAD, Latest, PoseWidgets
@@ -99,6 +100,7 @@ class CellTab:
             self.part_units = server.gui.add_dropdown(
                 "Units", tuple(UNIT_SCALE), initial_value="mm", hint="units of the current part mesh"
             )
+            self.lod_note = server.gui.add_markdown("", visible=False)  # R1c
             self.part_pose = PoseWidgets(server, PART_NODE, np.eye(4), self._on_part_pose)
         self.part_click_blocked = False  # True only while Move mode moves the part (T11)
 
@@ -312,6 +314,7 @@ class CellTab:
         self.part_pose.gizmo.visible = part is not None  # subtree: part mesh, targets
         self.part_pose.set_handles(self.part_pose.show.value)
         if part is None:
+            self.lod_note.visible = False
             self.part_choice.value = "(none)"
             for fn in self.part_listeners:
                 fn()
@@ -324,13 +327,17 @@ class CellTab:
         )
         self.part_units.value = part.units
         self.part_pose.set(part.T_world_part)
-        m = self.s.part_mesh()
+        shown, n_full = self.s.part_display()  # simplified above ~300k triangles (R1c)
         self.part_handle = self.server.scene.add_mesh_simple(  # double-sided: never see-through
-            f"{PART_NODE}/mesh", m.vertices, m.faces, color=PART_COLOR, side="double"
+            f"{PART_NODE}/mesh", shown.vertices, shown.faces, color=PART_COLOR, side="double"
         )
+        simplified = len(shown.faces) < n_full
+        self.lod_note.visible = simplified
+        if simplified:
+            self.lod_note.content = "_" + display_lod.note(n_full, len(shown.faces)) + "_"
         from ui.widgets import GizmoStyle
 
-        GizmoStyle.fit(self.part_pose.gizmo, float(np.max(m.bounds[1] - m.bounds[0])))  # T10
+        GizmoStyle.fit(self.part_pose.gizmo, float(np.max(shown.bounds[1] - shown.bounds[0])))  # T10
         self.sync_part_click()
         for fn in self.part_listeners:
             fn()
