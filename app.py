@@ -31,6 +31,7 @@ from ui.stayout_ui import StayoutPanel
 from ui.targets_ui import TargetsTab
 from ui.tool_opt import ToolOptPanel
 from ui.tool_setup import ToolSetupTab
+from ui.view_controls import ViewControls
 from ui.widgets import Latest
 from ui.workflow import Workflow
 
@@ -81,8 +82,6 @@ def build_app(
 
     precise(server)  # v12 #28: four decimals in every mm / deg field
     server.scene.set_up_direction("+z")
-    server.initial_camera.position = (3.0, -3.0, 2.2)
-    server.initial_camera.look_at = (0.5, 0.0, 0.6)
     apply_theme(server, dark)
     server.scene.add_frame("/world/origin", axes_length=0.2, axes_radius=0.005)
 
@@ -136,6 +135,7 @@ def build_app(
         state["tool_opt"].update_hint()
         state["cable"].follow_robot()  # the robot view was rebuilt: redraw the hose on it
         state["floor"].update(session)  # the floor fits the new cell
+        view.fit(quiet=True)  # the camera frames the loaded cell
         state["collision"].settings_changed()  # the project's part surfaces kept exact
         state["compare_view"].refresh()  # v9 #6: the project's compared robots
 
@@ -178,6 +178,7 @@ def build_app(
     )
     tree = server.gui.add_panel()  # object tree on the left of the 3D view (v3 feedback item 1)
     with tree.add_tab("Objects"):
+        state["view"] = view = ViewControls(server, session)  # lighting, shadows, camera (R2)
         objects = ObjectsPanel(server, session)
         from ui.collision_view import CollisionView
 
@@ -226,6 +227,7 @@ def build_app(
     targets.tools.on_mesh_replaced = cell.refresh_part
     cell.part_listeners.append(targets.on_part_changed)
     cell.part_listeners.append(carrier.draw)
+    cell.part_listeners.append(view.on_part_changed)  # a different part: frame the cell
 
     def part_moved() -> None:
         carrier.realign()  # a track aligned with the part follows it
@@ -523,6 +525,7 @@ def build_app(
         log=log_panel,
         clear_stale=clear_stale,
     )
+    view.fit(quiet=True)  # start-up camera
     return state
 
 

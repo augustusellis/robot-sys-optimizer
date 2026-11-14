@@ -37,6 +37,7 @@ SAVED: dict[str, tuple[str, ...]] = {
     "targets.tools": ("row", "col", "row_dir", "radius", "max_angle", "max_edge"),
     "optimize": ("check_from",),  # the margins are saved in optimizer.margins, not here
     "objects": ("gizmo_size", "gizmo_top"),
+    "view": ("lighting", "shadows"),  # R2
     "placement": ("res", "grid", "half"),
     "stations": (
         "max_stations",
