@@ -112,14 +112,9 @@ class BatchPanel:
 
     def _lock_stations(self) -> None:
         """While a batch runs, the Station planner says so instead of queuing behind it."""
-        st, orig = self.stations, self.stations.start
-
-        def start(event=None, *a, **kw):
-            if self.running:
-                return notify(event, "Batch running", "A batch is running: wait for it or cancel it first")
-            return orig(event, *a, **kw)
-
-        st.start = start
+        self.stations.blocked_reason = lambda: (
+            "A batch is running: wait for it or cancel it first" if self.running else None
+        )
 
     def list_batches(self) -> list[str]:
         ws = data_paths.workspace_dir()

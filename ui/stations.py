@@ -63,6 +63,8 @@ class StationsPanel:
         self._cancel = threading.Event()
         self.on_done: Callable | None = None  # v10 T10: (best plan) after a full run, e.g. the edge check
         self.on_start: Callable[[], None] | None = None  # set by app.py: e.g. clear old paths
+        # set by the batch panel: a reason (one line) why planning must not start now, else None
+        self.blocked_reason: Callable[[], str | None] | None = None
         gui = server.gui
         self.folder = gui.add_folder("Station planner")
         with self.folder:
@@ -203,6 +205,8 @@ class StationsPanel:
         """Plan stations in a thread. ``quick`` (T14): the quick plan (no refinement, zones or
         station areas; results labelled "Quick: ...")."""
         s = self.s
+        if self.blocked_reason is not None and (why := self.blocked_reason()):
+            return notify(event, "Cannot plan now", why)
         if self._thread is not None and self._thread.is_alive():
             return notify(event, "Busy", "Planning is already running")
         from ui.workflow import setup_reason

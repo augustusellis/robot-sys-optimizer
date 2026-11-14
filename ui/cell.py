@@ -241,19 +241,53 @@ class CellTab:
         self.view.set_q(self.s.q)
         self._update_readout()
 
+    READOUT_MIN_DT = 0.25  # s: at most 4 readout updates per second while values change quickly
+
     def _update_readout(self) -> None:
         T = self.s.T_world_flange()
         for fn in self.listeners:
             fn(T)
         if self.s.robot is None:
-            self.readout.content = "_No robot in this study yet: choose one above (Robot) or upload a URDF._"
+            self._put_readout("_No robot in this study yet: choose one above (Robot) or upload a URDF._")
             return
         p = T[:3, 3] * 1000
         r = np.degrees(matrix_to_rpy(T[:3, :3]))
-        self.readout.content = (
+        self._put_readout(
             f"**Flange `{self.s.robot.spec.flange_link}` in world (Pinocchio FK)**  \n"
             f"xyz mm: {p[0]:.1f}, {p[1]:.1f}, {p[2]:.1f}  \nrpy deg: {r[0]:.2f}, {r[1]:.2f}, {r[2]:.2f}"
         )
+
+    def _put_readout(self, text: str) -> None:
+        """Assign the readout text, at most once per READOUT_MIN_DT: a faster call is kept and
+        written by a trailing timer, so the last value always shows (playback sends one GUI update
+        per tick otherwise)."""
+        import threading
+        import time
+
+        lock = self.__dict__.setdefault("_ro_lock", threading.Lock())
+        with lock:
+            self._ro_text = text
+            if text == getattr(self, "_ro_shown", None) and getattr(self, "_ro_timer", None) is None:
+                return
+            wait = self.READOUT_MIN_DT - (time.monotonic() - getattr(self, "_ro_last", -1e9))
+            if wait <= 0 and getattr(self, "_ro_timer", None) is None:
+                self._ro_flush()
+            elif getattr(self, "_ro_timer", None) is None:
+                self._ro_timer = threading.Timer(wait, self._ro_trailing)
+                self._ro_timer.daemon = True
+                self._ro_timer.start()
+
+    def _ro_flush(self) -> None:  # lock held
+        import time
+
+        self._ro_last, self._ro_shown = time.monotonic(), self._ro_text
+        self.readout.content = self._ro_text
+
+    def _ro_trailing(self) -> None:
+        with self._ro_lock:
+            self._ro_timer = None
+            if self._ro_text != self._ro_shown:
+                self._ro_flush()
 
     def refresh(self) -> None:
         """Rebuild robot display + sliders from the session (after robot or project change)."""

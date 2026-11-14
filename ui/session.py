@@ -198,7 +198,7 @@ class Session:
 
         def make():
             full = self._mesh_cache.get(key, lambda: load_mesh(path, self.part.units))
-            return display_lod.display_copy(full)[0], len(full.faces)
+            return display_lod.display_copy(full, background=True)[0], len(full.faces)
 
         return self._display_cache.get(key, make)
 

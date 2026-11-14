@@ -23,7 +23,10 @@ VERSION = 1
 MANIFEST_NAME = "batch.json"
 Status = Literal["pending", "running", "done", "failed", "cancelled", "partial"]
 UNIT_SCALE = {"m": 1.0, "mm": 1e-3, "in": 0.0254}
+from core.step_import import STEP_EXTS, StepImportError, read_step  # noqa: E402
+
 MESH_EXTS = (".stl", ".obj", ".ply")
+PART_EXTS = MESH_EXTS + STEP_EXTS  # a part may also be a STEP model
 
 
 def _identity() -> list[list[float]]:
@@ -135,10 +138,15 @@ def check_job(job: BatchJob, batch_dir: Path) -> str | None:
         return f"{who}: mesh {job.part} changed since it was queued, so the selected faces no longer match"
     if job.units not in UNIT_SCALE:
         return f"{who}: unknown units '{job.units}'"
-    if p.suffix.lower() not in MESH_EXTS:
+    if p.suffix.lower() not in PART_EXTS:
         return f"{who}: unsupported mesh type {p.suffix}"
     try:
-        nf = len(trimesh.load(p, force="mesh").faces)
+        if p.suffix.lower() in STEP_EXTS:  # face ids index the tessellated triangles
+            nf = len(read_step(p, "m").mesh.faces)
+        else:
+            nf = len(trimesh.load(p, force="mesh").faces)
+    except StepImportError as err:
+        return f"{who}: cannot read part {job.part}: {err}"
     except Exception as err:  # noqa: BLE001 - any loader failure is a reason
         return f"{who}: cannot read mesh {job.part}: {err}"
     if nf == 0:
