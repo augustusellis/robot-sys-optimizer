@@ -560,6 +560,9 @@ def main() -> None:
         autosave_thread=True,
     )
     project = state["project"]
+    print(
+        f"Robot Cell Optimizer ready: http://localhost:{server.get_port()}/", flush=True
+    )  # CI start-up check
     project.untitled = True  # the empty start-up cell has no folder: no autosave until one opens
     opened = False
     if args.open:

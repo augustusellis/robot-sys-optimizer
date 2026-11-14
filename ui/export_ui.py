@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import io
 import logging
+import sys
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
@@ -182,9 +183,12 @@ class ExportPanel:
         try:
             import cadquery  # noqa: F401
         except ImportError as err:
-            raise ValueError(
-                "STEP export needs CadQuery (pip install cadquery); URDF export works without"
-            ) from err
+            msg = (
+                "STEP export is not included in this build; URDF export works"
+                if getattr(sys, "frozen", False)
+                else "STEP export needs CadQuery (pip install cadquery); URDF export works without"
+            )
+            raise ValueError(msg) from err
         path = tool_step(
             tool,
             sol.tool_values,
