@@ -22,11 +22,12 @@ from pathlib import Path
 
 import numpy as np
 
+from core import data_paths
 from core.ik import make_ik
 from core.robot import Robot
 
 MAP_VERSION = 1
-CACHE_DIR = Path(__file__).resolve().parents[1] / "cache" / "reachability"
+CACHE_DIR = data_paths.cache_dir("reachability")
 # Memory budget of the queries (review v8 M1). A lookup row needs about 9 kB of temporaries per
 # block (600 directions: cos, cone mask, reach and manip gathers), so LOOKUP_ROWS = 4096 keeps a
 # block near 40 MB; callers send at most PAIR_BUDGET (base, target) pairs per lookup.
@@ -182,6 +183,8 @@ class ReachMap:
         cancelled: Callable[[], bool] | None = None,
     ) -> ReachMap:
         path = cache_dir / f"{cls.cache_key(robot, T_flange_tcp, settings)}.npz"
+        if cache_dir == CACHE_DIR:  # read-through: user data first, then the bundled seed maps
+            path = data_paths.find_cached("reachability", path.name) or path
         if path.is_file():
             d = np.load(path)
             return cls(
@@ -195,6 +198,7 @@ class ReachMap:
             )
         m = cls.build(robot, T_flange_tcp, settings, progress, cancelled)
         cache_dir.mkdir(parents=True, exist_ok=True)
+        path = cache_dir / path.name  # write only to the writable folder, never the bundled seed
         tmp = path.with_suffix(".tmp.npz")
         np.savez_compressed(
             tmp, r0=m.r0, z0=m.z0, res=m.res, dirs=m.dirs, reach=m.reach, manip=m.manip, max_manip=m.max_manip

@@ -14,7 +14,7 @@ _MESH_REF = re.compile(r"""filename\s*=\s*["']([^"']+)["']""")
 def _asset_files(project_json: str, project_dir: str) -> list[Path]:
     """Files the rebuilt session reads: the tool / robot URDFs with the meshes they name, part,
     carrier-body and stay-out meshes (resolved like ``Session.resolve``)."""
-    from ui.session import REPO
+    from core import data_paths
 
     names: list[str] = []
 
@@ -36,7 +36,9 @@ def _asset_files(project_json: str, project_dir: str) -> list[Path]:
         f = (
             p
             if p.is_absolute()
-            else next((b / p for b in (Path(project_dir), REPO) if (b / p).exists()), None)
+            else next(
+                (b / p for b in (Path(project_dir), *data_paths.asset_bases()) if (b / p).exists()), None
+            )
         )
         if f is None or not f.is_file():
             continue

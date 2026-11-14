@@ -41,6 +41,8 @@ from pathlib import Path
 import numpy as np
 import trimesh
 
+from core import data_paths
+
 MODES = ("auto", "visual", "reduce", "hull", "wrap")
 MODE_LABELS = {
     "auto": "Auto (reduce large meshes)",
@@ -50,7 +52,7 @@ MODE_LABELS = {
     "wrap": "Wrap (offset shell)",
 }
 AUTO_FACES = 20000
-CACHE = Path(__file__).resolve().parents[1] / "cache" / "collision"
+CACHE = data_paths.cache_dir("collision")
 VERSION = 1  # bump when the algorithms change (cache keys)
 WRAP_CELLS = 140  # most grid cells along the longest side of a wrap
 

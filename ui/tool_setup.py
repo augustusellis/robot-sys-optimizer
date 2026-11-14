@@ -11,6 +11,7 @@ import numpy as np
 import viser
 from pydantic import ValidationError
 
+from core import data_paths
 from core.mesh_select import grow_region
 from core.process import PRESETS, apply_preset
 from core.schema import TCP, EndEffector, Extension, Tolerances
@@ -18,7 +19,7 @@ from core.tool import list_tools, save_tool
 from core.transforms import matrix_to_pose, pose_to_matrix
 from core.urdf_import import URDFImportError, import_urdf_zip
 from ui import tool_extension
-from ui.session import REPO, Session
+from ui.session import Session
 from ui.tool_view import HEAD, ROOT, ToolView
 from ui.widgets import MAX_UPLOAD, PoseWidgets, notify, safe_name
 
@@ -345,15 +346,19 @@ class ToolSetupTab:
         name = self.name.value.strip() or ee.name
         try:
             urdf = self.s.resolve(ee.urdf) if ee.urdf else None
-            if urdf is not None and not urdf.is_relative_to(REPO / "assets" / "tools"):
+            if urdf is not None and not urdf.is_relative_to(data_paths.data_dir() / "assets" / "tools"):
                 # copy uploaded geometry into the repo so the library entry is self-contained
-                dest = REPO / "assets" / "tools" / safe_name(name)
+                dest = data_paths.data_dir() / "assets" / "tools" / safe_name(name)
                 shutil.copytree(urdf.parent, dest, dirs_exist_ok=True)
-                ee = ee.model_copy(update={"urdf": (dest / urdf.name).relative_to(REPO).as_posix()})
+                ee = ee.model_copy(
+                    update={"urdf": (dest / urdf.name).relative_to(data_paths.data_dir()).as_posix()}
+                )
             path = save_tool(ee.model_copy(update={"name": name}), name)
         except (OSError, ValueError) as err:
             return notify(e, "Save failed", str(err))
-        self.s.tool = ee.model_copy(update={"name": name, "tool": path.relative_to(REPO).as_posix()})
+        self.s.tool = ee.model_copy(
+            update={"name": name, "tool": path.relative_to(data_paths.data_dir()).as_posix()}
+        )
         self.s.tool_model.ee = self.s.tool
         self._busy = True
         try:
@@ -361,7 +366,7 @@ class ToolSetupTab:
             self.choice.value = name
         finally:
             self._busy = False
-        notify(e, "Saved", str(path.relative_to(REPO)), ok=True)
+        notify(e, "Saved", str(path.relative_to(data_paths.data_dir())), ok=True)
 
     # --- widget refresh -------------------------------------------------------------------------
 

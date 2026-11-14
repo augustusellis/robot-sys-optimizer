@@ -7,7 +7,6 @@ exist there are looked up relative to the repo (bundled assets such as golden pa
 
 from __future__ import annotations
 
-import os
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,16 +14,16 @@ from pathlib import Path
 import numpy as np
 import trimesh
 
-from core import schema
+from core import data_paths, schema
 from core.robot import Robot, list_robots
 from core.tool import ToolModel, load_tool
 from core.transforms import matrix_to_pose, pose_to_matrix
 from core.urdf_import import inspect_urdf
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = data_paths.resources()  # read-only bundled files (the repo folder in a source checkout)
 # where projects live; RSO_WORKSPACE moves it (the test suite uses a temporary one so it never
 # writes into the user's projects)
-WORKSPACE = Path(os.environ.get("RSO_WORKSPACE") or REPO / "workspace")
+WORKSPACE = data_paths.workspace_dir()
 DEFAULT_PROJECT_DIR = WORKSPACE / "default"
 MESH_EXTS = (".stl", ".obj", ".ply")
 UNIT_SCALE = {"m": 1.0, "mm": 1e-3, "in": 0.0254}
@@ -86,14 +85,14 @@ class Session:
         p = Path(rel)
         if p.is_absolute():
             return p
-        for base in (self.project_dir, REPO):
+        for base in (self.project_dir, *data_paths.asset_bases()):
             if (base / p).exists():
                 return (base / p).resolve()
         raise FileNotFoundError(f"asset not found in project or repo: {rel}")
 
     def relative(self, path: Path) -> str:
         path = path.resolve()
-        for base in (self.project_dir.resolve(), REPO):
+        for base in (self.project_dir.resolve(), *data_paths.asset_bases()):
             if path.is_relative_to(base):
                 return path.relative_to(base).as_posix()
         return path.as_posix()
@@ -424,7 +423,7 @@ def load_project(session: Session, project_dir: Path) -> None:
         session.before_save = hooks  # GUI hooks belong to the app, not to the loaded project
 
 
-LAST_PROJECT = WORKSPACE / "last_project.txt"
+LAST_PROJECT = data_paths.last_project_file()
 
 
 MAX_RECENT = 5

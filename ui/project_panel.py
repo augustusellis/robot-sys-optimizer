@@ -23,7 +23,7 @@ from pathlib import Path
 import viser
 from pydantic import ValidationError
 
-from core import schema
+from core import data_paths, schema
 from ui.session import REPO, WORKSPACE, Session, load_project, remember_last, save_project
 
 MAX_JSON = 20 * 1024 * 1024
@@ -66,7 +66,7 @@ def _example_copy(name: str) -> Path:
 
 def _project_dir(text: str) -> Path:
     p = Path(text.strip()).expanduser()
-    return p if p.is_absolute() else (REPO / p)
+    return p if p.is_absolute() else (data_paths.data_dir() / p)
 
 
 class LoadingError(ValueError):
@@ -96,8 +96,8 @@ class ProjectPanel:
         self.loading = False  # True from before load_project until the load has finished
         with server.gui.add_folder("Project", expand_by_default=False):
             rel = (
-                session.project_dir.relative_to(REPO)
-                if session.project_dir.is_relative_to(REPO)
+                session.project_dir.relative_to(data_paths.data_dir())
+                if session.project_dir.is_relative_to(data_paths.data_dir())
                 else session.project_dir
             )
             self.folder = server.gui.add_text(
@@ -365,7 +365,8 @@ class ProjectPanel:
     @staticmethod
     def _rel(d: Path) -> str:
         d = Path(d)
-        return d.relative_to(REPO).as_posix() if d.is_relative_to(REPO) else d.as_posix()
+        base = data_paths.data_dir()
+        return d.relative_to(base).as_posix() if d.is_relative_to(base) else d.as_posix()
 
     # --- loading ------------------------------------------------------------------------------
 
