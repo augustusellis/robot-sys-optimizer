@@ -12,6 +12,7 @@ import viser
 
 from core.golden_parts import GOLDEN_PARTS
 from core.robot import list_robots
+from core.safe_io import replace_file
 from core.transforms import (
     make_T,
     matrix_to_rpy,
@@ -158,19 +159,7 @@ class CellTab:
         @self.part_upload.on_upload
         def _(e) -> None:
             f = self.part_upload.value
-            name = _safe_name(f.name)
-            if Path(name).suffix.lower() not in MESH_EXTS or len(f.content) > MAX_UPLOAD:
-                return _notify(e, "Unsupported mesh", f"Use {', '.join(MESH_EXTS)} under 200 MB")
-            path = self.s.project_dir / "assets" / "parts" / name
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(f.content)
-            try:
-                load_mesh(path, self.upload_units.value)
-            except Exception as err:  # trimesh raises many types on bad files
-                return _notify(e, "Mesh load failed", str(err))
-            T = self.s.part.T_world_part if self.s.part else make_T(p=(1.0, 0.0, 0.5))
-            self.s.part = PartState(self.s.relative(path), self.upload_units.value, T)
-            self.refresh_part()
+            self.upload_part(f.name, f.content, e)
 
         @self.part_units.on_update
         def _(_e) -> None:
@@ -179,6 +168,23 @@ class CellTab:
             if self.s.part is not None and self.s.part.units != self.part_units.value:
                 self.s.part.units = self.part_units.value
                 self.refresh_part()
+
+    def upload_part(self, filename: str, content: bytes, e=None) -> None:
+        """Store an uploaded part mesh (validated before it can replace a file of that name)."""
+        name = _safe_name(filename)
+        if Path(name).suffix.lower() not in MESH_EXTS or len(content) > MAX_UPLOAD:
+            return _notify(e, "Unsupported mesh", f"Use {', '.join(MESH_EXTS)} under 200 MB")
+        path = self.s.project_dir / "assets" / "parts" / name
+        try:  # validated as a temp file first: a bad upload never overwrites the old one
+            replaced = replace_file(path, content, lambda p: load_mesh(p, self.upload_units.value))
+        except Exception as err:  # trimesh raises many types on bad files
+            kept = " The existing file was kept." if path.exists() else ""
+            return _notify(e, "Upload rejected", f"{name}: {err}.{kept}")
+        if replaced:
+            _notify(e, "Part file replaced", f"replaced existing {name}", ok=True)
+        T = self.s.part.T_world_part if self.s.part else make_T(p=(1.0, 0.0, 0.5))
+        self.s.part = PartState(self.s.relative(path), self.upload_units.value, T)
+        self.refresh_part()
 
     def _on_base(self, T: np.ndarray) -> None:
         self.s.T_world_base = T

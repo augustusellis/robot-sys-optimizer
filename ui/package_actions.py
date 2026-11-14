@@ -8,6 +8,7 @@ import tempfile
 import threading
 from pathlib import Path
 
+from core.safe_io import replace_dir
 from core.urdf_package import (
     Frame,
     Package,
@@ -24,9 +25,9 @@ from ui.widgets import MAX_UPLOAD, notify
 
 
 def write(self, dest: Path) -> Path:
-    if dest.exists():
-        shutil.rmtree(dest)
-    return write_package(self.pkg, self.work / "meshes", dest)
+    # built in a temp folder and swapped in: a failed export keeps the previous one
+    replace_dir(dest, lambda tmp: write_package(self.pkg, self.work / "meshes", tmp))
+    return dest / f"{safe(self.pkg.name)}.urdf"
 
 
 def import_mesh(self, e) -> None:
