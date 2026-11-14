@@ -33,6 +33,8 @@ td:first-child,th:first-child{text-align:left}.bar{background:#5a8cdc;height:10p
 .stale{border:2px solid #c62828;background:#fdecea;color:#8c1c1c;padding:8px 12px;
 border-radius:6px;font-weight:600}
 .ok{color:#1f8a43}.warn{color:#b07800}.bad{color:#c62828}.note{color:#666;font-size:12px}
+figure{margin:0}
+.figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px;margin:12px 0}
 img{max-width:100%;border:1px solid #ddd;border-radius:6px}.scroll{max-height:420px;overflow:auto}
 section{margin:0 0 8px}figure{margin:12px 0}
 @page{margin:14mm 12mm}
@@ -210,11 +212,14 @@ def build_report(r: ReportInput) -> str:
         parts.append(f"<div class='kpi'><b>{tv.L * 1000:.0f} mm</b><span>tool length L</span></div>")
     parts.append("</div>")
 
-    for caption, uri in r.images:
-        parts.append(
-            f"<figure><img src='{uri}' alt='{_e(caption)}'><figcaption class='note'>{_e(caption)}"
-            "</figcaption></figure>"
-        )
+    if r.images:
+        parts.append("<div class='figs'>")
+        for caption, uri in r.images:
+            parts.append(
+                f"<figure><img src='{uri}' alt='{_e(caption)}'><figcaption class='note'>{_e(caption)}"
+                "</figcaption></figure>"
+            )
+        parts.append("</div>")
 
     for heading, body in r.sections:  # summary, cycle time, comparison, tolerance, unreached points
         parts.append(f"<section><h2>{_e(heading)}</h2>{body}</section>")

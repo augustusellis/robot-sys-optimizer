@@ -7,6 +7,7 @@ come from the viser-free ``ui.report_text``).
 
 from __future__ import annotations
 
+import base64
 import logging
 from pathlib import Path
 
@@ -17,6 +18,11 @@ from ui.part_heatmap import tolerance_for
 from ui.plan_ids import key as plan_key
 
 log = logging.getLogger(__name__)
+
+
+NO_VIEWS_BATCH = (
+    "3D views not included: they are rendered only from the GUI (the batch runner has no browser)."
+)
 
 
 def tool_of(session):
@@ -151,17 +157,26 @@ def make_report(
     length_samples=None,
     notes=None,
     frame=None,
+    images=None,
 ) -> str:
-    """The HTML report. ``screenshot`` is a rendered 3D view (what png_data_uri takes; None =
-    none); ``notes`` come first in the Notes section (e.g. why a snapshot is missing)."""
+    """The HTML report. ``images`` are rendered 3D views as (caption, PNG bytes | data URI |
+    RGB array); ``screenshot`` is one more such view (what png_data_uri takes; None = none);
+    ``notes`` come first in the Notes section (e.g. why the 3D views are missing)."""
     from core.report import png_data_uri
 
     s = session
     tm = tool_of(s)
     table = rows(s, sol)
-    images = []
+    shots = list(images or [])
     if screenshot is not None:
-        images.append(("3D view at export time", png_data_uri(screenshot)))
+        shots.append(("3D view at export time", screenshot))
+    images = []
+    for caption, img in shots:
+        if isinstance(img, bytes):
+            img = "data:image/png;base64," + base64.b64encode(img).decode()
+        elif not isinstance(img, str):
+            img = png_data_uri(img)
+        images.append((caption, img))
     notes = list(notes or [])
     pts = s.result_points.get(plan_key(sol), {})
     notes += sorted({n for r in pts.values() for n in getattr(r, "notes", [])})
@@ -229,7 +244,9 @@ def export_all(
         ("userframes.csv", lambda: make_userframes(session, sol)),
         (
             "report.html",
-            lambda: make_report(session, sol, stale=stale, sim=sim, length_samples=length_samples),
+            lambda: make_report(
+                session, sol, stale=stale, sim=sim, length_samples=length_samples, notes=[NO_VIEWS_BATCH]
+            ),
         ),
     ]
     for name, fn in jobs:

@@ -16,6 +16,7 @@ import viser
 from core import export as ex
 from core.report import PdfError
 from ui import report_make as rm
+from ui import report_views as rv
 from ui.part_heatmap import tolerance_for  # noqa: F401  (re-exported; tests import it from here)
 from ui.plan_ids import key as plan_key
 from ui.session import Session
@@ -41,13 +42,21 @@ class ExportPanel:
         length_samples: Callable[[object], list] | None = None,
     ):
         self.s = session
+        self.server = server
         self.stale: list[str] = []  # components changed, when exported after 'Export anyway'
         self.selected = selected
         self.length_samples = length_samples or (lambda sol: [])
         gui = server.gui
         self.folder = gui.add_folder("Export")
         with self.folder:
-            self.screenshot = gui.add_checkbox("Include 3D view snapshot in report", True)
+            self.screenshot = gui.add_checkbox(
+                "Include 3D views in report",
+                True,
+                hint="framed views with the grid and gizmos hidden; the camera is restored afterwards",
+            )
+            self.view_boxes = {  # R3: which views the report gets
+                v: gui.add_checkbox(f"Report view: {v}", v in rv.DEFAULT_VIEWS) for v in rv.ORDER
+            }
             self.csv = gui.add_button("TCP poses (CSV)")
             self.uframes = gui.add_button(
                 "Userframes (CSV)", hint="robot base -> part frame for every stop, in this robot's format"
@@ -238,16 +247,15 @@ class ExportPanel:
         return rm.geometry(self.s)
 
     def export_report(self, sol, client=None) -> tuple[Path, bytes]:
-        shot, notes = None, []
-        if self.screenshot.value and client is not None:
-            try:
-                shot = client.camera.get_render(720, 1280, transport_format="png", timeout=10.0)
-            except Exception as err:  # renderer unavailable / timed out: the report still works
-                notes.append(f"3D snapshot not included ({type(err).__name__}).")
+        images, notes = [], []
+        if self.screenshot.value and client is not None:  # no browser (tests, scripts): no views, no note
+            views = tuple(v for v, b in self.view_boxes.items() if b.value)
+            shots = rv.capture(self.server, client, self.s, sol, views=views)
+            images, notes = list(shots), list(shots.notes)  # a failure leaves a note; the report still works
         text = rm.make_report(
             self.s,
             sol,
-            screenshot=shot,
+            images=images,
             stale=self.stale,
             sim=getattr(self, "sim", None),
             frame=getattr(self, "frame", None),

@@ -120,12 +120,14 @@ def fit_distance(box: np.ndarray) -> float:
     return FIT_MARGIN * radius / float(np.sin(np.radians(FOV_DEG) / 2.0))
 
 
-def view_pose(centre, dist: float, view: str) -> tuple[np.ndarray, np.ndarray, tuple]:
+def view_pose(
+    centre, dist: float, view: str, shift: float = PANEL_SHIFT
+) -> tuple[np.ndarray, np.ndarray, tuple]:
     """(camera position, look-at point, up direction) for a named view at ``dist``."""
     d, up = VIEWS[view]
     d = np.asarray(d, float) / np.linalg.norm(d)
     right = np.cross(-d, up)
-    c = np.asarray(centre, float) + PANEL_SHIFT * dist * right / np.linalg.norm(right)
+    c = np.asarray(centre, float) + shift * dist * right / np.linalg.norm(right)
     return c + dist * d, c, up
 
 
