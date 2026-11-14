@@ -25,6 +25,8 @@ OPTIMIZERS = {
     "robot mount height), then plans the stops of the best frames.",
     "Several parts (batch)": "Runs the station planner on a folder of part packages with this cell and "
     "end effector: stations, paths, a saved project and a PDF report per part (Results -> Batch results).",
+    "Batch queue": "Queues part meshes (STL / STEP) against this cell: targets are generated per part (or "
+    "the detected tool surface), each part is planned in its own process, with exports and a review page.",
 }
 
 

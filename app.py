@@ -293,6 +293,10 @@ def build_app(
         batch = BatchPanel(server, session)  # v13 #6: several parts
         picker.on_show["Several parts (batch)"] = batch.refresh
         state["batch"] = batch
+        from ui.batch_queue_ui import BatchPanel as QueuePanel
+
+        # B5: a queue of part meshes against this cell (targets generated per job, review page)
+        queue = QueuePanel(server, session, project, targets, stations)
         picker.bind(
             {
                 "Station planner": [stations.folder],
@@ -303,6 +307,7 @@ def build_app(
                 "Compare setups": [compare.folder],
                 "Gantry placement": [frame.folder],
                 "Several parts (batch)": [batch.folder],
+                "Batch queue": [queue.folder],
             }
         )
     with tab_handles["Results"]:
@@ -504,6 +509,7 @@ def build_app(
         edge=edge,
         cycle=cycle,
         compare=compare,
+        batch_queue=queue,
         builder=builder,
         builder_window=builder_window,
         pareto=pareto,
