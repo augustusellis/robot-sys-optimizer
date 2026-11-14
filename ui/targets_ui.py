@@ -12,11 +12,9 @@ import trimesh
 import viser
 from pydantic import ValidationError
 
-from core import target_tools as tt
 from core import targets as tg
-from core.facing import facing_sides
 from core.schema import TargetGroup, Tolerances
-from core.surface_grid import surface_grid
+from core.target_gen import GRID, LATTICE, METHODS, GenSettings, dedupe_tol, generate_raw
 from core.transforms import make_T, wxyz_to_matrix
 from ui.session import Session
 from ui.surface_select_ui import SurfaceTools
@@ -30,9 +28,6 @@ SEL_COLOR = (60, 200, 120)
 PALETTE = [(230, 60, 60), (40, 120, 230), (240, 170, 20), (150, 70, 200), (20, 170, 170), (120, 120, 120)]
 STATUS_COLORS = {"reachable": (40, 180, 70), "marginal": (240, 170, 20), "unreachable": (220, 40, 40)}
 UNCHECKED = (150, 150, 150)
-GRID = "Surface grid (rows/columns)"
-LATTICE = "Part-anchored lattice"
-METHODS = (GRID, LATTICE, "Projected grid", "Poisson (even)", "Raster lines", "Selection edges")
 GEN_FIELDS = (
     "row",
     "col",
@@ -328,61 +323,42 @@ class TargetsTab:
         for name in GEN_FIELDS:
             getattr(self, name).visible = name in shown
 
+    def gen_settings(self) -> GenSettings:
+        """The Generate points widgets as a GenSettings (SI units)."""
+
+        def vec(w) -> tuple[float, float, float]:
+            return tuple(float(x) for x in w.value)
+
+        return GenSettings(
+            method=self.method.value,
+            row_m=self.row.value / 1000,
+            col_m=self.col.value / 1000,
+            inset_m=self.inset.value / 1000,
+            row_angle_deg=self.row_angle.value,
+            row_dir=vec(self.row_dir),
+            spacing_m=self.spacing.value / 1000,
+            stepover_m=self.stepover.value / 1000,
+            direction=vec(self.direction),
+            normals_mode=self.normals_mode.value,
+            split_sides=bool(self.split_sides.value),
+            group=self.gen_group.value,
+        )
+
     def run_generate(self, e=None) -> int:
         """Generate points on the selection with the chosen generator; returns how many."""
         m = self.mesh()
         if m is None or len(self.selection) == 0:
             notify(e, "No selection", "Select a surface on the part first")
             return 0
-        step = self.spacing.value / 1000
-        d = np.asarray(self.direction.value, float)
-        d = d if np.linalg.norm(d) > 0 else None
-        method = self.method.value
-        row, col = self.row.value / 1000, self.col.value / 1000
-        tol = 0.4 * (min(row, col) if method in (GRID, LATTICE) else step)
-        if method == "Raster lines":
-            tol = 0.4 * min(step, self.stepover.value / 1000)
-        note = ""
-
-        def one(faces) -> tuple[np.ndarray, np.ndarray, str]:
-            if method == GRID:
-                P, N, info = surface_grid(
-                    m, faces, row, col, self.inset.value / 1000, self.row_angle.value, self.normals_mode.value
-                )
-                txt = f"{info.rows} rows on {info.area_m2 * 1e4:.0f} cm²"
-                if info.dropped_at_edge:
-                    txt += f"; {info.dropped_at_edge} within the edge inset left out"
-                return P, N, txt + "".join(f"  \n⚠ {w}" for w in info.warnings)
-            if method == LATTICE:
-                rd = self.tools._row_dir()
-                return (*tt.lattice_grid(m, faces, row, col, d, rd, normals=self.normals_mode.value), "")
-            if method == "Projected grid":
-                return (*tg.projected_grid(m, faces, step, direction=d, normals=self.normals_mode.value), "")
-            if method == "Poisson (even)":
-                return (*tg.poisson_disk(m, faces, step, normals=self.normals_mode.value), "")
-            if method == "Raster lines":
-                so = self.stepover.value / 1000
-                return (*tg.raster(m, faces, so, step, d, self.normals_mode.value), "")
-            return (*tg.edge_paths(m, faces, step), "")
-
         try:
-            per_side = self.split_sides.value and d is None and "split_sides" in METHOD_FIELDS.get(method, ())
-            cell = row * col if method in (GRID, LATTICE) else step * step
-            sides = facing_sides(m, self.selection, min_area=cell) if per_side else [self.selection]
-            if not sides:
-                raise ValueError("Every selected side is smaller than one grid cell: reduce the spacing.")
-            outs = [one(f) for f in sides]
-            P = np.concatenate([o[0] for o in outs]) if outs else np.zeros((0, 3))
-            N = np.concatenate([o[1] for o in outs]) if outs else np.zeros((0, 3))
-            note = "; ".join(o[2] for o in outs if o[2])
-            if len(sides) > 1:
-                note = f"{len(sides)} sides" + (f": {note}" if note else "")
+            st = self.gen_settings()
+            gen = generate_raw(m, self.selection, st)
         except (ValueError, IndexError) as err:
             self.gen_info.content = f"_{err}_"
             notify(e, "Generation failed", str(err))
             return 0
-        n = self.tools.add(P, N, e, "points", tol=tol)
-        self.gen_info.content = f"Generated **{n}** points" + (f" ({note})" if note else "") + "."
+        n = self.tools.add(gen.P, gen.N, e, "points", tol=dedupe_tol(st))
+        self.gen_info.content = f"Generated **{n}** points" + (f" ({gen.note})" if gen.note else "") + "."
         if n:
             notify(e, "Generated", f"{n} points into '{self.gen_group.value}'", ok=True)
         return n
