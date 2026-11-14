@@ -20,6 +20,8 @@ from collections.abc import Callable, Hashable
 
 import numpy as np
 
+from ui.display_lod import overlay_lift
+
 
 def srgb_to_linear_u8(rgb: np.ndarray) -> np.ndarray:
     """sRGB 0..255 colours -> linear 0..255 (glTF vertex colours are linear; three.js converts
@@ -119,7 +121,7 @@ def show_patch(scene, cache: NodeCache, prefix: str, mesh, faces, face_rgb, offs
     per face by ``face_rgb`` (blended to per-vertex colours), as ONE GLB node under ``prefix``.
     Keyed by a hash of the exact geometry and colours: the same picture again only toggles
     visibility in ``cache``. Returns the handle."""
-    V, F, used = lifted_patch(mesh, faces, offset)
+    V, F, used = lifted_patch(mesh, faces, overlay_lift(mesh, offset))  # clear of a simplified copy
     C = vertex_colours(np.asarray(face_rgb, float), F, len(used))
     V32, F32 = V.astype(np.float32), F.astype(np.uint32)
     h = hashlib.blake2b(digest_size=16)

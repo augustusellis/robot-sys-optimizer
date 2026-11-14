@@ -18,6 +18,7 @@ import hashlib
 import numpy as np
 
 from core import targets as tg
+from ui.display_lod import overlay_lift
 
 PART = "/cell/part"
 SEL_COLOR = (60, 200, 120)
@@ -54,7 +55,7 @@ def chunk_arrays(m, faces: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Vertices (lifted along the part's vertex normals) and faces of a selection chunk. The
     whole mesh's normals are used, so neighbouring chunks share their seam vertices exactly."""
     used, inv = np.unique(m.faces[faces], return_inverse=True)
-    V = m.vertices[used] + SEL_OFFSET * m.vertex_normals[used]
+    V = m.vertices[used] + overlay_lift(m, SEL_OFFSET) * m.vertex_normals[used]
     return V.astype(np.float32), inv.reshape(-1, 3).astype(np.uint32)
 
 

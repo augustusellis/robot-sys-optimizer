@@ -150,7 +150,12 @@ def draw_unreached(server, root: str, ids, P, N, bad: list[int], point_size: flo
         ),
     }
     for j, (pid, p, n) in enumerate(zip(bad, Pb, Nb, strict=True)):
-        if j >= MAX_LABELS:
+        if j >= MAX_LABELS:  # one summary label for the rest (their dots and crosses stay)
+            out["unreached_label_more"] = server.scene.add_label(
+                f"{root}/unreached_label_more",
+                f"+{len(bad) - MAX_LABELS} more unreached",
+                position=tuple(p + 0.02 * n),
+            )
             break
         out[f"unreached_label_{pid}"] = server.scene.add_label(
             f"{root}/unreached_label_{pid}",
