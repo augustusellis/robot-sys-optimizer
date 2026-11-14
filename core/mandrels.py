@@ -10,8 +10,6 @@ would be one welded solid (``info["components"]`` says how many). No viser / ui 
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-
 import numpy as np
 import trimesh
 
@@ -19,11 +17,13 @@ _Z = np.array([0.0, 0.0, 1.0])
 
 
 # ---------------------------------------------------------------- mesh building blocks
-def _slab(xs: np.ndarray, ys: np.ndarray, ztop: np.ndarray, thickness: float):
+def _slab(xs: np.ndarray, ys: np.ndarray, ztop: np.ndarray, thickness: float, skip=None):
     """Closed slab under a height field. ``ztop`` is [len(ys), len(xs)].
 
     Returns (vertices, faces, n_top_faces); the first ``n_top_faces`` faces are the top
     surface, two per cell, ordered cell (j, i) -> 2 * (j * (nx - 1) + i).
+    ``skip`` ([ny-1, nx-1] bool) cuts cells through the slab (perforation, with hole walls);
+    skipped cells must not touch the border or each other, even diagonally.
     """
     nx, ny = len(xs), len(ys)
     X, Y = np.meshgrid(xs, ys)
@@ -36,13 +36,34 @@ def _slab(xs: np.ndarray, ys: np.ndarray, ztop: np.ndarray, thickness: float):
     top_f = np.stack(
         [np.stack([v00, v10, v11], -1).reshape(-1, 3), np.stack([v00, v11, v01], -1).reshape(-1, 3)], 1
     ).reshape(-1, 3)  # interleaved: cell k -> faces 2k, 2k+1
+    if skip is not None:
+        skip = np.asarray(skip, bool)
+        top_f = top_f.reshape(-1, 2, 3)[~skip.ravel()].reshape(-1, 3)
     bot_f = top_f[:, ::-1] + n
     # CCW boundary loop (seen from +Z): bottom row -> right column -> top row -> left column
     loop = np.concatenate([idx[0, :-1], idx[:-1, -1], idx[-1, :0:-1], idx[:0:-1, 0]])
     nxt = np.roll(loop, -1)
     sides = np.vstack([np.column_stack([loop, loop + n, nxt + n]), np.column_stack([loop, nxt + n, nxt])])
-    faces = np.vstack([top_f, bot_f, sides])
+    walls = []
+    if skip is not None:
+        for j, i in zip(*np.nonzero(skip), strict=True):
+            ring = [idx[j, i], idx[j, i + 1], idx[j + 1, i + 1], idx[j + 1, i]]
+            nbr = [(j - 1, i), (j, i + 1), (j + 1, i), (j, i - 1)]
+            for k, (nj, ni) in enumerate(nbr):
+                a, b = ring[k], ring[(k + 1) % 4]
+                if not skip[nj, ni]:  # solid beyond this edge: wall faces into the hole
+                    walls += [(a, b, b + n), (a, b + n, a + n)]
+    faces = np.vstack([top_f, bot_f, sides] + ([np.array(walls)] if walls else []))
     return verts, faces, len(top_f)
+
+
+def merge_axis(base: np.ndarray, breaks, res: float) -> np.ndarray:
+    """Axis samples with exact grid lines at ``breaks`` (base samples next to a break are dropped)."""
+    br = np.asarray(sorted(breaks), float)
+    keep = (
+        np.array([np.all(np.abs(br - x) > 0.3 * res) for x in base]) if len(br) else np.ones(len(base), bool)
+    )
+    return np.unique(np.round(np.concatenate([base[keep], br]), 9))
 
 
 def _prism(s: np.ndarray, c0: float, thick: float, zbot: float, ztop: np.ndarray, along_x: bool):
@@ -143,41 +164,66 @@ def faceplate_eggcrate(
     frame_width: float = 0.04,
     frame_height: float = 0.05,
     bosses: int = 4,
+    relief=None,
+    breaks=None,
+    plinth=None,
+    pins: int = 0,
+    perforate: int = 0,
 ):
     """Freeform faceplate (saddle + bump + dimple) on an egg-crate of ribs and a base frame.
 
     Truth = the whole top surface of the faceplate (the run-off ``margin`` is included and
     recorded in ``info``). Ribs end inside the plate, so their tops face up but are hidden.
+
+    Hard-case options: ``relief(x, y)`` is added to the height (creases); ``breaks`` =
+    (x_lines, y_lines) puts grid lines on the creases; ``plinth`` = (width, under) adds a flat
+    machined pad beside the frame, extending ``under`` m beneath the plate (decoy, not truth);
+    ``pins`` adds raised tooling pins on the surface (excluded from truth); ``perforate`` = k
+    cuts square holes through the plate every k cells.
     """
     rng = np.random.default_rng(seed)
     Lx, Ly = size
     nx, ny = max(int(round(Lx / resolution)), 4) + 1, max(int(round(Ly / resolution)), 4) + 1
     xs, ys = np.linspace(-Lx / 2, Lx / 2, nx), np.linspace(-Ly / 2, Ly / 2, ny)
+    if breaks is not None:
+        xs = merge_axis(xs, [-Lx / 2, Lx / 2, *breaks[0]], resolution)
+        ys = merge_axis(ys, [-Ly / 2, Ly / 2, *breaks[1]], resolution)
+        nx, ny = len(xs), len(ys)
     bx, by = rng.uniform(-0.25, 0.25, 2) * (Lx, Ly)
     dx, dy = rng.uniform(-0.25, 0.25, 2) * (Lx, Ly)
     sad = saddle * rng.uniform(0.8, 1.2)
 
     def h(x, y):
         s = sad * ((2 * x / Lx) ** 2 - (2 * y / Ly) ** 2)
-        return (
+        z = (
             height
             + s
             + bump * _bump(x, y, bx, by, Lx * 0.18, Ly * 0.2)
             - 0.6 * bump * _bump(x, y, dx, dy, Lx * 0.12, Ly * 0.15)
         )
+        return z if relief is None else z + relief(x, y)
 
     X, Y = np.meshgrid(xs, ys)
-    sv, sf, ntop = _slab(xs, ys, h(X, Y), thickness)
+    skip = None
+    if perforate:
+        skip = np.zeros((ny - 1, nx - 1), bool)
+        skip[2 : ny - 3 : perforate, 2 : nx - 3 : perforate] = True
+    sv, sf, ntop = _slab(xs, ys, h(X, Y), thickness, skip)
     parts = [(sv, sf)]
     # ribs: along x and along y, plus the perimeter plates; tops sit mid-plate
     ix = np.linspace(-Lx / 2 + frame_width, Lx / 2 - frame_width, max(int(Lx / rib_pitch), 2) + 1)
     iy = np.linspace(-Ly / 2 + frame_width, Ly / 2 - frame_width, max(int(Ly / rib_pitch), 2) + 1)
     sx = np.linspace(-Lx / 2 + frame_width, Lx / 2 - frame_width, nx)
     sy = np.linspace(-Ly / 2 + frame_width, Ly / 2 - frame_width, ny)
+    rib_off = 0.5 * thickness
+    if breaks is not None:  # sample ribs on the slab's own grid lines so creases line up
+        sx = xs[(xs >= -Lx / 2 + frame_width) & (xs <= Lx / 2 - frame_width)]
+        sy = ys[(ys >= -Ly / 2 + frame_width) & (ys <= Ly / 2 - frame_width)]
+        rib_off = 0.7 * thickness
     for y0 in iy:
-        parts.append(_prism(sx, y0, rib_thickness, 0.0, h(sx, y0) - 0.5 * thickness, True))
+        parts.append(_prism(sx, y0, rib_thickness, 0.0, h(sx, y0) - rib_off, True))
     for x0 in ix:
-        parts.append(_prism(sy, x0, rib_thickness, 0.0, h(x0, sy) - 0.5 * thickness, False))
+        parts.append(_prism(sy, x0, rib_thickness, 0.0, h(x0, sy) - rib_off, False))
     # base frame: four rails under the perimeter
     fw, fh = frame_width, frame_height
     boxes = []
@@ -201,15 +247,38 @@ def faceplate_eggcrate(
         cyl = trimesh.creation.cylinder(radius=0.025, height=0.04, sections=24)
         cyl.apply_translation([sx_ * (Lx / 2 - fw / 2 - 0.0), sy_ * (Ly / 2 - fw / 2), fh + 0.02])
         parts.append((cyl.vertices, cyl.faces))
+    if plinth is not None:
+        pw, under = plinth
+        pad = trimesh.creation.box((pw, Ly + 0.2, fh))
+        pad.apply_translation([Lx / 2 - under + pw / 2, 0.0, fh / 2])
+        parts.append((pad.vertices, pad.faces))
+    pin_xy = np.zeros((0, 2))
+    if pins:
+        pin_xy = rng.uniform(-0.3, 0.3, (pins, 2)) * (Lx, Ly)
+        for px, py in pin_xy:
+            cyl = trimesh.creation.cylinder(radius=0.012, height=0.04, sections=20)
+            cyl.apply_translation([px, py, float(h(px, py)) - 0.01 + 0.02])
+            parts.append((cyl.vertices, cyl.faces))
     mesh, _ = _assemble(parts)
     truth = np.zeros(len(mesh.faces), bool)
-    truth[:ntop] = True
+    cx_, cy_ = (xs[:-1] + xs[1:]) / 2, (ys[:-1] + ys[1:]) / 2
+    CX, CY = np.meshgrid(cx_, cy_)
+    ok = np.ones(CX.shape, bool)
+    for px, py in pin_xy:  # surface under a pin is not tool surface
+        ok &= np.hypot(CX - px, CY - py) > 0.012 + 0.7 * resolution
+    if skip is not None:
+        ok = ok[~skip]
+    truth[:ntop] = np.repeat(ok.ravel(), 2)
     _noise_and_tilt(mesh, noise, tilt, rng)
     info = _describe(
         mesh,
         truth,
         dict(
             kind="faceplate_eggcrate",
+            pins=int(pins),
+            pin_xy=pin_xy.tolist(),
+            perforated=bool(perforate),
+            plinth=plinth,
             seed=seed,
             size=tuple(size),
             resolution=resolution,
@@ -350,52 +419,10 @@ def vary(
     return m, t, info
 
 
-# ---------------------------------------------------------------- the synthetic set
-@dataclass(frozen=True)
-class MandrelCase:
-    name: str
-    generator: str  # "faceplate" | "male" | "female"
-    gen_kwargs: dict = field(default_factory=dict)
-    vary_kwargs: dict = field(default_factory=dict)
-    note: str = ""
+# The case set lives in core.mandrel_cases; these names are forwarded for older imports.
+def __getattr__(name):
+    if name in ("SYNTHETIC_CASES", "MandrelCase", "build_case", "iter_cases"):
+        from core import mandrel_cases
 
-
-SYNTHETIC_CASES: tuple[MandrelCase, ...] = (
-    MandrelCase("plate_a", "faceplate", dict(seed=1), note="faceplate on egg-crate"),
-    MandrelCase("plate_b_tilt5", "faceplate", dict(seed=2, saddle=0.07, tilt=5.0)),
-    MandrelCase("plate_c_tilt10_noise", "faceplate", dict(seed=3, bump=0.08, tilt=10.0, noise=0.0003)),
-    MandrelCase("plate_coarse", "faceplate", dict(seed=4, resolution=0.04), note="coarse grid"),
-    MandrelCase("plate_holes", "faceplate", dict(seed=5), dict(holes=4, seed=11), "holes in the surface"),
-    MandrelCase("male_flange", "male", dict(seed=1, flange=True)),
-    MandrelCase("male_noflange", "male", dict(seed=2, flange=False)),
-    MandrelCase("male_tilt5", "male", dict(seed=3, tilt=5.0, thickness=0.006)),
-    MandrelCase("male_irregular", "male", dict(seed=4), dict(remesh="irregular", seed=3), "irregular mesh"),
-    MandrelCase("female_flange", "female", dict(seed=1, flange=True)),
-    MandrelCase("female_noflange", "female", dict(seed=2, flange=False)),
-    MandrelCase("female_tilt10_noise", "female", dict(seed=3, tilt=10.0, noise=0.0002)),
-    MandrelCase("female_coarse", "female", dict(seed=4), dict(remesh="coarse", seed=5), "decimated"),
-    MandrelCase("female_fine_holes", "female", dict(seed=5), dict(remesh="fine", holes=3, seed=6)),
-)
-
-
-def build_case(case: MandrelCase):
-    """Deterministically build one case: ``(mesh, truth, info)``."""
-    if case.generator == "faceplate":
-        m, t, info = faceplate_eggcrate(**case.gen_kwargs)
-    elif case.generator in ("male", "female"):
-        m, t, info = thin_shell(kind=case.generator, **case.gen_kwargs)
-    else:
-        raise ValueError(f"unknown generator {case.generator!r} in case {case.name!r}")
-    if case.vary_kwargs:
-        m, t, info2 = vary(m, t, **case.vary_kwargs)
-        info = {**info, **info2}
-    info["name"] = case.name
-    return m, t, info
-
-
-def iter_cases(names=None):
-    """Yield ``(case, mesh, truth, info)`` for the synthetic set (optionally a subset)."""
-    for c in SYNTHETIC_CASES:
-        if names is None or c.name in names:
-            m, t, info = build_case(c)
-            yield c, m, t, info
+        return getattr(mandrel_cases, name)
+    raise AttributeError(name)

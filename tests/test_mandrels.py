@@ -4,9 +4,8 @@ import numpy as np
 import pytest
 import trimesh
 
+from core.mandrel_cases import SYNTHETIC_CASES, build_case
 from core.mandrels import (
-    SYNTHETIC_CASES,
-    build_case,
     faceplate_eggcrate,
     thin_shell,
     vary,
@@ -139,3 +138,119 @@ def test_largest_smooth_runs(plate):
     mesh, truth, _ = plate
     pred = largest_smooth(mesh)
     assert pred.any() and pred.shape == truth.shape
+
+
+# ---------------------------------------------------------------- T0b: the hard set
+import time  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from scipy.sparse import coo_matrix  # noqa: E402
+from scipy.sparse.csgraph import connected_components  # noqa: E402
+
+HARD = [c for c in SYNTHETIC_CASES if c.hard]
+
+
+def _patches(mesh, mask, deg=30.0):
+    """Number of smooth (<= deg) patches among the masked faces."""
+    adj = mesh.face_adjacency
+    ok = (mesh.face_adjacency_angles <= np.radians(deg)) & mask[adj[:, 0]] & mask[adj[:, 1]]
+    a = adj[ok]
+    n = len(mesh.faces)
+    _, lab = connected_components(
+        coo_matrix((np.ones(len(a)), (a[:, 0], a[:, 1])), shape=(n, n)), directed=False
+    )
+    return len(np.unique(lab[mask]))
+
+
+@pytest.fixture(scope="module")
+def built():
+    t0 = time.perf_counter()
+    out = {c.name: build_case(c) for c in SYNTHETIC_CASES}
+    out["_seconds"] = time.perf_counter() - t0
+    return out
+
+
+def test_set_size_tags_and_build_time(built):
+    assert len(SYNTHETIC_CASES) >= 30 and len(HARD) >= 14
+    assert len({c.name for c in SYNTHETIC_CASES}) == len(SYNTHETIC_CASES)
+    assert built["_seconds"] < 30
+    for c in SYNTHETIC_CASES:
+        m, t, info = built[c.name]
+        assert t.any() and t.shape == (len(m.faces),)
+        assert len(m.faces) <= 100_000
+        assert info["tags"] and info["expect"] and info["name"] == c.name
+        assert ("hard" in info["tags"]) == c.hard
+        assert info["winding_consistent"]
+    assert sum("ambiguous" in c.tags for c in SYNTHETIC_CASES) >= 1
+
+
+def test_hard_cases_deterministic():
+    for c in (HARD[0], HARD[3], HARD[-1]):
+        a, b = build_case(c), build_case(c)
+        assert np.array_equal(a[0].vertices, b[0].vertices) and np.array_equal(a[1], b[1])
+
+
+def test_example_files_still_match_defaults():
+    ex = Path(__file__).parents[1] / "examples" / "mandrels"
+    for name in ("plate_coarse", "male_flange", "female_coarse"):
+        m, t, _ = build_case(next(c for c in SYNTHETIC_CASES if c.name == name))
+        assert len(np.load(ex / f"{name}_truth.npy")) == len(m.faces)
+        assert np.array_equal(np.load(ex / f"{name}_truth.npy"), t)
+
+
+@pytest.mark.parametrize(
+    "name,patches", [("plate_joggle_step", 3), ("plate_ridge", 2), ("plate_ridge_valley", 4)]
+)
+def test_creased_truth_splits_into_patches(built, name, patches):
+    m, t, _ = built[name]
+    assert _patches(m, t) == patches
+    assert _mean_nz(m, t) > 0.8
+
+
+@pytest.mark.parametrize(
+    "name,wall", [("female_steep70", 70), ("female_steep85", 85), ("female_steep88_noise", 88)]
+)
+def test_steep_truth_includes_walls_without_undercut(built, name, wall):
+    m, t, info = built[name]
+    nz = m.face_normals[t, 2]
+    assert info["wall_deg"] == wall
+    assert nz.min() > 0.0  # no undercut
+    a = m.area_faces[t]
+    assert a[nz < 0.5].sum() > 0.3 * a.sum()  # walls are a large share of the truth area
+    wall_nz = np.cos(np.radians(wall))
+    assert np.isclose(np.sort(nz)[: max(10, int(0.02 * len(nz)))].mean(), wall_nz, atol=0.03)
+
+
+def test_decoys_are_bigger_than_truth(built):
+    for name in ("male_decoy_flange", "male_ambiguous_flange"):
+        m, t, info = built[name]
+        up = (m.face_normals[:, 2] > 0.95) & ~t
+        assert m.area_faces[up].sum() > 3 * m.area_faces[t].sum()
+    assert built["male_ambiguous_flange"][2]["expect"] == {"ambiguous": True}
+    m, t, _ = built["male_decoy_flange"]
+    assert m.triangles_center[t, 2].min() > m.triangles_center[~t & (m.face_normals[:, 2] > 0.95), 2].max()
+    m, t, info = built["plate_plinth_decoy"]
+    pad = (m.face_normals[:, 2] > 0.99) & ~t & (np.abs(m.triangles_center[:, 2] - 0.05) < 1e-6)
+    assert m.area_faces[pad].sum() > m.area_faces[t].sum()
+
+
+def test_pins_and_perforation(built):
+    m, t, info = built["plate_pins"]
+    assert info["pins"] == 4
+    xy = np.array(info["pin_xy"])
+    c = m.triangles_center
+    near = np.hypot(c[:, None, 0] - xy[:, 0], c[:, None, 1] - xy[:, 1]).min(1) < 0.012
+    assert near.sum() > 50 and not (t & near).any()  # pin faces and the surface under them are not truth
+    m, t, info = built["plate_perforated"]
+    assert info["perforated"] and info["watertight"] and m.volume > 0
+    m0, t0, _ = built["plate_a"]
+    assert t.sum() < t0.sum()
+
+
+def test_tilt_cases_are_tilted(built):
+    for name, deg in (("plate_tilt25", 25), ("female_tilt30", 30)):
+        m, t, _ = built[name]
+        a = m.area_faces[t]
+        mean_n = (m.face_normals[t] * a[:, None]).sum(0)
+        tilt = np.degrees(np.arccos(mean_n[2] / np.linalg.norm(mean_n)))
+        assert abs(tilt - deg) < 6

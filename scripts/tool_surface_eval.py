@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from core.mandrels import iter_cases  # noqa: E402
+from core.mandrel_cases import iter_cases  # noqa: E402
 from core.tool_surface_eval import BASELINES, load_sample, score  # noqa: E402
 
 
@@ -47,7 +47,12 @@ def iter_samples(folder: Path, scale: float):
 def run(cases, detectors: dict) -> list[dict]:
     rows = []
     for name, mesh, truth, info in cases:
-        row = {"case": name, "faces": len(mesh.faces), "wt": info.get("watertight")}
+        row = {
+            "case": name,
+            "faces": len(mesh.faces),
+            "wt": info.get("watertight"),
+            "hard": "hard" in info.get("tags", ()),
+        }
         for dn, fn in detectors.items():
             t0 = time.perf_counter()
             try:
@@ -67,19 +72,24 @@ def print_table(rows: list[dict], detectors: dict) -> None:
         print(f"\n== {dn} ==")
         print(f"{'case':26s}{'faces':>8s}{'wt':>4s}{'IoU':>7s}{'prec':>7s}{'rec':>7s}{'time_s':>8s}")
         acc = {"iou": [], "precision": [], "recall": [], "time": []}
+        groups = {"EASY": [], "HARD": []}
         for r in rows:
             s = r[dn]
+            tag = " *" if r["hard"] else ""
             print(
                 f"{r['case']:26s}{r['faces']:8d}{'Y' if r['wt'] else 'N':>4s}"
-                f"{s['iou']:7.3f}{s['precision']:7.3f}{s['recall']:7.3f}{s['time']:8.2f}"
+                f"{s['iou']:7.3f}{s['precision']:7.3f}{s['recall']:7.3f}{s['time']:8.2f}{tag}"
             )
-            for k in acc:
-                acc[k].append(s[k])
-        mean = {k: sum(v) / max(len(v), 1) for k, v in acc.items()}
-        print(
-            f"{'MEAN':26s}{'':8s}{'':>4s}{mean['iou']:7.3f}{mean['precision']:7.3f}"
-            f"{mean['recall']:7.3f}{mean['time']:8.2f}"
-        )
+            groups["HARD" if r["hard"] else "EASY"].append(s)
+        print("(* = hard case)")
+        for label, ss in [*groups.items(), ("ALL", groups["EASY"] + groups["HARD"])]:
+            if not ss:
+                continue
+            m = {k: sum(x[k] for x in ss) / len(ss) for k in acc}
+            print(
+                f"{'MEAN ' + label + f' (n={len(ss)})':26s}{'':8s}{'':>4s}{m['iou']:7.3f}"
+                f"{m['precision']:7.3f}{m['recall']:7.3f}{m['time']:8.2f}"
+            )
 
 
 def main(argv=None) -> int:
