@@ -90,7 +90,7 @@ class PdfError(RuntimeError):
 
 
 def html_to_pdf(html_path: Path, pdf_path: Path, timeout: float = 90.0) -> bool:
-    """v8 T19: print an HTML file to PDF with Edge (or Chrome) headless. Raises PdfError when no
+    """v8 T19: print an HTML file to PDF with Edge, Chrome or Chromium headless. Raises PdfError when no
     browser is found, when it ran but wrote no PDF (exit code, first stderr line) or timed out."""
     import shutil
     import subprocess
@@ -100,8 +100,10 @@ def html_to_pdf(html_path: Path, pdf_path: Path, timeout: float = 90.0) -> bool:
         r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
         r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
         shutil.which("msedge"),
+        shutil.which("microsoft-edge"),
         shutil.which("google-chrome"),
         shutil.which("chromium"),
+        shutil.which("chromium-browser"),
     ]
     exe = next((c for c in cands if c and Path(c).is_file()), None)
     if exe is None:

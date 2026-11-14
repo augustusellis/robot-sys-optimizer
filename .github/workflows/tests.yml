@@ -1,4 +1,5 @@
-# v8 T21: lint (Linux, v12) and the fast tests (Windows, the conda env `rso`) on every push / PR.
+# v8 T21: lint (Linux, v12) and the fast tests (Windows primary, Ubuntu secondary; the conda env `rso`)
+# on every push / pull request.
 # The slow tests (full plans, tool optimizer, paths) and the browser tests run locally:
 #   python scripts/test_batches.py          # everything (~60 min)
 #   python scripts/test_batches.py --e2e    # headless Edge
@@ -27,8 +28,15 @@ jobs:
           ruff format --check .
 
   fast:
-    runs-on: windows-latest
+    name: fast (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-22.04]
     timeout-minutes: 60
+    env:
+      PYTHONUTF8: "1"
     defaults:
       run:
         shell: bash -el {0}
@@ -46,12 +54,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: cache/reachability
-          key: maps-${{ hashFiles('assets/robots/**/spec.yaml', 'opt/reachability.py') }}
+          key: maps-${{ runner.os }}-${{ hashFiles('assets/robots/**/spec.yaml', 'opt/reachability.py') }}
 
       - name: Guide up to date
         run: python scripts/build_guide.py --check
 
       - name: Fast tests
-        env:
-          PYTHONUTF8: "1"
         run: python scripts/test_batches.py --fast
