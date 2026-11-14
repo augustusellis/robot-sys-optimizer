@@ -64,8 +64,13 @@ def labels_from_proximity(
 
 def _load_mesh(path: Path, scale: float) -> trimesh.Trimesh:
     ext = path.suffix.lower()
-    if ext in STEP_EXTS:
-        raise NotImplementedError("STEP samples need the STEP import step (T3)")
+    if ext in STEP_EXTS:  # STEP carries its own unit (read in metres); ``scale`` is for mesh files
+        from core.step_import import StepImportError, read_step
+
+        try:
+            return read_step(path, "m").mesh
+        except StepImportError as err:
+            raise ValueError(str(err)) from err
     m = trimesh.load(path, force="mesh")
     if not isinstance(m, trimesh.Trimesh) or len(m.faces) == 0:
         raise ValueError(f"{path} did not load as a triangle mesh")
@@ -85,7 +90,8 @@ def _find(folder: Path, stem: str) -> Path:
 def load_sample(folder, scale: float = 1.0, tol: float = 0.0005):
     """Load ``<folder>/mandrel.*`` + ``tool_surface.*``; returns ``(mesh, truth_mask, info)``.
 
-    ``scale`` converts file units to metres (0.001 for millimetre files).
+    ``scale`` converts file units to metres (0.001 for millimetre STL files); STEP files carry
+    their own unit and are always read in metres.
     """
     folder = Path(folder)
     mandrel = _load_mesh(_find(folder, "mandrel"), scale)

@@ -16,6 +16,7 @@ import trimesh
 
 from core import data_paths, schema
 from core.robot import Robot, list_robots
+from core.step_import import STEP_EXTS, StepImportError, read_step
 from core.tool import ToolModel, load_tool
 from core.transforms import matrix_to_pose, pose_to_matrix
 from core.urdf_import import inspect_urdf
@@ -27,6 +28,7 @@ REPO = data_paths.resources()  # read-only bundled files (the repo folder in a s
 WORKSPACE = data_paths.workspace_dir()
 DEFAULT_PROJECT_DIR = WORKSPACE / "default"
 MESH_EXTS = (".stl", ".obj", ".ply")
+PART_EXTS = MESH_EXTS + STEP_EXTS  # a part may also be a STEP model (core.step_import)
 UNIT_SCALE = {"m": 1.0, "mm": 1e-3, "in": 0.0254}
 MOUNT_RPY = {"floor": (0.0, 0.0, 0.0), "wall": (0.0, -np.pi / 2, 0.0), "ceiling": (np.pi, 0.0, 0.0)}
 
@@ -397,13 +399,34 @@ class Session:
 
 
 def load_mesh(path: Path, units: str = "m") -> trimesh.Trimesh:
-    if path.suffix.lower() not in MESH_EXTS:
-        raise ValueError(f"unsupported mesh type {path.suffix}; use {', '.join(MESH_EXTS)}")
+    """Load a part mesh in metres. STL / OBJ / PLY are scaled by ``units``. A STEP model carries
+    its own length unit, so ``units`` is ignored for it; the CAD face of every triangle is kept in
+    ``mesh.metadata["cad_face_ids"]`` (and the CAD face types in ``"cad_face_types"``)."""
+    ext = path.suffix.lower()
+    if ext not in PART_EXTS:
+        raise ValueError(f"unsupported mesh type {path.suffix}; use {', '.join(PART_EXTS)}")
+    if ext in STEP_EXTS:
+        try:
+            sm = read_step(path, "m")
+        except StepImportError as err:
+            raise ValueError(str(err)) from err
+        mesh = sm.mesh
+        mesh.metadata["cad_face_ids"] = sm.face_ids
+        mesh.metadata["cad_face_types"] = list(sm.face_types)
+        mesh.metadata["cad_solids"] = sm.n_solids
+        return mesh
     mesh = trimesh.load(path, force="mesh")
     if not isinstance(mesh, trimesh.Trimesh) or len(mesh.faces) == 0:
         raise ValueError(f"{path.name} contains no triangles")
     mesh.apply_scale(UNIT_SCALE[units])
     return mesh
+
+
+def load_cad_face_ids(path: Path, units: str = "m") -> np.ndarray | None:
+    """Per-triangle CAD face index of a STEP part (aligned with ``load_mesh(path)``), else None."""
+    if path.suffix.lower() not in STEP_EXTS:
+        return None
+    return load_mesh(path, units).metadata["cad_face_ids"]
 
 
 def save_project(session: Session, project_dir: Path | None = None) -> Path:

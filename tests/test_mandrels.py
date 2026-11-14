@@ -130,7 +130,7 @@ def test_load_sample_errors(tmp_path):
     (tmp_path / "b").mkdir()
     box.export(tmp_path / "b" / "mandrel.stl")
     (tmp_path / "b" / "tool_surface.step").write_text("x")
-    with pytest.raises(NotImplementedError, match="T3"):
+    with pytest.raises(ValueError, match="not a readable STEP file"):
         load_sample(tmp_path / "b")
 
 

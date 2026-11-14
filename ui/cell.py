@@ -21,7 +21,7 @@ from core.transforms import (
 from core.urdf_import import URDFImportError, import_urdf_zip
 from ui import display_lod
 from ui.robot_view import RobotView
-from ui.session import MESH_EXTS, MOUNT_RPY, UNIT_SCALE, PartState, Session, load_mesh
+from ui.session import MOUNT_RPY, PART_EXTS, UNIT_SCALE, PartState, Session, load_mesh
 from ui.widgets import MAX_UPLOAD, Latest, PoseWidgets
 from ui.widgets import notify as _notify
 from ui.widgets import safe_name as _safe_name
@@ -174,8 +174,8 @@ class CellTab:
     def upload_part(self, filename: str, content: bytes, e=None) -> None:
         """Store an uploaded part mesh (validated before it can replace a file of that name)."""
         name = _safe_name(filename)
-        if Path(name).suffix.lower() not in MESH_EXTS or len(content) > MAX_UPLOAD:
-            return _notify(e, "Unsupported mesh", f"Use {', '.join(MESH_EXTS)} under 200 MB")
+        if Path(name).suffix.lower() not in PART_EXTS or len(content) > MAX_UPLOAD:
+            return _notify(e, "Unsupported mesh", f"Use {', '.join(PART_EXTS)} under 200 MB")
         path = self.s.project_dir / "assets" / "parts" / name
         try:  # validated as a temp file first: a bad upload never overwrites the old one
             replaced = replace_file(path, content, lambda p: load_mesh(p, self.upload_units.value))
