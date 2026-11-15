@@ -373,6 +373,7 @@ def build_app(
     ex = results.export
     ex.tube_od = tool_opt.tube_od  # v8 T17: the STEP export uses the chosen tube
     ex.sim = sim  # v8 T19: the report shows the built paths' cycle time
+    ex.frame = frame  # v10 T22: Gantry placement in the report
     workflow.gate(
         (ex.csv, ex.uframes, ex.urdf, ex.report, ex.step), ex.gate_md, result_reason(results.selected)
     )

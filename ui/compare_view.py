@@ -59,7 +59,7 @@ class CompareView:
 
     def refresh(self) -> None:
         """The dropdown lists the project's robot and the compared ones."""
-        names = [n for n in self.s.compared if self.s.compared[n].get("results")]
+        names = [n for n in self.s.compared if self.s.compared[n].get("results")]  # not the project row
         self.folder.visible = bool(names)
         opts = (self.project_label(), *names)
         viewing = self.viewing if self.s.view_stash else None

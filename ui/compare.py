@@ -149,6 +149,9 @@ def compare_job(payload: dict, emit, cancelled) -> list[dict]:
             continue
         _, res = sols.get(best.label, (best, {}))
         m = _metrics(best, res, time.monotonic() - t0)
+        from core.report_svg import stops_text
+
+        m["stops_xy"] = stops_text(best.stations)  # v10 T22: the report's picture of this setup
         top = sols.get("__max_manip")
         m["manip_pct"] = 100 * m["manip"] / top if m["manip"] is not None and top else None
         from ui.staleness import stamp_for
@@ -177,7 +180,16 @@ def keep_plans(session, rows: list[dict]) -> list[dict]:
     for r in rows:
         r = dict(r)
         plans, stamps, ee = r.pop("plans", []), r.pop("stamps", {}), r.pop("ee", None)
-        if plans and not r.get("project"):  # the project's own plans stay the project's
+        if r.get("project") and r.get("stations"):  # v10 T22: its row (no plans) for the report
+            session.compared[f"{r.get('setup', r['robot'])} (project)"] = {
+                "robot": r["robot"],
+                "tool": None,
+                "results": [],
+                "points": {},
+                "stamps": {},
+                "metrics": dict(r),
+            }
+        elif plans and not r.get("project"):  # the project's own plans stay the project's
             session.compared[r.get("setup", r["robot"])] = {
                 "robot": r["robot"],
                 "tool": ee,

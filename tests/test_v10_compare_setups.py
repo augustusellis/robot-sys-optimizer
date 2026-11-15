@@ -44,7 +44,9 @@ def test_compare_a_tool_view_it_and_save(tmp_path):
         rows = {r["setup"]: r for r in cmp_.rows}
         assert set(rows) == {"ur20", "ur20 · scanner"} and rows["ur20"]["project"]
         assert "ur20 (project)" in cmp_.status.content and "ur20 · scanner" in cmp_.status.content
-        assert set(s.compared) == {"ur20 · scanner"}  # the project's own plans stay the project's
+        # the project's own plans stay the project's; its row is kept for the report (v10 T22)
+        assert set(s.compared) == {"ur20 · scanner", "ur20 (project)"}
+        assert not s.compared["ur20 (project)"]["results"]
         assert s.tool.name == "orbital_sander"  # the live session is untouched
         view.view("ur20 · scanner")
         assert s.tool.name == "scanner" and s.robot_name == "ur20"

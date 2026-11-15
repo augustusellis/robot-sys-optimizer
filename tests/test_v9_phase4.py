@@ -32,7 +32,7 @@ def compared():
 
 def test_compared_plans_are_kept(compared):
     s = compared["session"]
-    assert set(s.compared) == {"ur10e"}
+    assert set(s.compared) == {"ur10e", "ur20 (project)"}  # v10 T22: the project's row (no plans)
     c = s.compared["ur10e"]
     assert c["results"] and set(c["points"]) == {sol.label for sol in c["results"]}
     assert c["metrics"]["label"] == c["results"][0].label  # the best plan first, as in Results
@@ -58,7 +58,7 @@ def test_view_a_compared_robot_and_build_its_paths(compared):
     assert solution_changes(s, s.results[0]) == []  # up to date with the robot it was planned with
     p = s.snapshot()  # saving while viewing saves the project's own robot and plans
     assert p.robot.name == "ur20" and [r.label for r in p.results] == [r.label for r in own_results]
-    assert [c.robot for c in p.compared] == ["ur10e"]
+    assert sorted(c.robot for c in p.compared) == ["ur10e", "ur20"]  # + the project row (v10 T22)
     results.choice.value = results.choice.options[0]
     sim.build(block=True)
     assert sim.plan is not None and sim.plan.samples
@@ -80,7 +80,7 @@ def test_compared_robots_are_saved(compared, tmp_path):
     s, project = compared["session"], compared["project"]
     project.save_now(tmp_path / "study")
     assert project._load(E, tmp_path / "study")
-    assert set(s.compared) == {"ur10e"} and s.compared["ur10e"]["results"]
+    assert set(s.compared) == {"ur10e", "ur20 (project)"} and s.compared["ur10e"]["results"]
     pts = s.compared["ur10e"]["points"]
     label = s.compared["ur10e"]["results"][0].label
     assert pts[label] and next(iter(pts[label].values())).q is not None
@@ -91,9 +91,9 @@ def test_report_has_the_comparison_and_no_point_table(compared):
     ex = compared["results"].export
     sol = compared["results"].selected() or s.results[0]
     names = [h for h, _ in ex.sections(sol)]
-    assert "Robot comparison" in names
+    assert "Setup comparison" in names  # v10 T22 (was Robot comparison)
     path, data = ex.export_report(sol)
     html = data.decode("utf-8") if isinstance(data, bytes) else path.read_text(encoding="utf-8")
-    assert "Robot comparison" in html and "| ur10e |" not in html and "ur10e" in html
+    assert "Setup comparison" in html and "| ur10e |" not in html and "ur10e" in html
     assert "<h2>Points</h2>" not in html and "point_id" not in html
     assert "break-inside:avoid" in html  # laid out for printing
