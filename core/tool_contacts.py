@@ -71,6 +71,7 @@ def frames_with_contacts(frames: list, tcps: list[TCP], parts: list) -> list:
                     },
                     "min_radius_mm": t.min_radius_mm,  # v10 T12
                     "radius_applies": t.radius_applies,
+                    **{k: getattr(t, k) for k in ("travel", "scan_width_mm", "overlap_pct", "overrun_mm")},
                 }
             )
         )

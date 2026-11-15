@@ -115,6 +115,13 @@ class Frame(_M):
     contact_faces: dict[str, list[int]] = Field(default_factory=dict)
     min_radius_mm: float | None = Field(default=None, gt=0)  # v10 T12 (schema.TCP)
     radius_applies: Literal["concave", "convex", "both"] = "concave"
+    travel: Literal["free", "along_x", "along_y", "perpendicular_x"] = "free"  # v11 #7 (schema.TCP)
+    scan_width_mm: float | None = Field(default=None, gt=0)
+    overlap_pct: float = Field(default=10.0, ge=0, lt=100)
+    overrun_mm: float = Field(default=0.0, ge=0, le=1000)
+
+
+TRAVEL_KEYS = ("travel", "scan_width_mm", "overlap_pct", "overrun_mm")  # v11 #7: Frame -> TCP
 
 
 class Package(_M):
@@ -427,6 +434,7 @@ def to_tool(p: Package, urdf_rel: str) -> EndEffector:
             contact_faces={link[n]: sorted(ids) for n, ids in t.contact_faces.items() if n in link and ids},
             min_radius_mm=t.min_radius_mm,  # v10 T12
             radius_applies=t.radius_applies,
+            **{k: getattr(t, k) for k in TRAVEL_KEYS},  # v11 #7
         )
         for t in p.tcps
     ] or [TCP(name="tcp")]

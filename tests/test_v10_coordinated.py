@@ -69,7 +69,7 @@ def test_rail_both_ways_cycle_times_compared():
         line = motion_line(sim, sol.label)
         assert "coordinated" in line and "stop and go" in line
         sections = dict(app["results"].export.sections(sol))
-        assert "Carrier motion: coordinated" in sections["Cycle time"]
+        assert "Carrier motion: coordinated" in sections["Carrier motion"]  # its own section (v10 T22)
         # playback moves the carrier along with the arm
         moved = []
         sim.move_carrier = lambda v, moved=moved: moved.append(dict(v))

@@ -315,6 +315,7 @@ def trace(
     spin=None,
     smooth: bool = False,
     pattern_of=None,
+    direction=None,
 ) -> PathPlan:
     """Paths of solution ``sol``. ``points``: point id -> (p, n) in the part frame;
     ``base_poses``: world base pose per station (core.export.station_pose). ``pattern``
@@ -333,7 +334,9 @@ def trace(
     ``spin(pid)`` (v10 #9, core.path_spin): the tool spin is chosen per sample where it is free
     (None) or a range ((lo, hi) rad around the planned spin); None = the planned spins.
     ``smooth`` (v10 T13): planned joint moves are optimised (core.traj_opt.smooth_path);
-    ``pattern_of(group)`` (v10 T15): a target group's own pattern."""
+    ``pattern_of(group)`` (v10 T15): a target group's own pattern. ``direction(tcp)`` (v11 #7):
+    core.path_direction.Direction of a TCP (None / free: no rule); directional TCPs get their spin
+    from the travel direction, and samples that cannot follow it are flagged."""
     if between not in BETWEEN:
         raise ValueError(f"between must be one of {BETWEEN}")
     tr = _Tracer(checker, part_mesh, step, jump_deg)
@@ -367,6 +370,7 @@ def trace(
     done = 0
     stops = sorted(seqs)
     carry = None  # (arm joints while the carrier drives, tcp, last point id) after a stop
+    rows_all: dict[int, int] = {}  # v11 #7: pattern rows of the directional sequences
     for idx, k in enumerate(stops):
         checker.set_base(base_poses[k])
         sp = StationPath(k, base_poses[k], dict(sol.stations[k].carrier))
@@ -397,7 +401,14 @@ def trace(
             label = config_label(checker.ik, q)
             first = "reconfigure" if j > 0 and label != label_prev else ""
             dp = None
-            if spin is not None and len(pids) > 1:  # v10 #9: the spin per sample (path_spin)
+            dv = direction(r0.tcp) if direction is not None else None  # v11 #7: directional tool
+            if dv is not None and dv.directional and len(pids) > 1:
+                from core.path_direction import directional_sequence
+
+                leave = home if j == len(seqs[k]) - 1 else None
+                dp = directional_sequence(tr, k, sq, results, points, label, ref, lift, leave, dv, rows_all)
+                q = np.asarray(dp[0].q, float) if dp is not None else q
+            elif spin is not None and len(pids) > 1:  # v10 #9: the spin per sample (path_spin)
                 from core.path_spin import better_spin, optimize_sequence
 
                 leave = home if j == len(seqs[k]) - 1 else None  # back home after the last group
@@ -475,6 +486,10 @@ def trace(
             checker.set_base(base_poses[k])
             carry = (q_arm, last.tcp, last.b)
         plan.stations.append(sp)
+    if direction is not None:  # v11 #7: samples a directional tool cannot follow
+        from core.path_direction import flag_plan
+
+        flag_plan(plan, points, direction, rows_all)
     plan.smooth = tr.smooth_stats
     return plan
 

@@ -6,7 +6,10 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-ISSUES = ("unreachable", "config_flip", "jump", "collision", "reconfigure", "carrier_blocked", "motion")
+ISSUES = (
+    "unreachable", "config_flip", "jump", "collision", "reconfigure", "carrier_blocked", "motion",
+    "direction",  # v11 #7: a directional tool's axis off the travel direction
+)  # fmt: skip
 
 
 @dataclass

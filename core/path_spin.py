@@ -94,9 +94,9 @@ def segment_poses(tr, ra, rb, Pa, Pb, Na, Nb, lift: float = 0.0):
 class _Sample:
     """One path sample: its pose, the allowed offsets, and (after ``solve``) its states."""
 
-    def __init__(self, a, b, s, T, allowed, q_ref, kind=""):
+    def __init__(self, a, b, s, T, allowed, q_ref, kind="", off=None):
         self.a, self.b, self.s, self.T, self.kind = a, b, float(s), T, kind
-        self.off = offsets(allowed)
+        self.off = offsets(allowed) if off is None else np.asarray(off, float)  # v11 #7: fixed by travel
         self.q_ref = np.asarray(q_ref, float)
         self.Q = np.zeros((0, 6))
         self.which = np.zeros(0, int)  # offset index of each state
@@ -176,15 +176,28 @@ def _viterbi(samples: list[_Sample], ref, jump: float, banned: list[set], leave=
     return path[::-1]
 
 
-def optimize_sequence(tr, k, zone, pids, results, points, label, ref, allowed, lifts, lift, leave=None):
+def optimize_sequence(
+    tr, k, zone, pids, results, points, label, ref, allowed, lifts, lift, leave=None, direction=None
+):
     """PathSamples of one sequence (first point, then each segment) with the spin chosen per
     sample, or None (a sample has no state: use the planned spins). ``allowed(pid)``: None (free)
     or (lo, hi) offsets in rad; ``ref``: the joints the arm arrives from, ``leave``: where it goes
-    after the sequence (None: anywhere)."""
+    after the sequence (None: anywhere). ``direction`` (v11 #7, core.path_direction.Direction): a
+    directional TCP: the spin of every sample is fixed by the travel direction (two choices, half a
+    turn apart), row changes keep the row's orientation and, with an overrun, happen off the part."""
+    from core import path_direction as pd
+
     r0 = results[pids[0]]
     tcp = r0.tcp
+    dv = direction if direction is not None and direction.directional else None
+    rows = dv.rows if dv is not None else {}
+
+    def off(T, m):
+        return None if dv is None else pd.offsets_for(T, pd.travel(pids, points, rows, m), dv.mode)
+
     q_plan = {p: tr.nearest_copy(results[p].q, r0.q if ref is None else ref) for p in pids[:1]}
-    samples = [_Sample(pids[0], pids[0], 0.0, tr.tcp_pose(r0), allowed(pids[0]), q_plan[pids[0]])]
+    T0 = tr.tcp_pose(r0)
+    samples = [_Sample(pids[0], pids[0], 0.0, T0, allowed(pids[0]), q_plan[pids[0]], off=off(T0, 0))]
     for m, (a, b) in enumerate(zip(pids[:-1], pids[1:], strict=True)):
         ra, rb = results[a], results[b]
         if rb.tcp != tcp or config_label(tr.ch.ik, np.asarray(rb.q, float)) != label:
@@ -193,10 +206,22 @@ def optimize_sequence(tr, k, zone, pids, results, points, label, ref, allowed, l
         q_plan[b] = qb
         (Pa, Na), (Pb, Nb) = points[a], points[b]
         h = lift if lifts[m] else 0.0
-        s, Ts = segment_poses(tr, ra, rb, Pa, Pb, Na, Nb, h)
+        kind = "lift" if h > 0 else ""
+        if dv is not None and dv.overrun > 0 and pd.row_change(rows, a, b):  # v11 #7: off the part
+            da = pd.row_direction(pids, rows, points, a)
+            db = pd.row_direction(pids, rows, points, b)
+            if da is not None and db is not None:
+                s, Ts = pd.overrun_poses(tr.tcp_pose(ra), tr.tcp_pose(rb), da, db, dv.overrun, tr.step)
+                kind = "overrun"
+            else:
+                s, Ts = segment_poses(tr, ra, rb, Pa, Pb, Na, Nb, h)
+        else:
+            s, Ts = segment_poses(tr, ra, rb, Pa, Pb, Na, Nb, h)
         both = meet(allowed(a), allowed(b))
         for si, T in zip(s, Ts, strict=True):
-            samples.append(_Sample(a, b, si, T, both, qa + si * (qb - qa), "lift" if h > 0 else ""))
+            samples.append(_Sample(a, b, si, T, both, qa + si * (qb - qa), kind, off=off(T, m)))
+    if dv is not None and dv.overrun > 0 and len(pids) > 1:  # v11 #7: lead in / out past the part
+        samples = pd.lead_in_out(samples, pids, points, rows, dv, tr.step, _Sample, q_plan)
     for smp in samples:
         _solve(tr, smp, tcp, label)
         if not len(smp.Q):

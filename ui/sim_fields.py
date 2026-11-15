@@ -155,3 +155,10 @@ def motion_line(panel, label: str) -> str:
         f"({d:+.0f} %; carrier moves {a.get('carrier', 0):.0f} / {b.get('carrier', 0):.0f} s, "
         f"settle {a.get('settle', 0):.0f} / {b.get('settle', 0):.0f} s)."
     )
+
+
+def direction_of(s):
+    """v11 #7: ``direction(tcp)`` for core.paths.trace (ui.travel_ui)."""
+    from ui.travel_ui import direction_of as of
+
+    return of(s)

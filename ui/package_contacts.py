@@ -50,11 +50,18 @@ class ContactPicker:
                 "Minimum surface radius (mm)", 0.0, min=0.0, max=10000.0, step=1.0, hint="this TCP; 0 = any"
             )
             self.applies = gui.add_dropdown("Radius limit applies to", tuple(LABELS.values()))
+            from ui.travel_ui import LABELS as TRAVEL
+
+            self.travel = gui.add_dropdown("Travel direction", tuple(TRAVEL.values()))  # v11 #7
+            self.scan_w = gui.add_number("Scan width (mm)", 0.0, min=0.0, max=2000.0, step=1.0)
+            self.overrun = gui.add_number("Overrun past edges (mm)", 0.0, min=0.0, max=1000.0, step=5.0)
             self.info = gui.add_markdown("")
         self.whole.on_update(lambda _e: None if b._busy else self.set_whole(self.whole.value))
         self.mode.on_update(lambda _e: self._mode_changed())
         self.min_r.on_update(lambda _e: None if b._busy else self._radius())
         self.applies.on_update(lambda _e: None if b._busy else self._radius())
+        for w in (self.travel, self.scan_w, self.overrun):
+            w.on_update(lambda _e: None if b._busy else self._travel())
         self.clear.on_click(lambda _e: self.set_faces(self._part().name, []) if self._part() else None)
 
     # --- state ---------------------------------------------------------------------------------
@@ -121,6 +128,11 @@ class ContactPicker:
 
                 self.min_r.value = float(t.min_radius_mm or 0.0)
                 self.applies.value = LABELS[t.radius_applies]
+                from ui.travel_ui import LABELS as TRAVEL
+
+                self.travel.value = TRAVEL[t.travel]
+                self.scan_w.value = float(t.scan_width_mm or 0.0)
+                self.overrun.value = float(t.overrun_mm)
         finally:
             b._busy = busy
         self.whole.visible = x is not None
@@ -138,6 +150,13 @@ class ContactPicker:
         r = float(self.min_r.value)
         kind = next(a for a, lab in LABELS.items() if lab == self.applies.value)
         self._set_tcp(min_radius_mm=r if r > 0 else None, radius_applies=kind)
+
+    def _travel(self) -> None:
+        from ui.travel_ui import LABELS as TRAVEL
+
+        kind = next(k for k, lab in TRAVEL.items() if lab == self.travel.value)
+        w = float(self.scan_w.value)
+        self._set_tcp(travel=kind, scan_width_mm=w if w > 0 else None, overrun_mm=float(self.overrun.value))
 
     def _mode_changed(self) -> None:
         self.refresh()

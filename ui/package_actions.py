@@ -182,6 +182,7 @@ def _tool_from(self, urdf_rel: str, urdf: Path | None = None):
     old = src[1]
     by_name = {safe(t.name): t for t in old.tcps}
     keep = ("T_head_tcp", "contact_links", "contact_faces", "min_radius_mm", "radius_applies")
+    keep += ("travel", "scan_width_mm", "overlap_pct", "overrun_mm")  # v11 #7
     tcps = [
         by_name[t.name].model_copy(update={k: getattr(t, k) for k in keep}) if t.name in by_name else t
         for t in new.tcps

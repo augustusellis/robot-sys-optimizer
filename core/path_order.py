@@ -83,6 +83,7 @@ class Seq:
     zone: int | None
     pids: list[int]
     lifts: list[bool]  # per move pids[k] -> pids[k + 1]: lift off the surface
+    rows: list[int] | None = None  # v11 #7: the pattern's row of each visit (row patterns)
 
 
 def ordered_sequences(
@@ -151,7 +152,8 @@ def ordered_sequences(
                 from core.patterns_surface import turn_lifts
 
                 lifts = lifts | turn_lifts(P[o.order], o.rows, pat.turn_lift_m / 2)
-            seqs.append(Seq(zone, pids, [bool(x) for x in lifts]))
+            rows = [int(x) for x in o.rows] if pat.pattern in ROW_PATTERNS else None
+            seqs.append(Seq(zone, pids, [bool(x) for x in lifts], rows))
             end = P[o.order[-1]]
         out[k] = seqs
     return out

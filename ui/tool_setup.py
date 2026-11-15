@@ -87,6 +87,9 @@ class ToolSetupTab:
             from ui.radius_ui import RadiusFields
 
             self.min_radius = RadiusFields(gui, self)  # v10 T12: minimum surface radius per TCP
+            from ui.travel_ui import TravelFields
+
+            self.travel = TravelFields(gui, self)  # v11 #7: directional travel per TCP
             self.tcp_lock.on_update(lambda _e: self._apply_tcp_lock())
             self._apply_tcp_lock()
             self.pick = gui.add_checkbox("Pick contact faces (click tool)", False)
@@ -469,6 +472,7 @@ class ToolSetupTab:
             for link, cb in self._link_boxes.items():
                 cb.value = link in tcp.contact_links
             self.min_radius.show(tcp)
+            self.travel.show(tcp)
         finally:
             self._busy = busy
         self.view.active_tcp = tcp.name

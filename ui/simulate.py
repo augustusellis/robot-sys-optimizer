@@ -173,6 +173,7 @@ class SimPanel:
                     between=BETWEEN_LABELS[self.between.value],
                     smooth=bool(self.smooth.value),  # v10 T13
                     pattern_of=pattern_of,
+                    direction=sim_fields.direction_of(s),  # v11 #7: directional tools
                 )
                 # local until done: the 1 s targets watcher must not see it half-built
                 from core.motion_check import check_moves

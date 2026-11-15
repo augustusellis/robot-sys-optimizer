@@ -222,7 +222,7 @@ def open_package(data: bytes, dest: Path) -> tuple[Package, Path]:
 def _authored_contacts(tcps: list, meta: dict, parts: list) -> list:
     """v10 #11: the TCPs' contact parts / faces as authored in package.yaml, mapped onto the parts
     read back (by the URDF link each was written to)."""
-    from core.urdf_package import Frame, safe, tool_link
+    from core.urdf_package import TRAVEL_KEYS, Frame, safe, tool_link
 
     link_of = {}
     for x in meta.get("parts") or []:
@@ -236,10 +236,11 @@ def _authored_contacts(tcps: list, meta: dict, parts: list) -> list:
         if a is None:
             out.append(t)
             continue
-        keys = ("contact_parts", "contact_faces", "min_radius_mm", "radius_applies")  # v10 #11, T12
+        keys = ("contact_parts", "contact_faces", "min_radius_mm", "radius_applies", *TRAVEL_KEYS)
         f = Frame.model_validate({"name": t.name, **{k: a[k] for k in keys if k in a}})
         cp = [name_of[link_of[n]] for n in f.contact_parts if link_of.get(n) in name_of]
         cf = {name_of[link_of[n]]: v for n, v in f.contact_faces.items() if link_of.get(n) in name_of}
         upd = {"contact_parts": cp, "contact_faces": cf, "min_radius_mm": f.min_radius_mm}
+        upd.update({k: getattr(f, k) for k in TRAVEL_KEYS})  # v11 #7
         out.append(t.model_copy(update={**upd, "radius_applies": f.radius_applies}))
     return out

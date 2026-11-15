@@ -144,6 +144,12 @@ class TCP(_Model):
     # it applies to (core.surface_radius.APPLIES)
     min_radius_mm: float | None = Field(default=None, gt=0)
     radius_applies: Literal["concave", "convex", "both"] = "concave"
+    # v11 #7: how the tool may travel relative to its axes (core.path_direction.TRAVEL), the
+    # stripe one pass covers and its overlap (row spacing), and how far rows run past the part
+    travel: Literal["free", "along_x", "along_y", "perpendicular_x"] = "free"
+    scan_width_mm: float | None = Field(default=None, gt=0)
+    overlap_pct: float = Field(default=10.0, ge=0, lt=100)
+    overrun_mm: float = Field(default=0.0, ge=0, le=1000)
 
     @field_validator("contact_faces")
     @classmethod
