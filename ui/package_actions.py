@@ -42,6 +42,9 @@ def import_mesh(self, e) -> None:
     name = safe(Path(f.name).stem)
     units = self.units.value
     content = f.content
+    stop = threading.Event()  # v10 T20: Cancel import (STEP: the meshing process is ended)
+    self.import_cancel.on_click(lambda _e: stop.set())
+    self.import_cancel.visible = ext in (".step", ".stp")
     self.import_bar.visible = True
     self.import_info.content = (
         f"_Importing **{f.name}**{' (meshing the STEP file)' if ext in ('.step', '.stp') else ''}…_"
@@ -53,32 +56,89 @@ def import_mesh(self, e) -> None:
         mesh_dir = self.work / "meshes"
         try:
             mesh_dir.mkdir(parents=True, exist_ok=True)
+            sure, guess_note = True, ""
             if ext in (".step", ".stp"):
-                from core.tool_import import step_mesh
+                from core.mesh_units import step_in_process
 
                 with tempfile.TemporaryDirectory() as tmp:
                     src = Path(tmp) / f"{name}{ext}"
                     src.write_bytes(content)
-                    step_mesh(src).export(mesh_dir / f"{name}.stl")
+                    step_in_process(src, mesh_dir / f"{name}.stl", stop.is_set)
                 fname, u = f"{name}.stl", "m"
             else:
-                fname, u = f"{name}{ext}", units
+                fname = f"{name}{ext}"
                 (mesh_dir / fname).write_bytes(content)
+                u, sure, guess_note = _units(mesh_dir / fname, units)
             part = Part(name=name, stage=self._default_stage(), shape="mesh", mesh=fname, units=u)
             m = primitive_mesh(self.primitive(part))  # fail now on a broken file
         except Exception as err:  # a broken mesh / STEP file: report, keep the package
+            from core.mesh_units import ImportCancelledError
+
+            if isinstance(err, ImportCancelledError):
+                self.import_info.content = f"_Import of **{f.name}** cancelled; nothing was added._"
+                return
             why = f"{type(err).__name__}: {err}"[:300]
             self.import_errors[f.name] = why
             self.import_info.content = f"✘ **{f.name} was not added**: {why}"
             notify(e, "Mesh not added", why)
         else:
             self.import_errors.pop(f.name, None)
-            self.import_info.content = f"✔ Added **{name}** ({len(m.faces)} triangles)."
+            self.import_info.content = f"✔ Added **{name}** ({len(m.faces)} triangles){guess_note}."
             self._add(part)
+            if not sure:  # v10 T20: ask which units it is in
+                ask_units(self, e, part.name)
         finally:
             self.import_bar.visible = False
+            self.import_cancel.visible = False
 
     threading.Thread(target=work, daemon=True).start()
+
+
+def _units(path: Path, chosen: str) -> tuple[str, bool, str]:
+    """(units, sure, note) of a mesh file: the chosen units, or with *auto* a guess from its size."""
+    from ui.package_builder import AUTO
+
+    if chosen != AUTO:
+        return chosen, True, ""
+    import trimesh
+
+    from core.mesh_units import describe, guess_units
+
+    m = trimesh.load(str(path), force="mesh")
+    ext = float(max(m.extents)) if len(m.faces) else 0.0
+    u, sure = guess_units(ext)
+    if sure:
+        return (
+            u,
+            True,
+            f"; units **{u}** from its size ({describe(ext, u)}; change with *Units of this mesh*)",
+        )
+    return u, False, f"; units **unsure**: taken as **{u}** ({describe(ext, u)}), pick them in the dialog"
+
+
+def set_units(self, part_name: str, units: str) -> None:
+    """The units of mesh part ``part_name`` (v10 T20)."""
+    parts = [x.model_copy(update={"units": units}) if x.name == part_name else x for x in self.pkg.parts]
+    self.pkg = self.pkg.model_copy(update={"parts": parts})
+    self.load_widgets()
+    self.import_info.content = f"✔ **{part_name}**: units set to **{units}**."
+
+
+def ask_units(self, e, part_name: str) -> None:
+    """A dialog: which units is the mesh in? (no browser client: the guess stays)."""
+    client = getattr(e, "client", None)
+    if client is None:
+        return
+    with client.gui.add_modal(f"Units of {part_name}?") as modal:
+        client.gui.add_markdown("_Its size fits more than one unit. Which units is the file in?_")
+        for u in ("mm", "m", "in"):
+            b = client.gui.add_button(u)
+
+            def pick(_e, u=u) -> None:
+                set_units(self, part_name, u)
+                modal.close()
+
+            b.on_click(pick)
 
 
 def check_package(self, e) -> None:

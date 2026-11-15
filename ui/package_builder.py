@@ -49,7 +49,8 @@ STAGE_LABELS = {
 }
 STAGE_OF = {v: k for k, v in STAGE_LABELS.items()}
 NONE = "(none)"
-UNITS = ("mm", "m", "in")
+AUTO = "auto (from its size)"  # v10 T20
+UNITS = (AUTO, "mm", "m", "in")
 
 
 def _mm(v) -> tuple:
@@ -109,9 +110,11 @@ class PackageBuilder:
             self.units = gui.add_dropdown("Mesh units", UNITS, hint="STL / OBJ / PLY (STEP carries its own)")
             self.upload = gui.add_upload_button("Add mesh (STL/OBJ/PLY/STEP)")
             self.import_bar = gui.add_progress_bar(0.0, animated=True, visible=False)
+            self.import_cancel = gui.add_button("Cancel import", visible=False)  # v10 T20: STEP
             self.import_info = gui.add_markdown("")
             self.import_errors: dict[str, str] = {}  # file -> why its import failed (Check lists it)
             self.part_name = gui.add_text("Part name", "")
+            self.part_units = gui.add_dropdown("Units of this mesh", UNITS[1:], visible=False)  # v10 T20
             self.stage = gui.add_dropdown("Stage", (STAGE_LABELS["tool"],))
             self.size = gui.add_vector3("Box size (mm)", (200.0, 200.0, 200.0), min=(1, 1, 1), step=5.0)
             self.cyl = gui.add_vector2("Cylinder r / h (mm)", (100.0, 200.0), min=(1, 1), step=5.0)
@@ -194,6 +197,13 @@ class PackageBuilder:
             )
         )
         self.upload.on_upload(self._on_mesh)
+        self.part_units.on_update(  # v10 T20
+            lambda _e: (
+                None
+                if self._busy or not self.pkg.parts
+                else package_actions.set_units(self, self.pkg.parts[self.sel].name, self.part_units.value)
+            )
+        )
         for w in (self.part_name, self.stage, self.size, self.cyl):
             w.on_update(guard(lambda e: self._part_fields()))
         self.remove.on_click(lambda e: self._remove())
@@ -276,6 +286,9 @@ class PackageBuilder:
             self.stage.visible = has and len(STAGES[p.kind]) > 1
             shape = p.parts[self.sel].shape if has else None
             self.size.visible, self.cyl.visible = shape == "box", shape == "cylinder"
+            self.part_units.visible = shape == "mesh"
+            if shape == "mesh":
+                self.part_units.value = p.parts[self.sel].units
             for pw, on in ((self.part_pose, has), (self.tcp_pose, tool), (self.mount_pose, carrier)):
                 pw.gizmo.visible = on  # only these gizmo nodes: they have no children
         finally:
