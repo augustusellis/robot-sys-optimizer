@@ -104,6 +104,7 @@ def components(s, base_pose: bool = False, tool_nominal: bool = True, legacy: bo
         out["collision"] = _h(
             [
                 round(float(collision.ARM_PAD), 6),
+                sorted((int(k), round(float(v), 6)) for k, v in collision.LINK_PAD.items()),  # v10 T19
                 content(s, part.collision_mesh) if part is not None else None,
                 sorted(int(f) for f in part.collision_keep) if part is not None else [],
             ]

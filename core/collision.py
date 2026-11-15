@@ -50,6 +50,9 @@ HOSE = None
 GEOM: dict = {}
 PART_KEEP: tuple = ()
 ARM_PAD = 0.0  # m: the robot arm's collision shapes are this much larger against everything else
+# v10 T19: padding per robot link: Pinocchio joint index (the link it moves) -> m; links not listed
+# use ARM_PAD
+LINK_PAD: dict = {}
 # v9: the part's own collision mesh (absolute path, metres after ``PART_LOW_SCALE``), made in the
 # Package builder; when set it replaces the simplified copy of the part mesh
 PART_LOW: str | None = None
@@ -58,16 +61,28 @@ ROBOT_AUTO_FACES = 5000  # robot links: "auto" reduces links above this (URDF CA
 
 
 def geom_state() -> tuple:
-    return dict(GEOM), tuple(PART_KEEP), float(ARM_PAD), PART_LOW, float(PART_LOW_SCALE)
+    return dict(GEOM), tuple(PART_KEEP), float(ARM_PAD), PART_LOW, float(PART_LOW_SCALE), dict(LINK_PAD)
 
 
 def set_geom_state(state) -> None:
-    global GEOM, PART_KEEP, ARM_PAD, PART_LOW, PART_LOW_SCALE
+    global GEOM, PART_KEEP, ARM_PAD, PART_LOW, PART_LOW_SCALE, LINK_PAD
     if state is not None:
         GEOM, PART_KEEP = dict(state[0]), tuple(int(f) for f in state[1])
         ARM_PAD = float(state[2]) if len(state) > 2 else 0.0
         PART_LOW = state[3] if len(state) > 3 else None
         PART_LOW_SCALE = float(state[4]) if len(state) > 4 else 1.0
+        LINK_PAD = {int(k): float(v) for k, v in (state[5] if len(state) > 5 else {}).items()}
+
+
+def link_joints(robot) -> dict[str, int]:
+    """Robot link name -> the Pinocchio joint that moves it (for LINK_PAD)."""
+    import pinocchio as pin
+
+    out = {}
+    for f in robot.model.frames:
+        if f.type == pin.FrameType.BODY and f.parentJoint > 0:
+            out.setdefault(f.name, int(f.parentJoint))
+    return out
 
 
 _PART_LOW: dict = {}  # (path, mtime, scale) -> mesh
@@ -327,12 +342,14 @@ class CollisionScene:
         for k in P.tool_robot + P.carrier:
             margin_of[k] = self.margins.self_clearance
         self.arm_pad = float(ARM_PAD)
-        if self.arm_pad > 0:  # 2026-11-11: the arm bloated against everything but itself
+        self.link_pad = dict(LINK_PAD)  # v10 T19: per link (joint index)
+        if self.arm_pad > 0 or self.link_pad:  # 2026-11-11: the arm bloated against everything but itself
             robot = set(self.robot_ids)
             for k in P.robot_part + P.obstacle + P.floor + P.carrier + P.tool_robot:
                 pair = self.gm.collisionPairs[k]
-                if pair.first in robot or pair.second in robot:
-                    margin_of[k] = margin_of.get(k, 0.0) + self.arm_pad
+                g = pair.first if pair.first in robot else pair.second if pair.second in robot else None
+                if g is not None:
+                    margin_of[k] = margin_of.get(k, 0.0) + self.pad_of(g)
         for k, req in enumerate(self.gd.collisionRequests):
             req.security_margin = margin_of.get(k, 0.0)
             req.enable_contact = False
@@ -461,6 +478,11 @@ class CollisionScene:
             if self.gd.activeCollisionPairs[k] and self.gd.collisionResults[k].isCollision():
                 out.append((self.gm.geometryObjects[cp.first].name, self.gm.geometryObjects[cp.second].name))
         return out
+
+    def pad_of(self, gid: int) -> float:
+        """v10 T19: the padding of robot shape ``gid`` (its link's own, else the arm padding)."""
+        j = int(self.gm.geometryObjects[gid].parentJoint)
+        return float(self.link_pad.get(j, self.arm_pad)) if gid in set(self.robot_ids) else 0.0
 
     def part_clearance(self, q: np.ndarray, tcp: str | None = None) -> float:
         """Smallest distance from robot or (non-contact) tool geometry to the part."""

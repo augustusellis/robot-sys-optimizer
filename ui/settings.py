@@ -70,7 +70,7 @@ SAVED: dict[str, tuple[str, ...]] = {
     "edge": ("auto",),  # v10 T10
     "cable": ("mode", "dress", "diameter", "offset", "side", "show", "wrap"),  # v8 T18
     "safety": ("show", "distance"),
-    "collision": ("pad_mm",),  # Robot & cell: the arm padding (v9: the rest is in the Package builder)
+    "collision": ("pad_mm", "link_pad"),  # Robot & cell: the arm padding (+ v10 T19 per link)
     "cycle": (
         "joint_speed",
         "joint_acc",

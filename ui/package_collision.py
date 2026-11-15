@@ -70,6 +70,7 @@ class PackageCollision:
             )
             self.keep_info = gui.add_markdown("")
             self.run = gui.add_button("Simplify", color="green")
+            self.cancel = gui.add_button("Cancel", visible=False)  # v10 T19
             self.bar = gui.add_progress_bar(0.0, visible=False)
             self.revert = gui.add_button("Revert to original", hint="no simplification: the visual meshes")
             self.show = gui.add_checkbox(
@@ -83,6 +84,8 @@ class PackageCollision:
         self.coll_remove.on_click(lambda _e: self._set_part(collision_file=None))
         self.keep_btn.on_click(lambda e: self.keep_selection(e))
         self.run.on_click(lambda _e: self.simplify_soon())
+        self._stop = threading.Event()
+        self.cancel.on_click(lambda _e: self._stop.set())
         self.revert.on_click(lambda _e: self.revert_all())
         self.show.on_update(lambda _e: self.redraw())
 
@@ -104,7 +107,7 @@ class PackageCollision:
             self.part_mode.visible = self.coll_upload.visible = mesh
             self.coll_remove.visible = mesh and bool(x.collision_file)
             self.keep_btn.visible = p.kind == "part"
-            n = len(c.keep)
+            n = len(c.keep) + sum(len(x.keep) for x in p.parts)
             self.keep_info.content = f"_{n} faces kept exact._" if n and p.kind == "part" else ""
         finally:
             self._busy = False
@@ -163,12 +166,24 @@ class PackageCollision:
     def keep_selection(self, e=None) -> None:
         """Part packages made from the project's part: the faces selected in Targets stay exact."""
         src = getattr(self.b, "edit_source", None)
-        if not src or src[0] != "part" or len(self.b.pkg.parts) != 1:
+        if not src or src[0] != "part":
             return notify(e, "Edit the project's part first", "From the project → Edit the project's part")
         sel = self.get_selection() if self.get_selection is not None else None
         keep = sorted({int(f) for f in (sel if sel is not None else [])})
-        c = self.b.pkg.collision.model_copy(update={"keep": keep})
-        self.b.pkg = self.b.pkg.model_copy(update={"collision": c})
+        if len(self.b.pkg.parts) == 1:
+            c = self.b.pkg.collision.model_copy(update={"keep": keep})
+            self.b.pkg = self.b.pkg.model_copy(update={"collision": c})
+        else:  # v10 T19: several meshes: the selected faces found on each by their centres
+            from core.carrier import primitive_mesh
+            from ui.package_keep import split_keep
+
+            mesh = self.b.s.part_mesh()
+            meshes = {
+                x.name: primitive_mesh(self.b.primitive(x)) for x in self.b.pkg.parts if x.shape == "mesh"
+            }
+            per = split_keep(mesh, keep, meshes, {x.name: x.pose for x in self.b.pkg.parts})
+            parts = [x.model_copy(update={"keep": per.get(x.name, [])}) for x in self.b.pkg.parts]
+            self.b.pkg = self.b.pkg.model_copy(update={"parts": parts})
         self.load()
 
     def revert_all(self) -> None:
@@ -220,9 +235,14 @@ class PackageCollision:
             parts = list(self.b.pkg.parts)
             self.bar.value, self.bar.visible = 0.0, True
             self.run.disabled = True
+            self._stop.clear()
+            self.cancel.visible = True
             errors = []
             try:
                 for k, part in enumerate(parts):
+                    if self._stop.is_set():  # v10 T19: Cancel (between parts; a part runs to its end)
+                        errors.append(f"Cancelled: {len(parts) - k} part(s) not simplified.")
+                        break
                     try:
                         full = primitive_mesh(self.b.primitive(part))
                         low = part_collision(self.b.pkg, part, self.b.work / "meshes")
@@ -236,6 +256,7 @@ class PackageCollision:
             finally:
                 self.bar.visible = False
                 self.run.disabled = False
+                self.cancel.visible = False
             self.update_status()
             if errors:
                 self.info.content += "  \n" + "  \n".join(errors)

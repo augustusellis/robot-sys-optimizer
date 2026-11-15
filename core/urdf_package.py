@@ -87,6 +87,7 @@ class Part(_M):
     link: str | None = Field(default=None, max_length=64)
     # v10 #4 (rails / gantries): the body follows an axis length (core.schema_base.Primitive.stretch)
     stretch: Literal["", "x", "y"] = ""
+    keep: list[int] = Field(default_factory=list)  # v10 T19: this mesh part's faces kept exact
 
 
 def tool_link(part: Part) -> str:
@@ -230,7 +231,7 @@ def part_collision(p: Package, part: Part, mesh_dir: Path) -> trimesh.Trimesh | 
         return None
     m = trimesh.load(str(mesh_dir / part.mesh), force="mesh")
     m.apply_scale(UNIT_SCALE[part.units])
-    keep = c.keep if p.kind == "part" and len(p.parts) == 1 else None
+    keep = part.keep or (c.keep if p.kind == "part" and len(p.parts) == 1 else None)
     if mode == "wrap":
         return collision_mesh(m, Geom("wrap", c.faces, c.wrap_mm + c.pad_mm), keep=keep)
     out = m if mode == "visual" else collision_mesh(m, Geom(mode, c.faces, c.wrap_mm), keep=keep)

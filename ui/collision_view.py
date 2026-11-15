@@ -79,7 +79,6 @@ class CollisionView:
             sc.set_base(np.asarray(self.s.T_world_base, float))
             poses = {gid: T for gid, _, T in sc.world_shapes(np.asarray(self.s.q, float))}
             keep = set()
-            pad = float(getattr(sc, "arm_pad", 0.0))
             for comp, gids in self._groups(sc).items():
                 if comp not in want:
                     continue
@@ -87,7 +86,8 @@ class CollisionView:
                     mesh = sc.shape(gid)
                     if mesh is None:
                         continue
-                    if comp == "robot" and pad > 0:  # drawn bloated like it is checked
+                    pad = sc.pad_of(gid) if comp == "robot" and hasattr(sc, "pad_of") else 0.0
+                    if pad > 0:  # drawn bloated like it is checked (v10 T19: per link)
                         mesh = self._padded(gid, mesh, pad)
                     keep.add(gid)
                     T = poses[gid]

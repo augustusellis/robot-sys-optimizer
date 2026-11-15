@@ -38,8 +38,15 @@ class CollisionSettings:
                 hint="the arm's collision shapes this much larger against the part, floor, carrier, "
                 "stay-out zones and tool (not against itself)",
             )
+            self.link_pad = gui.add_text(  # v10 T19
+                "Padding per link (mm)",
+                "",
+                hint="e.g. 'forearm_link 20, wrist_1_link 10': these links instead of the arm padding",
+            )
+            self.link_info = gui.add_markdown("")
             self.part_info = gui.add_markdown("")
         self.pad_mm.on_update(lambda _e: self.settings_changed())
+        self.link_pad.on_update(lambda _e: self.settings_changed())
         self.sync()
 
     def sync(self) -> None:
@@ -55,7 +62,10 @@ class CollisionSettings:
             except FileNotFoundError:
                 low = None
         pad = max(float(self.pad_mm.value), 0.0) / 1000
-        collision.set_geom_state(({}, keep, pad, low, scale))
+        links, msg = parse_link_pad(self.link_pad.value, self.s.robot)
+        if self.link_info.content != msg:
+            self.link_info.content = msg
+        collision.set_geom_state(({}, keep, pad, low, scale, links))
         if part is None:
             text = "_No part loaded._"
         elif low:
@@ -72,3 +82,35 @@ class CollisionSettings:
         self.sync()
         if self.view is not None:
             self.view.redraw_soon()
+
+
+def parse_link_pad(text: str, robot) -> tuple[dict[int, float], str]:
+    """'forearm_link 20, wrist_1_link 10' -> ({joint index: m}, a line for the panel)."""
+    if not text.strip() or robot is None:
+        return {}, ""
+    from core.collision import link_joints
+
+    joints = link_joints(robot)
+    out, bad = {}, []
+    for item in text.replace(";", ",").split(","):
+        bits = item.replace("=", " ").replace(":", " ").split()
+        if len(bits) != 2:
+            if bits:
+                bad.append(item.strip())
+            continue
+        name, mm = bits
+        try:
+            v = float(mm)
+        except ValueError:
+            bad.append(item.strip())
+            continue
+        if name not in joints or v < 0 or v > 100:
+            bad.append(item.strip())
+            continue
+        out[joints[name]] = v / 1000
+    msg = f"_{len(out)} link(s) padded on their own._" if out else ""
+    if bad:
+        msg = (msg + "  \n" if msg else "") + (
+            f"⚠ not understood: {', '.join(bad)} (links: {', '.join(sorted(joints))}; 0 to 100 mm)"
+        )
+    return out, msg

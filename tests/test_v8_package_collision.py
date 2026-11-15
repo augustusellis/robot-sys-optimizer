@@ -167,7 +167,7 @@ def test_arm_padding(monkeypatch):
     reqs = padded.gd.collisionRequests
     assert all(reqs[k].security_margin == 0.0 for k in padded.pairs.robot_self)  # not against itself
     state = collision.geom_state()
-    assert len(state) == 5 and state[2] == pytest.approx(collision.ARM_PAD)
+    assert len(state) == 6 and state[2] == pytest.approx(collision.ARM_PAD)  # v10 T19: + LINK_PAD
     collision.set_geom_state(({"robot": Geom("auto")}, ()))  # an older 2-part state: no padding
     assert collision.ARM_PAD == 0.0
 
