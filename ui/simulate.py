@@ -102,14 +102,7 @@ class SimPanel:
         return sim_fields.pattern_settings(self)
 
     def _spin(self, res):
-        """v10 #9: the allowed spin per point for core.path_spin (None: the planned spins)."""
-        if not self.spin_opt.value:
-            return None
-        from core.path_spin import allowed_from
-
-        s = self.s
-        groups = {g.name: g for g in s.targets.groups}
-        return allowed_from(groups, res, {p.id: p.group for p in s.targets.points})
+        return sim_fields.spin_of(self, res)  # v10 #9
 
     def _carrier_path(self, sol, step: float, checker=None, home=None):
         """ui.sim_build.carrier_path, the arm held at ``home`` unless the call gives arm_q."""
@@ -190,8 +183,14 @@ class SimPanel:
                         check_moves(checker, p, cancelled=self._cancel.is_set)
                     return p
 
-                plan = checked(trace(checker, mesh, sol, res, pts, poses, **kw))
                 spin, self.spin_used = self._spin(res), None
+                if sim_fields.coordinated(self):  # v10 T16: the carrier moves while the arm works
+                    plan, spin = (
+                        checked(sim_build.coordinated_plan(self, checker, mesh, sol, res, pts, home)),
+                        None,
+                    )
+                else:
+                    plan = checked(trace(checker, mesh, sol, res, pts, poses, **kw))
                 if spin is not None:  # v10 #9: also with the spin chosen along the path; keep
                     alt = checked(trace(checker, mesh, sol, res, pts, poses, **kw, spin=spin))
                     better = sim_build.score(alt, self._cycle_of(alt)) < sim_build.score(
@@ -236,6 +235,7 @@ class SimPanel:
         zones). v10 #9: whether the optimized tool spin was used."""
         self.times: list = []  # v10 T14: time of every sample (playback at program timing)
         self.cycle = c = self._cycle_of(plan, self.times)
+        sim_fields.keep_cycle(self, c)  # v10 T16: per plan and carrier motion (report)
         parts = ", ".join(f"{k} {v:.0f} s" for k, v in c.items() if k != "total" and v > 0.05)
         used = getattr(self, "spin_used", None)
         spin = ""
@@ -297,6 +297,7 @@ class SimPanel:
 
     def reset(self, why: str = "") -> None:
         """Forget the built paths (a new plan / tool run started, or the targets changed)."""
+        sim_fields.show_motion(self)  # v10 T16: Carrier motion only for a movable rail / gantry
         if self.plan is None and not self._handles:
             return
         self.pause()
@@ -395,7 +396,7 @@ class SimPanel:
             return
         i = int(np.clip(i, 0, len(samples) - 1))
         p = samples[i]
-        if p.kind == "carrier" and p.carrier is not None:  # between stops: the carrier moves
+        if p.carrier is not None:  # between stops, or coordinated (v10 T16): the carrier moves
             if self.s.base.mode == "movable":
                 self.move_carrier(p.carrier)
             else:

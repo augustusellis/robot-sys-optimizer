@@ -208,6 +208,10 @@ class ExportPanel:
             c = sim.cycle
             parts = ", ".join(f"{k} {v:.0f} s" for k, v in c.items() if k != "total" and v > 0.05)
             cyc.append(f"Cycle time of the built paths: **{c['total']:.0f} s** ({parts}).")
+        if sim is not None:  # v10 T16: both carrier motions built for this plan
+            from ui.sim_fields import motion_line
+
+            cyc.append(motion_line(sim, sol.label))
         if any(cyc):
             out.append(("Cycle time", md_html("  \n".join(x for x in cyc if x))))
         if s.compared:  # v9 #7: Optimize -> Compare robots

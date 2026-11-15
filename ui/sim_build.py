@@ -79,3 +79,24 @@ def score(plan, cycle: dict) -> tuple:
     changes (reconfigure) are not problems."""
     bad = sum(v for k, v in plan.counts().items() if k != "reconfigure")
     return (bad, round(float(cycle["total"]), 3))
+
+
+def coordinated_plan(panel, checker, mesh, sol, res, pts, home):
+    """v10 T16: the paths with the carrier moving while the arm works (core.coordinated)."""
+    from core.coordinated import trace_coordinated
+
+    s = panel.s
+    return trace_coordinated(
+        checker,
+        mesh,
+        sol,
+        res,
+        pts,
+        s.carrier(),
+        s.part.T_world_part,
+        step=panel.step.value / 1000,
+        jump_deg=panel.jump.value,
+        pattern=panel.pattern_settings(),
+        home=home,
+        group_of={p.id: p.group for p in s.targets.points},
+    )

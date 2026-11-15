@@ -100,7 +100,9 @@ def plan_estimate(
 def _kind(a, b) -> str:
     """Motion kind of the move from sample ``a`` to ``b``."""
     ca, cb = a.carrier, b.carrier
-    if b.kind == "carrier" or (ca is not None and cb is not None and ca != cb) or a.station != b.station:
+    moving = ca is not None and cb is not None and ca != cb
+    # v10 T16: the carrier moving during a surface / approach move = coordinated motion (arm run)
+    if b.kind == "carrier" or a.station != b.station or (moving and b.kind not in ("", "lift", "retreat")):
         return "carrier"
     if b.kind in ("home",) or a.q is None or b.q is None or b.a == b.b and b.s == 0.0 and a.b != b.a:
         return "joint"
@@ -156,6 +158,11 @@ def _run_times(kind: str, S: list, cs: CycleSettings, v_limits) -> np.ndarray:
         v = np.full(Q.shape[1], cs.joint_speed)
         if v_limits is not None:
             v = np.minimum(v, np.asarray(v_limits, float)[: Q.shape[1]])
+        a_max, j_max = np.full(Q.shape[1], cs.joint_acc), np.full(Q.shape[1], cs.joint_jerk or np.inf)
+        C, keys = _carrier_cols(S)
+        if C is not None:  # v10 T16 coordinated: the carrier axes are timed as more joints
+            Q, v = np.c_[Q, C], np.r_[v, [cs.lift_speed if k == "lift" else cs.carrier_speed for k in keys]]
+            a_max, j_max = np.r_[a_max, [cs.carrier_acc] * len(keys)], np.r_[j_max, [np.inf] * len(keys)]
         ds = np.linalg.norm(np.diff(Q, axis=0), axis=1)
         cap = acc = None
         if lin:  # the TCP's own speed along the path: s_dot <= v_lin * ds / dp
@@ -163,11 +170,17 @@ def _run_times(kind: str, S: list, cs: CycleSettings, v_limits) -> np.ndarray:
             cap = np.where(rate > 1e-12, v_lin / np.maximum(rate, 1e-12), np.inf)
             acc = np.where(rate > 1e-12, cs.linear_acc / np.maximum(rate, 1e-12), np.inf)
         if ds.sum() > 1e-12:
-            return time_path(Q, v, cs.joint_acc, cs.joint_jerk or None, cap, acc)
+            jm = None if not np.isfinite(j_max).any() else np.where(np.isfinite(j_max), j_max, 1e9)
+            return time_path(Q, v, a_max, jm, cap, acc)
         if not lin or dp.sum() <= 0:
             return np.zeros(n)
     if lin:
-        return _spread(np.r_[0.0, dp], trapezoid(dp.sum(), v_lin, cs.linear_acc))
+        T = trapezoid(dp.sum(), v_lin, cs.linear_acc)
+        C, keys = _carrier_cols(S)
+        if C is not None:  # v10 T16: no faster than the carrier can follow
+            d = np.abs(np.diff(C, axis=0)).sum(axis=0)
+            T = max(T, *(trapezoid(x, cs.carrier_speed, cs.carrier_acc) for x in d))
+        return _spread(np.r_[0.0, dp], T)
     steps = np.zeros(n)
     tot = np.zeros(len(qs[0])) if qs and qs[0] is not None else None
     for i in range(1, n):
@@ -176,6 +189,15 @@ def _run_times(kind: str, S: list, cs: CycleSettings, v_limits) -> np.ndarray:
             steps[i] = float(dq.max())
             tot = dq if tot is None or len(tot) != len(dq) else tot + dq
     return _spread(steps, joint_move_time(tot, cs, v_limits) if tot is not None else 0.0)
+
+
+def _carrier_cols(S: list) -> tuple[np.ndarray | None, list[str]]:
+    """The carrier values of a run's samples as columns, when they change along it (coordinated)."""
+    cv = [s.carrier for s in S]
+    if any(c is None for c in cv) or all(c == cv[0] for c in cv):
+        return None, []
+    keys = sorted(cv[0])
+    return np.array([[float(c.get(k, 0.0)) for k in keys] for c in cv]), keys
 
 
 def _spread(steps: np.ndarray, T: float) -> np.ndarray:

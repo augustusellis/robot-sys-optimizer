@@ -93,6 +93,7 @@ SAVED: dict[str, tuple[str, ...]] = {
         "smooth",  # v10 T13
         "timed",  # v10 T14
         "turn_lift",  # v10 T15
+        "motion_mode",  # v10 T16
         "order",
         "step",
         "jump",
