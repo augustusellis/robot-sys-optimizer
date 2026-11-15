@@ -73,6 +73,7 @@ class Session:
     steps: dict = field(default_factory=dict)  # confirmed setup step -> fingerprint
     tolerance: object = None  # v8 T5: last opt.tolerance.ToleranceResult (not saved)
     edge_check: object = None  # v10 T10: last core.edge_check.EdgeResult (not saved)
+    skip_unfit: bool = False  # v10 T12: planners leave out points below the tool's minimum radius
     cycle: object = None  # v8 T6: core.cycle_time.CycleSettings (Optimize -> Cycle time)
     before_save: list = field(default_factory=list)  # GUI hooks that copy their state in here
 

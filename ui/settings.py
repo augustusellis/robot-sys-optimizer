@@ -40,6 +40,7 @@ SAVED: dict[str, tuple[str, ...]] = {
     "placement": ("res", "grid", "half"),
     "stations": (
         "max_stations",
+        "skip_unfit",  # v10 T12
         "step",
         "refine",
         "objective_m",

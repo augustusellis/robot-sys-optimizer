@@ -44,9 +44,17 @@ class ContactPicker:
             )
             self.radius = gui.add_number("Brush radius (mm)", 15.0, min=1.0, max=500.0, step=1.0)
             self.clear = gui.add_button("Clear picked faces of this part")
+            from ui.radius_ui import LABELS
+
+            self.min_r = gui.add_number(  # v10 T12
+                "Minimum surface radius (mm)", 0.0, min=0.0, max=10000.0, step=1.0, hint="this TCP; 0 = any"
+            )
+            self.applies = gui.add_dropdown("Radius limit applies to", tuple(LABELS.values()))
             self.info = gui.add_markdown("")
         self.whole.on_update(lambda _e: None if b._busy else self.set_whole(self.whole.value))
         self.mode.on_update(lambda _e: self._mode_changed())
+        self.min_r.on_update(lambda _e: None if b._busy else self._radius())
+        self.applies.on_update(lambda _e: None if b._busy else self._radius())
         self.clear.on_click(lambda _e: self.set_faces(self._part().name, []) if self._part() else None)
 
     # --- state ---------------------------------------------------------------------------------
@@ -108,6 +116,11 @@ class ContactPicker:
         b._busy, busy = True, b._busy
         try:
             self.whole.value = x is not None and self.is_contact(x.name)
+            if t is not None:
+                from ui.radius_ui import LABELS
+
+                self.min_r.value = float(t.min_radius_mm or 0.0)
+                self.applies.value = LABELS[t.radius_applies]
         finally:
             b._busy = busy
         self.whole.visible = x is not None
@@ -118,6 +131,13 @@ class ContactPicker:
         self.radius.visible = mesh and m.startswith("Brush")
         self._rect(mesh and m.startswith("Box"))
         self.info.content = summary(t) if t is not None else ""
+
+    def _radius(self) -> None:
+        from ui.radius_ui import LABELS
+
+        r = float(self.min_r.value)
+        kind = next(a for a, lab in LABELS.items() if lab == self.applies.value)
+        self._set_tcp(min_radius_mm=r if r > 0 else None, radius_applies=kind)
 
     def _mode_changed(self) -> None:
         self.refresh()

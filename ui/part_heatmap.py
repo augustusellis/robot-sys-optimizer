@@ -19,7 +19,8 @@ PATH = "/cell/part/heatmap"
 BINS = 10
 OFFSET = 1.1e-3  # m above the surface (station areas are at 0.8 mm)
 OFF = "Reached / unreached (points)"
-EDGE = "Edge check"  # no surface colour: the points' own colours (pre-v8)
+EDGE = "Edge check"
+FIT = "Surface radius (tool fit)"  # no surface colour: the points' own colours (pre-v8)
 
 # label -> (unit, lo, hi): scores are clipped to [lo, hi] for the colours
 SCORES = {
@@ -29,6 +30,7 @@ SCORES = {
     "Joint-limit margin": ("°", 0.0, 30.0),
     "Tolerance reach rate": ("%", 0.0, 100.0),
     EDGE: ("%", 0.0, 100.0),  # v10 T10: 0 = gap, 100 = reached
+    FIT: ("% of the tool's minimum radius", 0.0, 200.0),  # v10 T12: red below the minimum
 }
 
 
@@ -53,10 +55,28 @@ def point_scores(s, what: str, sel: dict) -> dict[int, float]:
         top = getattr(s, "max_manip", None) or max((r.manipulability for r in ok.values()), default=0.0)
         top = top or 1.0
         return {p: 100 * float(r.manipulability) / top for p, r in ok.items()}
+    if what == FIT:
+        return fit_scores(s)
     if what == "Tolerance reach rate":
         tol = getattr(s, "tolerance", None)
         return {int(p): 100 * t.rate for p, t in tol.points.items()} if tol is not None else {}
     return {}
+
+
+def fit_scores(s) -> dict[int, float]:
+    """v10 T12: each point's surface radius (the curvature its limit applies to) as % of the
+    tool's minimum radius (the first TCP with one); flat = far above."""
+    from core.surface_radius import limit_radius
+    from ui.radius_ui import fit_of
+
+    t = next((t for t in (s.tool.tcps if s.tool else []) if t.min_radius_mm), None)
+    if t is None:
+        return {}
+    out = {}
+    for pid, rad in fit_of(s).radii.items():
+        r, _ = limit_radius(rad, t.radius_applies)
+        out[pid] = 100 * r / (t.min_radius_mm / 1000) if math.isfinite(r) else 1e9
+    return out
 
 
 def bins(scores: np.ndarray, lo: float, hi: float) -> np.ndarray:

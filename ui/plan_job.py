@@ -117,7 +117,7 @@ def station_job(payload: dict, emit, cancelled) -> dict:
 
     settings.speed_zones = tuple(speed_zones(s.stayouts, s.resolve))  # cycle estimate
     robot = Robot(s.robot.spec)
-    t = world_targets(s)
+    t = world_targets(s, spec.get("skip", ()))  # v10 T12: points the tool cannot fit left out
     fp = part_footprint(s)
     sites = s.sites()
     T_base0 = s.T_world_base.copy()
@@ -274,7 +274,7 @@ def tool_job(payload: dict, emit, cancelled):
         s.part_mesh(),
         s.part.T_world_part.copy(),
         s.T_world_base.copy(),
-        world_targets(s),
+        world_targets(s, spec.get("skip", ())),  # v10 T12
         part_footprint(s),
         spec["weights"],
         1 if sites is None else spec["max_stations"],  # static base: one station

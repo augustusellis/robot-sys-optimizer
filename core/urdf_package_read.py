@@ -236,10 +236,10 @@ def _authored_contacts(tcps: list, meta: dict, parts: list) -> list:
         if a is None:
             out.append(t)
             continue
-        f = Frame.model_validate(
-            {"name": t.name, **{k: a[k] for k in ("contact_parts", "contact_faces") if k in a}}
-        )
+        keys = ("contact_parts", "contact_faces", "min_radius_mm", "radius_applies")  # v10 #11, T12
+        f = Frame.model_validate({"name": t.name, **{k: a[k] for k in keys if k in a}})
         cp = [name_of[link_of[n]] for n in f.contact_parts if link_of.get(n) in name_of]
         cf = {name_of[link_of[n]]: v for n, v in f.contact_faces.items() if link_of.get(n) in name_of}
-        out.append(t.model_copy(update={"contact_parts": cp, "contact_faces": cf}))
+        upd = {"contact_parts": cp, "contact_faces": cf, "min_radius_mm": f.min_radius_mm}
+        out.append(t.model_copy(update={**upd, "radius_applies": f.radius_applies}))
     return out

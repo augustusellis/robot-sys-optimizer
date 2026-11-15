@@ -69,6 +69,8 @@ def frames_with_contacts(frames: list, tcps: list[TCP], parts: list) -> list:
                     "contact_faces": {
                         part_of[n]: list(ids) for n, ids in t.contact_faces.items() if n in part_of
                     },
+                    "min_radius_mm": t.min_radius_mm,  # v10 T12
+                    "radius_applies": t.radius_applies,
                 }
             )
         )

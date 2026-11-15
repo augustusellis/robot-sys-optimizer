@@ -21,8 +21,12 @@ from ui.staleness import stamp_for
 from ui.widgets import notify
 
 
-def world_targets(s: Session) -> Targets:
+def world_targets(s: Session, skip=()) -> Targets:
+    """The targets in the world frame; ``skip``: point ids left out (v10 T12)."""
     ids, P, N, G = tg.as_arrays(s.targets)
+    if len(skip):
+        keep = ~np.isin(ids, np.asarray(list(skip), int))
+        ids, P, N, G = ids[keep], P[keep], N[keep], [g for g, k in zip(G, keep, strict=True) if k]
     Tp = s.part.T_world_part
     groups = {g.name: g for g in s.targets.groups}
     per = [groups.get(g) or TargetGroup(name=g) for g in G]
@@ -72,6 +76,14 @@ class StationsPanel:
                     max=40,
                     step=1,
                     hint="the planner stops early once more stops no longer give a better plan",
+                )
+                self.skip_unfit = gui.add_checkbox(  # v10 T12
+                    "Leave out points the tool cannot fit",
+                    False,
+                    hint="surface radius below the tool's minimum (Tool tab / package builder)",
+                )
+                self.skip_unfit.on_update(
+                    lambda _e: setattr(self.s, "skip_unfit", bool(self.skip_unfit.value))
                 )
             gui.add_markdown(
                 "_Static base mode places one base (k = 1); set Mode = movable with a carrier in the "
@@ -231,6 +243,10 @@ class StationsPanel:
         from ui import jobs
 
         spec = {"settings": settings, "weights": weights, "rules": None, "workers": jobs.CHECK_WORKERS}
+        from ui.radius_ui import log_fit, skip_ids
+
+        log_fit(s)  # v10 T12: points below the tool's minimum radius
+        spec["skip"] = skip = skip_ids(s)
         spec["dress_m"] = collision.DRESS_M  # v8 T18: the worker has its own copy
         spec["hose"] = collision.HOSE
         spec["collision_geom"] = collision.geom_state()
@@ -258,6 +274,7 @@ class StationsPanel:
             if quick and not sol.label.startswith("Quick: "):
                 sol.label = f"Quick: {sol.label}"  # in place: the planner's list has the same object
             sol.planner = sol.planner or ("quick" if quick else "cost")
+            sol.unfit = list(skip)  # v10 T12: left out of this plan
             # a refined plan replaces the quick plan with the same number of stations
             for old in [
                 r for r in s.results if len(r.stations) == len(sol.stations) and r.tool_values is None

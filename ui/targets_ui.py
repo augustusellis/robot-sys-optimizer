@@ -486,11 +486,9 @@ class TargetsTab:
             self._handles.update(
                 draw_unreached(self.server, PART, ids, P, N, bad, self.point_size.value / 1000, sel or feas)
             )
-            gaps = getattr(self, "edge_gaps", None)  # v10 T10: edge check gaps of the selected plan
-            if gaps is not None:
-                from ui.unreached_view import draw_gaps
+            from ui.unreached_view import draw_extras
 
-                self._handles.update(draw_gaps(self.server, PART, *gaps(), self.point_size.value / 1000))
+            self._handles.update(draw_extras(self, PART, ids, P, N))  # v10 T10 gaps, T12 tool fit
 
     def _draw_preview(self) -> None:
         draw_preview(self)

@@ -255,6 +255,7 @@ class ToolOptPanel:
 
         spec = {
             "weights": self.costs.commit(),  # the tool optimizer's own cost weights
+            "skip": __import__("ui.radius_ui", fromlist=["skip_ids"]).skip_ids(s),  # v10 T12
             "max_stations": int(self.max_stations.value),
             "st": st,
             "tube_od_mm": self.tube_od(),

@@ -79,6 +79,37 @@ def draw_gaps(server, root: str, P: np.ndarray, N: np.ndarray, point_size: float
     }
 
 
+UNFIT = (150, 90, 40)  # v10 T12: below the tool's minimum surface radius (brown)
+
+
+def draw_unfit(server, root: str, ids, P, N, bad: dict, point_size: float) -> dict:
+    """Points the tool cannot fit (core.surface_radius.Fit.bad): brown rings + crosses + labels."""
+    index = {int(p): k for k, p in enumerate(ids)}
+    keep = [p for p in sorted(bad) if p in index]
+    if not keep:
+        return {}
+    k = np.array([index[p] for p in keep])
+    Pb, Nb = np.asarray(P, float)[k], np.asarray(N, float)[k]
+    size = max(2.5 * point_size, 0.01)
+    out = {
+        "unfit_x": server.scene.add_line_segments(
+            f"{root}/unfit_x",
+            crosses(Pb, Nb, 1.3 * size).astype(np.float32),
+            UNFIT,
+            thickness=3.0,
+            thickness_units="screen",
+        )
+    }
+    for j, pid in enumerate(keep[:MAX_LABELS]):
+        _, r, rmin, kind = bad[pid]
+        out[f"unfit_label_{pid}"] = server.scene.add_label(
+            f"{root}/unfit_label_{pid}",
+            f"✘ {pid} radius {1000 * r:.0f} mm {kind} < {1000 * rmin:.0f}",
+            position=tuple(Pb[j] + 0.02 * Nb[j]),
+        )
+    return out
+
+
 def draw_unreached(server, root: str, ids, P, N, bad: list[int], point_size: float, results=None) -> dict:
     """Scene handles {name: handle} for the flagged points (empty when none); ``results``
     (point id -> PointResult) colours and labels them by reason."""
@@ -113,4 +144,18 @@ def draw_unreached(server, root: str, ids, P, N, bad: list[int], point_size: flo
             f"✘ {pid} {why(res[pid])}" if pid in res else f"✘ {pid}",
             position=tuple(p + 0.02 * n),
         )
+    return out
+
+
+def draw_extras(tab, root: str, ids, P, N) -> dict:
+    """The Targets tab's extra markers: edge-check gaps (v10 T10) and points below the tool's minimum
+    surface radius (v10 T12)."""
+    from ui.radius_ui import fit_of
+
+    size = tab.point_size.value / 1000
+    out = {}
+    gaps = getattr(tab, "edge_gaps", None)
+    if gaps is not None:
+        out.update(draw_gaps(tab.server, root, *gaps(), size))
+    out.update(draw_unfit(tab.server, root, ids, P, N, fit_of(tab.s).bad, size))
     return out

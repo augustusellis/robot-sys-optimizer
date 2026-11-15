@@ -35,6 +35,7 @@ def card(s, sol) -> str:
         low_mu = f"{100 * mu / top:.0f} %" if top else f"{mu:.3f} (\\|det J\\|)"
     else:
         low_mu = "—"
+    reached = n - len(sol.unreached) - len(sol.unfit)  # v10 T12: left-out points are not reached
     planner = PLANNERS.get(sol.planner, sol.planner or ("Tool optimizer" if sol.tool_values else "—"))
     rules = f"✘ {len(sol.violations)} broken" if sol.violations else "✔ met"
     run = f"{sol.run_s:.0f} s" if sol.run_s is not None else "—"
@@ -43,11 +44,29 @@ def card(s, sol) -> str:
         f"**Selected plan:** {sol.label}\n\n"
         "| | | | |\n|---|---|---|---|\n"
         f"| Stations | **{len(sol.stations)}** | Groups | **{groups}** |\n"
-        f"| Points reached | **{n - len(sol.unreached)}/{n}** | Worst clearance | {worst_c} |\n"
+        f"| Points reached | **{reached}/{n}** | Worst clearance | {worst_c} |\n"
         f"| Closest joint limit | {lim} | Lowest manipulability | {low_mu} |\n"
         f"| Planner | {planner} | Rules | {rules} |\n"
-        f"| Run time | {run} | Cycle time | {cyc} |\n" + prov_line(sol)
+        f"| Run time | {run} | Cycle time | {cyc} |\n" + prov_line(sol) + fit_line(s, sol)
     )
+
+
+def fit_line(s, sol) -> str:
+    """v10 T12: points below the tool's minimum surface radius (left out of this plan or not)."""
+    from ui.radius_ui import fit_of
+
+    fit = fit_of(s)
+    if not fit.bad and not sol.unfit:
+        return ""
+    if sol.unfit:
+        head = (
+            f"**Tool fit:** {len(sol.unfit)} point(s) left out of this plan (below the tool's minimum radius)"
+        )
+    else:
+        head = (
+            f"**Tool fit:** {len(fit.bad)} point(s) below the tool's minimum surface radius, planned anyway"
+        )
+    return f"\n{head}: {fit.lines() or ', '.join(map(str, sol.unfit))}.\n"
 
 
 def prov_line(sol) -> str:

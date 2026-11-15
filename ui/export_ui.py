@@ -227,6 +227,11 @@ class ExportPanel:
             from ui.tolerance_ui import summary
 
             out.append(("Tolerance check", md_html(summary(tol))))
+        from ui.radius_ui import report_md
+
+        fit = report_md(s)  # v10 T12: points the tool cannot fit
+        if fit:
+            out.append(("Tool fit", md_html(fit)))
         msg = unreached_report(s.result_points.get(sol.label, {}), sol.unreached, sol.label)
         out.append(("Unreached points", md_html(msg) if msg else "<p>Every point is reached.</p>"))
         return out

@@ -140,6 +140,10 @@ class TCP(_Model):
     T_head_tcp: Pose = Field(default_factory=Pose)
     contact_links: list[str] = Field(default_factory=list)  # whole links allowed to touch
     contact_faces: dict[str, list[int]] = Field(default_factory=dict)  # link -> face ids
+    # v10 T12: the tightest surface radius the tool can follow here (None = any); which curvature
+    # it applies to (core.surface_radius.APPLIES)
+    min_radius_mm: float | None = Field(default=None, gt=0)
+    radius_applies: Literal["concave", "convex", "both"] = "concave"
 
     @field_validator("contact_faces")
     @classmethod
@@ -305,6 +309,7 @@ class Solution(_Model):
     stations: list[Station] = Field(min_length=1)
     assignment: dict[int, int] = Field(default_factory=dict)  # point id -> station index
     unreached: list[int] = Field(default_factory=list)
+    unfit: list[int] = Field(default_factory=list)  # v10 T12: left out (below the tool's minimum radius)
     cost: float = 0.0
     breakdown: dict[str, float] = Field(default_factory=dict)
     tool_values: ExtensionValues | None = None

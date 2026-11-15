@@ -84,6 +84,9 @@ class ToolSetupTab:
                 "Lock TCP position", True, hint="untick to move the TCP (fields or gizmo)"
             )
             self.tcp_pose = PoseWidgets(server, f"{HEAD}/tcp_gizmo", np.eye(4), self._on_tcp_pose, scale=0.08)
+            from ui.radius_ui import RadiusFields
+
+            self.min_radius = RadiusFields(gui, self)  # v10 T12: minimum surface radius per TCP
             self.tcp_lock.on_update(lambda _e: self._apply_tcp_lock())
             self._apply_tcp_lock()
             self.pick = gui.add_checkbox("Pick contact faces (click tool)", False)
@@ -461,6 +464,7 @@ class ToolSetupTab:
             self.tcp_pose.set_handles(self.tcp_pose.show.value and not self.tcp_lock.value)
             for link, cb in self._link_boxes.items():
                 cb.value = link in tcp.contact_links
+            self.min_radius.show(tcp)
         finally:
             self._busy = busy
         self.view.active_tcp = tcp.name

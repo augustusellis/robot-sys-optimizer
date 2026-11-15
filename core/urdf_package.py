@@ -112,6 +112,8 @@ class Frame(_M):
     # faces of mesh parts (part name -> face ids of its mesh as loaded); the rest collides
     contact_parts: list[str] = Field(default_factory=list)
     contact_faces: dict[str, list[int]] = Field(default_factory=dict)
+    min_radius_mm: float | None = Field(default=None, gt=0)  # v10 T12 (schema.TCP)
+    radius_applies: Literal["concave", "convex", "both"] = "concave"
 
 
 class Package(_M):
@@ -422,6 +424,8 @@ def to_tool(p: Package, urdf_rel: str) -> EndEffector:
             T_head_tcp=t.pose,
             contact_links=[link[n] for n in t.contact_parts if n in link],  # v10 #11
             contact_faces={link[n]: sorted(ids) for n, ids in t.contact_faces.items() if n in link and ids},
+            min_radius_mm=t.min_radius_mm,  # v10 T12
+            radius_applies=t.radius_applies,
         )
         for t in p.tcps
     ] or [TCP(name="tcp")]
