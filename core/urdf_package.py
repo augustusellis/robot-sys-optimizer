@@ -88,6 +88,7 @@ class Part(_M):
     # v10 #4 (rails / gantries): the body follows an axis length (core.schema_base.Primitive.stretch)
     stretch: Literal["", "x", "y"] = ""
     keep: list[int] = Field(default_factory=list)  # v10 T19: this mesh part's faces kept exact
+    datums: dict[str, Pose] = Field(default_factory=dict)  # v11 #10: STEP coordinate systems (part frame)
 
 
 def tool_link(part: Part) -> str:

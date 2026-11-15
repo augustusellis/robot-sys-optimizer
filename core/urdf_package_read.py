@@ -201,6 +201,7 @@ def open_package(data: bytes, dest: Path) -> tuple[Package, Path]:
         modes = {str(x.get("name")): x.get("collision") for x in authored}
         files = {str(x.get("name")): x.get("collision_file") for x in authored}
         stretch = {str(x.get("name")): x.get("stretch") for x in authored}
+        datums = {str(x.get("name")): x.get("datums") or {} for x in authored}  # v11 #10
         mesh_dir = info.path.parent / "meshes"
         parts = []
         for x in pkg.parts:
@@ -211,6 +212,12 @@ def open_package(data: bytes, dest: Path) -> tuple[Package, Path]:
                 x = x.model_copy(update={"collision_file": f})
             if stretch.get(x.name) in ("x", "y"):  # v10 #4: follows an axis length
                 x = x.model_copy(update={"stretch": stretch[x.name]})
+            if datums.get(x.name):  # v11 #10: the STEP part's coordinate systems
+                from core.schema import Pose
+
+                x = x.model_copy(
+                    update={"datums": {k: Pose.model_validate(v) for k, v in datums[x.name].items()}}
+                )
             parts.append(x)
         upd["parts"] = parts
         upd["tcps"] = _authored_contacts(pkg.tcps, meta, parts)  # v10 #11

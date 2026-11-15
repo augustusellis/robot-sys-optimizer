@@ -45,28 +45,40 @@ def _metrics(sol, res: dict, run_s: float) -> dict:
     }
 
 
-def setups(robots: list[str], tools: dict, own_robot: str | None, own_tool: str) -> list[dict]:
-    """The setups to plan: robots x tools ({name: EndEffector}); the project's (``own_robot``, its
-    tool) first and always. Keys: the robot's name with the project's tool, else "robot · tool"."""
+def setups(
+    robots: list[str], tools: dict, own_robot: str | None, own_tool: str, axes: dict | None = None
+) -> list[dict]:
+    """The setups to plan: robots x tools ({name: EndEffector}) x external axes (v11 #8: {name:
+    Base}); the project's (``own_robot``, its tool, its axis) first and always. Keys: the robot's
+    name, then "· tool" when not the project's tool and "· axis" when not the project's axis."""
     rs = list(robots) or [own_robot]
     ts = list(tools.items()) or [(None, None)]
+    xs = list((axes or {}).items()) or [(None, None)]
     out = []
     for r in rs:
         for tn, ee in ts:
-            same = tn is None or tn == own_tool
-            out.append(
-                {
-                    "key": r if same else f"{r} · {tn}",
-                    "robot": r,
-                    "tool": None if same else ee,
-                    "tool_name": own_tool if same else tn,
-                    "project": r == own_robot and same,
-                }
-            )
+            for an, base in xs:
+                same = tn is None or tn == own_tool
+                key = r if same else f"{r} · {tn}"
+                out.append(
+                    {
+                        "key": key if an is None else f"{key} · {an}",
+                        "robot": r,
+                        "tool": None if same else ee,
+                        "tool_name": own_tool if same else tn,
+                        "axis": base,
+                        "axis_name": an or "",
+                        "project": r == own_robot and same and an is None,
+                    }
+                )
     if not any(x["project"] for x in out):
         out.insert(
-            0, {"key": own_robot, "robot": own_robot, "tool": None, "tool_name": own_tool, "project": True}
-        )
+            0,
+            {
+                "key": own_robot, "robot": own_robot, "tool": None, "tool_name": own_tool,
+                "axis": None, "axis_name": "", "project": True,
+            },
+        )  # fmt: skip
     out.sort(key=lambda x: not x["project"])
     return out
 
@@ -127,10 +139,22 @@ def compare_job(payload: dict, emit, cancelled) -> list[dict]:
         if su.get("tool") is not None:  # v10 T17: another tool (its own TCPs, contacts, ranges)
             s.set_tool(su["tool"])
         tag = {"setup": su["key"], "robot": name, "tool": su.get("tool_name", ""), "project": su["project"]}
+        settings = spec["settings"]
+        if su.get("axis") is not None:  # v11 #8: another external axis type, placed for this part
+            from dataclasses import replace
+
+            from ui.compare_axes import kind_of, place
+
+            base, note = place(s, su["axis"], _rmap(s, cancelled), cancelled)
+            s.base = base
+            if base.mode != "movable":
+                settings = replace(settings, max_stations=1)
+            tag.update(axis=su.get("axis_name", ""), axis_kind=kind_of(base), placed=note)
+            tag["base"] = base
         t0 = time.monotonic()
         sols: dict = {}
         sub = {
-            "settings": spec["settings"],
+            "settings": settings,
             "weights": spec["weights"],
             "rules": None,
             "workers": spec["workers"],
@@ -173,6 +197,20 @@ def compare_job(payload: dict, emit, cancelled) -> list[dict]:
     return rows
 
 
+def _rmap(s, cancelled):
+    """The reach map of the session's robot and tool (cached on disk; frame placement needs it)."""
+    from core.robot import Robot
+    from opt.reachability import map_for_tcps
+
+    return map_for_tcps(
+        Robot(s.robot.spec),
+        s.tool_model,
+        [c.name for c in s.tool.tcps],
+        cancelled=cancelled,
+        any_offset=s.tool.extension.type in ("pose", "bent2"),
+    )
+
+
 def keep_plans(session, rows: list[dict]) -> list[dict]:
     """Move each row's plans into ``session.compared``; returns the rows without them (the table)."""
     session.compared = {}
@@ -180,6 +218,7 @@ def keep_plans(session, rows: list[dict]) -> list[dict]:
     for r in rows:
         r = dict(r)
         plans, stamps, ee = r.pop("plans", []), r.pop("stamps", {}), r.pop("ee", None)
+        base = r.pop("base", None)  # v11 #8: the setup's placed external axis
         if r.get("project") and r.get("stations"):  # v10 T22: its row (no plans) for the report
             session.compared[f"{r.get('setup', r['robot'])} (project)"] = {
                 "robot": r["robot"],
@@ -193,6 +232,7 @@ def keep_plans(session, rows: list[dict]) -> list[dict]:
             session.compared[r.get("setup", r["robot"])] = {
                 "robot": r["robot"],
                 "tool": ee,
+                "base": base,
                 "results": [sol for sol, _ in plans],
                 "points": {sol.label: dict(res) for sol, res in plans},
                 "stamps": stamps,
@@ -243,6 +283,9 @@ class ComparePanel:
             self.tools_folder = gui.add_folder("Tools", expand_by_default=False)
             self.tool_pick: dict = {}
             self.refresh_tools(gui)
+            self.axes_folder = gui.add_folder("External axes", expand_by_default=False)  # v11 #8
+            self.axis_pick: dict = {}
+            self.refresh_axes(gui)
             self.run = gui.add_button("Compare setups", color="green")
             self.gate_md = gui.add_markdown("", visible=False)
             self.stop = gui.add_button("Cancel", visible=False)
@@ -280,6 +323,20 @@ class ComparePanel:
         with self.tools_folder:
             self.tool_pick = {n: gui.add_checkbox(n, False) for n in names}
 
+    def refresh_axes(self, gui=None) -> None:
+        """The External axes folder: one checkbox per axis type (v11 #8, ui.compare_axes)."""
+        from ui.compare_axes import axis_choices
+
+        gui = gui or self._gui
+        self._gui = gui
+        names = tuple(axis_choices(self.s))
+        if tuple(self.axis_pick) == names:
+            return
+        for cb in self.axis_pick.values():
+            cb.remove()
+        with self.axes_folder:
+            self.axis_pick = {n: gui.add_checkbox(n, False) for n in names}
+
     def start(self, event=None, block: bool = False) -> None:
         s = self.s
         if self._thread is not None and self._thread.is_alive():
@@ -287,8 +344,12 @@ class ComparePanel:
         robots = [n for n, cb in self.pick.items() if cb.value]
         all_tools = tool_choices(s)
         tools = {n: all_tools[n] for n, cb in self.tool_pick.items() if cb.value and n in all_tools}
-        if not robots and not tools:
-            return notify(event, "Nothing to compare", "Tick at least one robot or tool")
+        from ui.compare_axes import axis_choices
+
+        all_axes = axis_choices(s) if any(cb.value for cb in self.axis_pick.values()) else {}
+        axes = {n: all_axes[n] for n, cb in self.axis_pick.items() if cb.value and n in all_axes}
+        if not robots and not tools and not axes:
+            return notify(event, "Nothing to compare", "Tick at least one robot, tool or external axis")
         if s.robot_name is None or s.tool is None:
             return notify(event, "Cannot compare", "The project needs a library robot and a tool")
         if s.view_stash:
@@ -315,7 +376,7 @@ class ComparePanel:
             cycle=getattr(s, "cycle", None),
         )
         spec = {
-            "setups": setups(robots, tools, s.robot_name, s.tool.name),
+            "setups": setups(robots, tools, s.robot_name, s.tool.name, axes),
             "settings": settings,
             "weights": st.costs.commit(),
             "workers": jobs.CHECK_WORKERS,

@@ -28,13 +28,14 @@ STASH = (
     "stamps",
     "tool",
     "tool_model",
+    "base",  # v11 #8: a compared external axis
 )
 
 
 class CompareView:
     def __init__(self, server: viser.ViserServer, session) -> None:
         self.s = session
-        self.cell = self.results = self.sim = self.tool_tab = None  # set by app.py
+        self.cell = self.results = self.sim = self.tool_tab = self.carrier = None  # set by app.py
         self.viewing: str | None = None  # v10 T17: the compared setup shown (its key)
         self.on_changed: Callable[[], None] | None = None  # app.py: e.g. the Pareto view
         self._quiet = False  # set while refresh() moves the dropdown itself
@@ -93,6 +94,8 @@ class CompareView:
             self.cell.refresh()
         if self.tool_tab is not None:  # v10 T17: a compared tool
             self.tool_tab.refresh()
+        if self.carrier is not None:  # v11 #8: a compared external axis (or the project's back)
+            self.carrier.load(self.s.base)
         if self.results is not None:
             self.results.refresh()
         if self.sim is not None:
@@ -122,6 +125,8 @@ class CompareView:
             s.load_robot_from_registry(c.get("robot", name))
             if c.get("tool") is not None:
                 s.set_tool(c["tool"])
+            if c.get("base") is not None:
+                s.base = c["base"]
             s.results = list(c["results"])
             s.result_points = {label: dict(pts) for label, pts in c["points"].items()}
             s.stamps = {

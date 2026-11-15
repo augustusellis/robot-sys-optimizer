@@ -198,6 +198,7 @@ class Session:
                 robot=c.get("robot", name),
                 key=name,
                 tool=c.get("tool"),
+                base=c.get("base"),
                 metrics={
                     k: v
                     for k, v in c.get("metrics", {}).items()
@@ -277,7 +278,7 @@ class Session:
             end_effector=o.get("tool", self.tool),  # v10 T17: the project's tool while viewing a setup
             targets=self.targets,
             results=g("results"),
-            base=self.base,
+            base=o.get("base", self.base),  # v11 #8: the project's axis while viewing a setup
             stayouts=list(self.stayouts),
             work=self.work_state(o),
             compared=self.compared_data(),
@@ -328,6 +329,7 @@ class Session:
             (c.key or c.robot): {
                 "robot": c.robot,
                 "tool": c.tool,
+                "base": c.base,
                 "results": list(c.results),
                 "points": {
                     label: {d.id: result_from_data(d) for d in pts} for label, pts in c.result_points.items()

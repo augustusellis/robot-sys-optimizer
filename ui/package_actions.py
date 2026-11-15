@@ -57,6 +57,7 @@ def import_mesh(self, e) -> None:
         try:
             mesh_dir.mkdir(parents=True, exist_ok=True)
             sure, guess_note = True, ""
+            found: dict = {}
             if ext in (".step", ".stp"):
                 from core.mesh_units import step_in_process
 
@@ -65,11 +66,18 @@ def import_mesh(self, e) -> None:
                     src.write_bytes(content)
                     step_in_process(src, mesh_dir / f"{name}.stl", stop.is_set)
                 fname, u = f"{name}.stl", "m"
+                from core.step_datums import read_datums
+                from core.transforms import matrix_to_pose
+
+                # v11 #10: its named coordinate systems, in the mesh's (file) frame
+                found = {d.name: matrix_to_pose(d.T) for d in read_datums(content.decode("utf-8", "ignore"))}
             else:
                 fname = f"{name}{ext}"
                 (mesh_dir / fname).write_bytes(content)
                 u, sure, guess_note = _units(mesh_dir / fname, units)
             part = Part(name=name, stage=self._default_stage(), shape="mesh", mesh=fname, units=u)
+            if ext in (".step", ".stp") and found:
+                part = part.model_copy(update={"datums": found})
             m = primitive_mesh(self.primitive(part))  # fail now on a broken file
         except Exception as err:  # a broken mesh / STEP file: report, keep the package
             from core.mesh_units import ImportCancelledError
@@ -83,7 +91,9 @@ def import_mesh(self, e) -> None:
             notify(e, "Mesh not added", why)
         else:
             self.import_errors.pop(f.name, None)
-            self.import_info.content = f"✔ Added **{name}** ({len(m.faces)} triangles){guess_note}."
+            n_d = len(part.datums)
+            frames = f"; {n_d} STEP frame(s): *Frames and travel → Frame from STEP*" if n_d else ""
+            self.import_info.content = f"✔ Added **{name}** ({len(m.faces)} triangles){guess_note}{frames}."
             self._add(part)
             if not sure:  # v10 T20: ask which units it is in
                 ask_units(self, e, part.name)

@@ -346,6 +346,7 @@ def build_app(
     state["results"] = results
     compare_view.cell, compare_view.results, compare_view.sim = cell, results, sim
     compare_view.tool_tab = tool  # v10 T17: compared tools
+    compare_view.carrier = carrier  # v11 #8: compared external axes
     tool.travel.targets = targets  # v11 #7: Use for the target rows
     compare_view.on_changed = lambda: pareto.refresh()
     compare.view_robot, compare.on_done = compare_view.view, compare_view.refresh

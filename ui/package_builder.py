@@ -107,6 +107,9 @@ class PackageBuilder:
             self.part = gui.add_dropdown("Part", (NONE,))
             self.add_box = gui.add_button("Add box")
             self.add_cyl = gui.add_button("Add cylinder")
+            from ui.package_presets import MobilePresets
+
+            self.presets = MobilePresets(gui, self)  # v11 #9: chassis + vertical stage
             self.units = gui.add_dropdown("Mesh units", UNITS, hint="STL / OBJ / PLY (STEP carries its own)")
             self.upload = gui.add_upload_button("Add mesh (STL/OBJ/PLY/STEP)")
             self.import_bar = gui.add_progress_bar(0.0, animated=True, visible=False)
@@ -129,6 +132,9 @@ class PackageBuilder:
             from ui.package_contacts import ContactPicker
 
             self.contacts = ContactPicker(server, self)  # v10 #11: what may touch the part, per TCP
+            from ui.package_frames import FramePicker
+
+            self.step_frames = FramePicker(gui, self)  # v11 #10: STEP coordinate systems as frames
             self.mount_md = gui.add_markdown("**Robot mount** (where the robot's base sits)")
             self.mount_pose = PoseWidgets(
                 server, f"{ROOT}/edit_mount", np.eye(4), self._mount_moved, scale=0.25
@@ -295,6 +301,8 @@ class PackageBuilder:
             self._busy = False
         self.collision.load()
         self.contacts.refresh()
+        self.presets.refresh()
+        self.step_frames.refresh()
         self.draw()
 
     @staticmethod
