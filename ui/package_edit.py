@@ -71,7 +71,10 @@ def edit_tool(b, e=None) -> bool:
     except Exception as err:  # an unusual URDF: report, keep the builder as it was
         notify(e, "Could not load the tool", f"{type(err).__name__}: {err}")
         return False
+    from core.tool_contacts import frames_with_contacts
+
     tcps = [Frame(name=safe(t.name), pose=t.T_head_tcp) for t in ee.tcps] or pkg.tcps
+    tcps = frames_with_contacts(tcps, ee.tcps, pkg.parts)  # v10 #11: the contacts come back
     b.pkg = pkg.model_copy(update={"kind": "tool", "name": safe(ee.name), "tcps": tcps})
     b.edit_source = ("tool", ee)  # Use keeps the tool's process, extension and contact settings
     b.load_widgets()

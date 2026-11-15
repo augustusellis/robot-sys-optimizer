@@ -14,6 +14,7 @@ from pathlib import Path
 import numpy as np
 import viser
 
+from core import tool_contacts as tc
 from core.schema import Primitive
 from core.transforms import matrix_to_pose, pose_to_matrix
 from core.urdf_package import (
@@ -122,6 +123,9 @@ class PackageBuilder:
             self.tcp_name = gui.add_text("TCP name", "tcp")
             self.tcp_pose = PoseWidgets(server, f"{ROOT}/edit_tcp", np.eye(4), self._tcp_moved, scale=0.12)
             self.del_tcp = gui.add_button("Remove TCP")
+            from ui.package_contacts import ContactPicker
+
+            self.contacts = ContactPicker(server, self)  # v10 #11: what may touch the part, per TCP
             self.mount_md = gui.add_markdown("**Robot mount** (where the robot's base sits)")
             self.mount_pose = PoseWidgets(
                 server, f"{ROOT}/edit_mount", np.eye(4), self._mount_moved, scale=0.25
@@ -277,6 +281,7 @@ class PackageBuilder:
         finally:
             self._busy = False
         self.collision.load()
+        self.contacts.refresh()
         self.draw()
 
     @staticmethod
@@ -336,6 +341,7 @@ class PackageBuilder:
             upd["radius"], upd["height"] = (max(v, 1.0) / 1000 for v in self.cyl.value)
         self._set_part(x.model_copy(update=upd))
         if "name" in upd and upd["name"] != x.name:
+            self._update(tcps=tc.rename_part(self.pkg.tcps, x.name, upd["name"]))  # v10 #11
             self.load_widgets()
 
     def _set_part(self, part: Part) -> None:
@@ -350,7 +356,8 @@ class PackageBuilder:
     def _remove(self) -> None:
         if self.pkg.parts:
             parts = [x for k, x in enumerate(self.pkg.parts) if k != self.sel]
-            self.pkg = self.pkg.model_copy(update={"parts": parts})
+            tcps = tc.drop_part(self.pkg.tcps, self.pkg.parts[self.sel].name)  # v10 #11
+            self.pkg = self.pkg.model_copy(update={"parts": parts, "tcps": tcps})
             self.sel = max(self.sel - 1, 0)
             self.load_widgets()
 

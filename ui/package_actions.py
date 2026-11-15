@@ -106,20 +106,24 @@ def export(self, e) -> None:
 
 def _tool_from(self, urdf_rel: str, urdf: Path | None = None):
     """The package as the project's tool. Editing the project's tool (``edit_source``) keeps its
-    process, extension and per-TCP contact settings; only the geometry and the TCP poses change.
-    v10 #1: contact parts / faces that the new URDF no longer has are dropped and listed in
-    ``self.contact_lost``."""
+    process and extension; the geometry, the TCP poses and (v10 #11) the contacts picked in the
+    builder come from the package. v10 #1: contact parts / faces that the new URDF no longer has are
+    dropped and listed in ``self.contact_lost``."""
     from core.tool_contacts import carry_contacts, link_faces
 
     self.contact_lost = []
     new = to_tool(self.pkg, urdf_rel)
     src = getattr(self, "edit_source", None)
     if not src or src[0] != "tool" or src[1] is None:
+        if urdf is not None:  # v10 #11: picked faces must fit the written meshes
+            tcps, self.contact_lost = carry_contacts(new.tcps, None, link_faces(new, urdf))
+            new = new.model_copy(update={"tcps": tcps})
         return new
     old = src[1]
     by_name = {safe(t.name): t for t in old.tcps}
+    keep = ("T_head_tcp", "contact_links", "contact_faces")
     tcps = [
-        by_name[t.name].model_copy(update={"T_head_tcp": t.T_head_tcp}) if t.name in by_name else t
+        by_name[t.name].model_copy(update={k: getattr(t, k) for k in keep}) if t.name in by_name else t
         for t in new.tcps
     ]
     if urdf is not None:

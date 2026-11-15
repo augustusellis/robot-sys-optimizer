@@ -31,17 +31,16 @@ def draw(b) -> None:
         except (OSError, ValueError):
             continue
         T = pose_to_matrix(part.pose)
-        b._handles.append(
-            sc.add_mesh_simple(
-                f"{ROOT}/part_{k}",
-                np.asarray(m.vertices, np.float32),
-                np.asarray(m.faces, np.uint32),
-                color=COLORS.get(part.stage, (160, 160, 160)),
-                opacity=1.0 if k == b.sel else 0.75,
-                wxyz=matrix_to_wxyz(T[:3, :3]),
-                position=tuple(T[:3, 3]),
-            )
+        h = sc.add_mesh_simple(
+            f"{ROOT}/part_{k}",
+            np.asarray(m.vertices, np.float32),
+            np.asarray(m.faces, np.uint32),
+            color=b.contacts.colour(part, COLORS.get(part.stage, (160, 160, 160))),  # v10 #11: green
+            opacity=1.0 if k == b.sel else 0.75,
+            wxyz=matrix_to_wxyz(T[:3, :3]),
+            position=tuple(T[:3, 3]),
         )
+        b._handles += [h, *b.contacts.decorate(k, part, m, h, ROOT)]
     frames = [(f"tcp_{t.name}", t.pose, 0.08) for t in b.pkg.tcps] if b.pkg.kind == "tool" else []
     if b.pkg.kind in ("rail", "gantry", "mobile"):
         frames.append(("robot_mount", b.pkg.mount, 0.2))

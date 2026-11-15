@@ -213,6 +213,33 @@ def open_package(data: bytes, dest: Path) -> tuple[Package, Path]:
                 x = x.model_copy(update={"stretch": stretch[x.name]})
             parts.append(x)
         upd["parts"] = parts
+        upd["tcps"] = _authored_contacts(pkg.tcps, meta, parts)  # v10 #11
     except ValueError:
         pass
     return pkg.model_copy(update=upd), info.path
+
+
+def _authored_contacts(tcps: list, meta: dict, parts: list) -> list:
+    """v10 #11: the TCPs' contact parts / faces as authored in package.yaml, mapped onto the parts
+    read back (by the URDF link each was written to)."""
+    from core.urdf_package import Frame, safe, tool_link
+
+    link_of = {}
+    for x in meta.get("parts") or []:
+        if isinstance(x, dict) and x.get("name"):
+            link_of[str(x["name"])] = safe(str(x.get("link") or x["name"]))
+    name_of = {tool_link(x): x.name for x in parts}
+    authored = {str(t.get("name")): t for t in meta.get("tcps") or [] if isinstance(t, dict)}
+    out = []
+    for t in tcps:
+        a = authored.get(t.name)
+        if a is None:
+            out.append(t)
+            continue
+        f = Frame.model_validate(
+            {"name": t.name, **{k: a[k] for k in ("contact_parts", "contact_faces") if k in a}}
+        )
+        cp = [name_of[link_of[n]] for n in f.contact_parts if link_of.get(n) in name_of]
+        cf = {name_of[link_of[n]]: v for n, v in f.contact_faces.items() if link_of.get(n) in name_of}
+        out.append(t.model_copy(update={"contact_parts": cp, "contact_faces": cf}))
+    return out

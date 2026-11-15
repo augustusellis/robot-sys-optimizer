@@ -144,7 +144,8 @@ def test_v9_stamps_migrate(tmp_path):
     s = _example_copy(tmp_path)
     old = staleness.components(s, legacy=True)
     s.stamps = {"P": dict(old)}
-    s.steps = {"Cell": {k: old[k] for k in staleness.STEP_COMPONENTS["Cell"]}}
+    # v9 steps had no "collision" component (v10 #5 adds it on load)
+    s.steps = {"Cell": {k: old[k] for k in staleness.STEP_COMPONENTS["Cell"] if k in old}}
     assert staleness.changed(s.stamps["P"], staleness.components(s))  # paths vs contents
     assert staleness.migrate(s) > 0
     assert staleness.changed(s.stamps["P"], staleness.components(s)) == []

@@ -108,6 +108,10 @@ class Collision(_M):
 class Frame(_M):
     name: str = Field(max_length=64)
     pose: Pose = Field(default_factory=Pose)
+    # v10 #11 (tool TCPs): what may touch the part at this TCP: whole parts (by part name) and
+    # faces of mesh parts (part name -> face ids of its mesh as loaded); the rest collides
+    contact_parts: list[str] = Field(default_factory=list)
+    contact_faces: dict[str, list[int]] = Field(default_factory=dict)
 
 
 class Package(_M):
@@ -147,6 +151,14 @@ def check(p: Package) -> list[str]:
         out.append("a part needs a mesh (STL / OBJ / PLY / STEP)")
     if len({t.name for t in p.tcps}) != len(p.tcps):
         out.append("TCP names must differ")
+    shapes = {x.name: x.shape for x in p.parts}
+    for t in p.tcps:  # v10 #11
+        for n in [*t.contact_parts, *t.contact_faces]:
+            if n not in shapes:
+                out.append(f"TCP {t.name}: contact part '{n}' does not exist")
+        for n in t.contact_faces:
+            if shapes.get(n, "mesh") != "mesh":
+                out.append(f"TCP {t.name}: contact faces can only be picked on mesh parts ('{n}')")
     if p.kind == "tool" and {f"tcp_{safe(t.name)}" for t in p.tcps} & {tool_link(x) for x in p.parts}:
         out.append("a part's link may not be named like a TCP frame (tcp_<name>)")
     if p.kind in ("rail", "gantry") and p.x is None:
@@ -403,7 +415,16 @@ def to_tool(p: Package, urdf_rel: str) -> EndEffector:
 
     zero = (0.0, 0.0)
     ext = Extension(type="pose", x=zero, y=zero, z=zero, nominal=ExtensionValues(z=0.0))
-    tcps = [TCP(name=t.name, T_head_tcp=t.pose) for t in p.tcps] or [TCP(name="tcp")]
+    link = {x.name: tool_link(x) for x in p.parts}
+    tcps = [
+        TCP(
+            name=t.name,
+            T_head_tcp=t.pose,
+            contact_links=[link[n] for n in t.contact_parts if n in link],  # v10 #11
+            contact_faces={link[n]: sorted(ids) for n, ids in t.contact_faces.items() if n in link and ids},
+        )
+        for t in p.tcps
+    ] or [TCP(name="tcp")]
     return EndEffector(name=p.name, urdf=urdf_rel, tcps=tcps, extension=ext)
 
 
