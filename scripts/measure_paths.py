@@ -2,7 +2,7 @@
 and cycle time.
 
     python scripts/measure_paths.py plan <example> <robot> <out_folder>   # plan once, save the project
-    python scripts/measure_paths.py paths <project_folder> [--no-spin]    # build paths, print numbers
+    python scripts/measure_paths.py paths <project_folder> [--no-spin] [--no-smooth]  # build, print
 
 ``plan`` loads a shipped example in a headless app, switches the robot, confirms the setup, runs the
 station planner and saves the project (with its plans) to ``out_folder``. ``paths`` opens that
@@ -78,6 +78,8 @@ def main() -> None:
         sim = app["sim"]
         if "--no-spin" in sys.argv and hasattr(sim, "spin_opt"):
             sim.spin_opt.value = False
+        if "--no-smooth" in sys.argv and hasattr(sim, "smooth"):  # v10 T13
+            sim.smooth.value = False
         app["results"].refresh()
         sim.build(block=True)
         print(sim.info.content.replace("  \n", "\n"))
@@ -86,6 +88,23 @@ def main() -> None:
         print("sequences:", STATS)
         for k, v in numbers(sim.plan, (s.robot.lower, s.robot.upper)).items():
             print(f"{k}: {v}")
+        sm = getattr(sim.plan, "smooth", [])
+        if sm:  # v10 T13: the planned joint moves that were optimised
+            used = [x for x in sm if x.used]
+            print(f"smoothed moves: {len(used)} of {len(sm)}")
+            if used:
+                print(
+                    "  length seed -> smooth (rad):",
+                    round(sum(x.length_seed for x in used), 2),
+                    "->",
+                    round(sum(x.length for x in used), 2),
+                )
+                print(
+                    "  min clearance seed -> smooth (mm):",
+                    round(1000 * min(x.clear_seed for x in used), 1),
+                    "->",
+                    round(1000 * min(x.clear for x in used), 1),
+                )
     finally:
         server.stop()
 

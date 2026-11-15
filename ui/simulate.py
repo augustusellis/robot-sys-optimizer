@@ -174,6 +174,7 @@ class SimPanel:
                     order=self.order.key,
                     cycle=s.cycle,
                     between=BETWEEN_LABELS[self.between.value],
+                    smooth=bool(self.smooth.value),  # v10 T13
                 )
                 # local until done: the 1 s targets watcher must not see it half-built
                 plan = trace(checker, mesh, sol, res, pts, poses, **kw)

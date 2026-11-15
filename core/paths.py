@@ -64,6 +64,8 @@ class _Tracer:
         self.batch = getattr(checker.ik, "batch", False)
         self.park = None  # a clear arm pose (home) to go via when a direct joint move collides
         self.via_home = False  # between groups at a stop: always via home (``park``)
+        self.smooth = False  # v10 T13: optimise planned joint moves (core.traj_opt)
+        self.smooth_stats: list = []
 
     def tcp_pose(self, r: PointResult) -> np.ndarray:
         """Planned TCP pose in the part frame (from the planned joints, exact)."""
@@ -83,6 +85,7 @@ class _Tracer:
         floor, stay-out zones and carrier bodies (core.joint_plan). When no way is found:
         the straight move, its collisions flagged."""
         from core.joint_plan import densify, plan_joint_path
+        from core.traj_opt import smooth_move
 
         qa, qb = np.asarray(qa, float), np.asarray(qb, float)
         ch = self.ch
@@ -108,6 +111,8 @@ class _Tracer:
                     break
         if way is None:
             out_a, in_b = [], []
+        elif self.smooth and len(way) > 2:  # v10 T13: smoother, shorter, clear of the part
+            way = smooth_move(self, hit, way, tcp, HOME_STEP)
         qs = out_a + densify(way if way is not None else [qa, qb], HOME_STEP)
         if in_b:
             qs += in_b[-2::-1] + [qb]
@@ -332,6 +337,7 @@ def trace(
     cycle=None,
     between: str = "direct",
     spin=None,
+    smooth: bool = False,
 ) -> PathPlan:
     """Paths of solution ``sol``. ``points``: point id -> (p, n) in the part frame;
     ``base_poses``: world base pose per station (core.export.station_pose). ``pattern``
@@ -348,12 +354,14 @@ def trace(
     collision-free joint path (via home only when no clear way is found), "home" = always via
     home (``park`` without one). Stops always start and end at home when ``home`` is given.
     ``spin(pid)`` (v10 #9, core.path_spin): the tool spin is chosen per sample where it is free
-    (None) or a range ((lo, hi) rad around the planned spin); None = the planned spins."""
+    (None) or a range ((lo, hi) rad around the planned spin); None = the planned spins.
+    ``smooth`` (v10 T13): planned joint moves are optimised (core.traj_opt.smooth_path)."""
     if between not in BETWEEN:
         raise ValueError(f"between must be one of {BETWEEN}")
     tr = _Tracer(checker, part_mesh, step, jump_deg)
     tr.park = home if home is not None else park
     tr.via_home = between == "home"
+    tr.smooth = smooth
     seqs = ordered_sequences(  # unzoned stops: one group per joint configuration
         sol, results, points, pattern, lambda r: config_label(checker.ik, np.asarray(r.q, float)), group_of
     )
@@ -483,6 +491,7 @@ def trace(
             checker.set_base(base_poses[k])
             carry = (q_arm, last.tcp, last.b)
         plan.stations.append(sp)
+    plan.smooth = tr.smooth_stats
     return plan
 
 

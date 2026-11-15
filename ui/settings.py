@@ -88,6 +88,7 @@ SAVED: dict[str, tuple[str, ...]] = {
     "results.export": ("screenshot", "flange"),
     "sim": (
         "motion",
+        "smooth",  # v10 T13
         "order",
         "step",
         "jump",

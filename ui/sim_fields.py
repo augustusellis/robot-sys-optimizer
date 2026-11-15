@@ -40,6 +40,11 @@ def build(panel, gui) -> None:
         True,
         hint="where the spin is free (or a range): choose it along the path for least joint motion",
     )
+    panel.smooth = gui.add_checkbox(  # v10 T13
+        "Smooth joint moves",
+        True,
+        hint="optimise the planned moves between points: smoother, shorter, further from the part",
+    )
     for w in (panel.pattern, panel.no_cross):
         w.on_update(lambda e: show(panel))
     show(panel)

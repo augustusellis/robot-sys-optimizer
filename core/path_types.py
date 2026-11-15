@@ -37,6 +37,7 @@ class StationPath:
 class PathPlan:
     stations: list[StationPath]
     step: float
+    smooth: list = field(default_factory=list)  # v10 T13: core.traj_opt.SmoothStats per planned move
 
     @property
     def samples(self) -> list[PathSample]:
