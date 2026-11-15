@@ -113,6 +113,7 @@ def components(s, base_pose: bool = False, tool_nominal: bool = True, legacy: bo
     }
     if s.tool is not None:
         tool = s.tool.model_dump(mode="json")
+        tool.pop("pad_radius_m", None)  # informational (Detect warning only): not a planning input
         if not tool_nominal:
             tool["extension"].pop("nominal", None)
         if not legacy:

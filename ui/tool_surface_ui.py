@@ -46,8 +46,9 @@ class PreviewLayer(SelectionLayer):
 
 
 def pad_radius_m(session) -> float | None:
-    """The tool's pad / contact radius for the concave-radius check; the tool model has none."""
-    return None
+    """The tool's pad radius (m) for the concave-radius check; None when unknown."""
+    tool = getattr(session, "tool", None)
+    return getattr(tool, "pad_radius_m", None) if tool is not None else None
 
 
 class ToolSurfacePanel:

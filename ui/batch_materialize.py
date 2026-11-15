@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
@@ -42,10 +43,20 @@ def detect_for_pose(mesh, T_world_part, pad_radius_m=None):
     )
 
 
-def apply_rule(job: bt.BatchJob, mesh, who: str) -> None:
+def cell_pad_radius(manifest: bt.BatchManifest, batch_dir: Path) -> float | None:
+    """The cell tool's pad radius (m) from its project.json, or None (unknown / unreadable)."""
+    try:
+        data = json.loads((bt.cell_path(manifest, batch_dir) / "project.json").read_text("utf-8"))
+        r = (data.get("end_effector") or {}).get("pad_radius_m")
+        return float(r) if r else None
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None
+
+
+def apply_rule(job: bt.BatchJob, mesh, who: str, pad_radius_m: float | None = None) -> None:
     """tool_surface job: detect, store confidence + summary, set ``job.selection``. Raises
     ``bt.NeedsReview`` (one line) when the confidence is below ``job.min_confidence``."""
-    g = detect_for_pose(mesh, np.array(job.pose, float))
+    g = detect_for_pose(mesh, np.array(job.pose, float), pad_radius_m)
     job.confidence = float(g.confidence)
     job.detect_summary = str(g.summary).replace("²", "2")
     if g.confidence < job.min_confidence or len(g.faces) == 0:
@@ -65,7 +76,7 @@ def materialize(manifest: bt.BatchManifest, job: bt.BatchJob, batch_dir: Path) -
     if reason:
         raise ValueError(reason)
     if job.selection_rule == "tool_surface":  # before anything is copied: a doubtful job stays cheap
-        apply_rule(job, load_mesh(batch_dir / job.part, job.units), who)
+        apply_rule(job, load_mesh(batch_dir / job.part, job.units), who, cell_pad_radius(manifest, batch_dir))
     cell = bt.cell_path(manifest, batch_dir)
     if not manifest.cell_project or not (cell / "project.json").is_file():
         raise ValueError(f"{who}: the cell project '{manifest.cell_project}' has no project.json")

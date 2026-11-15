@@ -72,6 +72,9 @@ class ToolSetupTab:
             self.tilt = gui.add_number("Tilt cone (deg)", 0.0, min=0.0, max=90.0, step=0.5)
             self.standoff = gui.add_vector2("Standoff min/max (mm)", (0.0, 0.0), step=1.0)
             self.spin = gui.add_text("Spin (deg)", "free", hint="'free', a half-width, or 'lo,hi'")
+            self.pad_radius = gui.add_number(
+                "Pad radius (mm)", 0.0, min=0.0, max=500.0, step=1.0, hint="0 = unknown; warns in Detect"
+            )
         with gui.add_folder("Flange mount"):
             self.mount = PoseWidgets(server, f"{ROOT}/mount", np.eye(4), self._on_mount, scale=0.12)
         with gui.add_folder("Extension"):
@@ -177,6 +180,14 @@ class ToolSetupTab:
             d["tolerances"] = Tolerances(
                 spin_deg=spin, tilt_deg=self.tilt.value, standoff_m=lo if lo == hi else (lo, hi)
             ).model_dump()
+
+        def pad(d: dict) -> None:
+            d["pad_radius_m"] = self.pad_radius.value / 1000 if self.pad_radius.value > 0 else None
+
+        @self.pad_radius.on_update
+        @g
+        def _(e) -> None:
+            self._commit(pad, e)
 
         for w in (self.tilt, self.standoff, self.spin):
 
@@ -440,6 +451,7 @@ class ToolSetupTab:
         self.name.value = ee.name
         self.process.value = ee.process
         self.notes.content = f"_{PRESETS[ee.process].notes}_"
+        self.pad_radius.value = (ee.pad_radius_m or 0.0) * 1000
         tol = ee.tolerances
         self.tilt.value = tol.tilt_deg
         so = tol.standoff_m if isinstance(tol.standoff_m, tuple) else (tol.standoff_m, tol.standoff_m)
