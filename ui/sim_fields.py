@@ -35,6 +35,11 @@ def build(panel, gui) -> None:
         True,
         hint="collision check every 2° of joint motion between samples (flags 'motion')",
     )
+    panel.turn_lift = gui.add_checkbox(  # v10 T15
+        "Lift on wide turns",
+        False,
+        hint="row patterns: lift off for row changes longer than the tool's footprint diameter",
+    )
     panel.spin_opt = gui.add_checkbox(  # v10 #9
         "Optimize tool spin",
         True,
@@ -74,3 +79,25 @@ def pattern_settings(panel):
         panel.inward.value,
         panel.no_cross.value,
     )
+
+
+def group_patterns(panel, pattern):
+    """(pattern, pattern_of) for core.paths.trace (v10 T15): *Lift on wide turns* sizes the row
+    patterns' turn lifts to the tool's footprint; a target group with its own pattern gets it with
+    the panel's other settings."""
+    from dataclasses import replace
+
+    from core.patterns import PatternSettings
+    from core.surface_radius import footprint_of
+
+    s = panel.s
+    turn = 0.0
+    if panel.turn_lift.value and s.tool_model is not None and s.tool is not None:
+        turn = 2 * footprint_of(s.tool_model, s.tool.tcps[0].name, 0.025)
+    if pattern is not None:
+        pattern = replace(pattern, turn_lift_m=turn)
+    own = {g.name: g.pattern for g in s.targets.groups if g.pattern}
+    if not own:
+        return pattern, None
+    base = pattern or replace(PatternSettings(), turn_lift_m=turn)
+    return pattern, lambda name: replace(base, pattern=own[name]) if name in own else None

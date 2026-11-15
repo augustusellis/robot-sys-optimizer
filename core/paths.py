@@ -283,30 +283,6 @@ def _bad(samples: list[PathSample]) -> int:
     return n
 
 
-def _better_spin(tr, k, zone, sq, results, points, q, label, lift, dp, ref=None, leave=None):
-    """``dp`` (core.path_spin) unless the planned spins (from q, as the tracer does) have fewer
-    problem samples, or as many and less joint motion; None = take the planned ones."""
-    from core.path_spin import STATS, motion
-
-    pids, plain = sq.pids, []
-    r0 = results[pids[0]]
-    plain.append(PathSample(k, zone, pids[0], pids[0], 0.0, tr.tcp_pose(r0), r0.tcp, q))
-    for m, (a, b) in enumerate(zip(pids[:-1], pids[1:], strict=True)):
-        (Pa, Na), (Pb, Nb) = points[a], points[b]
-        h = lift if sq.lifts[m] else 0.0
-        seg = tr.segment(k, zone, results[a], results[b], Pa, Pb, Na, Nb, q, label, h)
-        seg = tr.around(seg, k, zone, q, results[b])
-        plain += seg
-        q = next((p.q for p in reversed(seg) if p.q is not None), q)
-    bd, bp = _bad(dp), _bad(plain)
-    md, mp = motion(dp, ref, leave), motion(plain, ref, leave)
-    if bd < bp or (bd == bp and md <= mp * 1.001 + 1e-9):  # ties: dp keeps away from the limits
-        STATS["spin"] += 1
-        return dp
-    STATS["planned"] += 1
-    return None
-
-
 def _drive_hits(checker, moves, q, tcp: str) -> bool:
     """The arm at q collides somewhere along the carrier poses ``moves``."""
     for _, T, _ in moves or []:
@@ -338,6 +314,7 @@ def trace(
     between: str = "direct",
     spin=None,
     smooth: bool = False,
+    pattern_of=None,
 ) -> PathPlan:
     """Paths of solution ``sol``. ``points``: point id -> (p, n) in the part frame;
     ``base_poses``: world base pose per station (core.export.station_pose). ``pattern``
@@ -355,7 +332,8 @@ def trace(
     home (``park`` without one). Stops always start and end at home when ``home`` is given.
     ``spin(pid)`` (v10 #9, core.path_spin): the tool spin is chosen per sample where it is free
     (None) or a range ((lo, hi) rad around the planned spin); None = the planned spins.
-    ``smooth`` (v10 T13): planned joint moves are optimised (core.traj_opt.smooth_path)."""
+    ``smooth`` (v10 T13): planned joint moves are optimised (core.traj_opt.smooth_path);
+    ``pattern_of(group)`` (v10 T15): a target group's own pattern."""
     if between not in BETWEEN:
         raise ValueError(f"between must be one of {BETWEEN}")
     tr = _Tracer(checker, part_mesh, step, jump_deg)
@@ -363,7 +341,13 @@ def trace(
     tr.via_home = between == "home"
     tr.smooth = smooth
     seqs = ordered_sequences(  # unzoned stops: one group per joint configuration
-        sol, results, points, pattern, lambda r: config_label(checker.ik, np.asarray(r.q, float)), group_of
+        sol,
+        results,
+        points,
+        pattern,
+        lambda r: config_label(checker.ik, np.asarray(r.q, float)),
+        group_of,
+        pattern_of,
     )
     if order == "gtsp":  # least joint motion: order and joint solution per point together
         from core.path_order_branches import reorder_branches
@@ -414,14 +398,14 @@ def trace(
             first = "reconfigure" if j > 0 and label != label_prev else ""
             dp = None
             if spin is not None and len(pids) > 1:  # v10 #9: the spin per sample (path_spin)
-                from core.path_spin import optimize_sequence
+                from core.path_spin import better_spin, optimize_sequence
 
                 leave = home if j == len(seqs[k]) - 1 else None  # back home after the last group
                 dp = optimize_sequence(
                     tr, k, zone, pids, results, points, label, ref, spin, sq.lifts, lift, leave
                 )
                 if dp is not None:  # keep the planned spins when they do no worse
-                    dp = _better_spin(tr, k, zone, sq, results, points, q, label, lift, dp, ref, leave)
+                    dp = better_spin(tr, k, zone, sq, results, points, q, label, lift, dp, ref, leave)
                 if dp is not None:
                     q = np.asarray(dp[0].q, float)
             if home is not None and j == 0:  # from home to the stop's first point

@@ -26,7 +26,11 @@ PATTERNS = (
     "Spiral",
     "Hilbert",
     "Shortest path (TSP)",
+    "Contour-parallel",  # v10 T15: along the surface (core.patterns_surface)
+    "Spiral (along the surface)",
 )
+SURFACE_PATTERNS = ("Contour-parallel", "Spiral (along the surface)")
+GROUP_DEFAULT = "(Paths setting)"  # a target group without its own pattern
 CORNERS = ("min-min", "max-min", "min-max", "max-max")
 ROW_PATTERNS = ("Zigzag", "Unidirectional", "Cross-hatch")
 BOUNDARY_GAP = 2 * np.pi / 3
@@ -41,6 +45,7 @@ class PatternSettings:
     row_tol: float = 0.0  # m; 0 = automatic (half the point spacing)
     inward: bool = True  # concentric / spiral: outside -> in
     no_crossing: bool = False  # lift off for moves that cross an earlier move
+    turn_lift_m: float = 0.0  # v10 T15: row patterns lift on row changes longer than this (footprint dia.)
 
 
 @dataclass
@@ -371,6 +376,13 @@ def order_points(
     elif st.pattern == "Shortest path (TSP)":
         o = two_opt(P, nearest_neighbour_tour(P, start_index(ac, corner)))
         r = [0] * len(o)
+    elif st.pattern in SURFACE_PATTERNS:  # v10 T15: passes measured along the surface
+        from core.patterns_surface import contour_passes
+
+        nb = _neighbours(P, max(1.75 * sp, 1e-6))
+        N3 = np.asarray(N, float) if N is not None else np.tile([0, 0, 1.0], (len(P), 1))
+        spiral = st.pattern != "Contour-parallel"
+        o, r = contour_passes(P, N3, nb, sp, st.inward, start_index(ac, corner), spiral)
     else:
         nb = _neighbours(P, max(1.75 * sp, 1.01 * tol, 1e-6))
         if st.pattern == "Concentric":

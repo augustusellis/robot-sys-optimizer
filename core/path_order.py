@@ -13,6 +13,7 @@ from core.configs import order_path
 from core.feasibility import PointResult
 from core.patterns import (
     CORNERS,
+    ROW_PATTERNS,
     PatternSettings,
     crossing_lifts,
     order_points,
@@ -91,18 +92,29 @@ def ordered_sequences(
     pattern: PatternSettings | None = None,
     label_of: Callable | None = None,
     group_of: dict[int, str] | None = None,
+    pattern_of: Callable | None = None,
 ) -> dict[int, list[Seq]]:
     """Per stop: its groups (zones) as Seq. Without a pattern, the planner's order. With one,
     each group is ordered by the pattern, groups follow each other nearest first, and a later
     group starts at the corner nearest where the previous one ended. With ``no_crossing`` a
-    move lifts when it crosses an earlier move or would run over another target point."""
+    move lifts when it crosses an earlier move or would run over another target point.
+    ``pattern_of(group name)`` (v10 T15): a target group's own pattern (None: ``pattern``). Row
+    patterns with ``turn_lift_m`` lift on row changes longer than that."""
     P_part = {p: v[0] for p, v in points.items()}
     base = sequences(sol, results, P_part, label_of, group_of)
-    if pattern is None:
+    own = {}  # v10 T15: per target group
+    if pattern_of is not None and group_of:
+        own = {g: pattern_of(g) for g in set(group_of.values())}
+        own = {g: p for g, p in own.items() if p is not None}
+    if pattern is None and not own:
         return {k: [Seq(z, ids, [False] * (len(ids) - 1)) for z, ids in v] for k, v in base.items()}
     out: dict[int, list[Seq]] = {}
     P_all = np.array([v[0] for v in points.values()], float).reshape(-1, 3)
-    spacing = point_spacing(P_all) if pattern.no_crossing else 0.0
+    spacing = (
+        point_spacing(P_all)
+        if any(p is not None and p.no_crossing for p in (pattern, *own.values()))
+        else 0.0
+    )
     for k, groups in base.items():
         cents = [np.mean([P_part[i] for i in ids], axis=0) for _, ids in groups]
         left, chain = list(range(1, len(groups))), [0]
@@ -117,19 +129,28 @@ def ordered_sequences(
         seqs, end = [], None
         for gi in chain:
             zone, ids = groups[gi]
+            pat = own.get((group_of or {}).get(ids[0]), pattern)
+            if pat is None:  # this group keeps the planner's order
+                seqs.append(Seq(zone, list(ids), [False] * (len(ids) - 1)))
+                end = np.asarray(points[ids[-1]][0], float)
+                continue
             P = np.array([points[i][0] for i in ids])
             N = np.array([points[i][1] for i in ids])
             if end is None:
-                o = order_points(P, N, pattern)
+                o = order_points(P, N, pat)
             else:  # start near the previous group's end
                 o = min(
-                    (order_points(P, N, pattern, c) for c in CORNERS),
+                    (order_points(P, N, pat, c) for c in CORNERS),
                     key=lambda r: float(np.linalg.norm(P[r.order[0]] - end)),
                 )
             pids = [ids[i] for i in o.order]
             lifts = np.zeros(len(pids) - 1, bool)
-            if pattern.no_crossing:  # lift over crossings and over other points (sand each once)
+            if pat.no_crossing:  # lift over crossings and over other points (sand each once)
                 lifts = crossing_lifts(o.uv, o.order, o.passes) | pass_over_lifts(P[o.order], P_all, spacing)
+            if pat.turn_lift_m > 0 and pat.pattern in ROW_PATTERNS:  # v10 T15: wide turn-arounds
+                from core.patterns_surface import turn_lifts
+
+                lifts = lifts | turn_lifts(P[o.order], o.rows, pat.turn_lift_m / 2)
             seqs.append(Seq(zone, pids, [bool(x) for x in lifts]))
             end = P[o.order[-1]]
         out[k] = seqs

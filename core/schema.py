@@ -209,6 +209,7 @@ class TargetGroup(_Model):
     tilt_deg: float = Field(default=0.0, ge=0, le=90)
     standoff_m: float | Range = 0.0
     tcps: list[str] = Field(default_factory=list)  # empty = any TCP
+    pattern: str | None = None  # v10 T15: this group's path pattern (core.patterns); None = the Paths one
 
 
 class TargetPoint(_Model):

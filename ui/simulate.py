@@ -150,6 +150,7 @@ class SimPanel:
             sim_carrier_path(s, sol, max(self.step.value / 1000, 0.05), checker) if self.drive.value else None
         )
         pattern = self.pattern_settings()
+        pattern, pattern_of = sim_fields.group_patterns(self, pattern)  # v10 T15
         self._cancel.clear()
         self.build_btn.visible, self.stop.visible, self.progress.visible = False, True, True
         self.progress.value = 0.0
@@ -178,6 +179,7 @@ class SimPanel:
                     cycle=s.cycle,
                     between=BETWEEN_LABELS[self.between.value],
                     smooth=bool(self.smooth.value),  # v10 T13
+                    pattern_of=pattern_of,
                 )
                 # local until done: the 1 s targets watcher must not see it half-built
                 from core.motion_check import check_moves

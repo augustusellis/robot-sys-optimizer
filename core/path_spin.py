@@ -259,3 +259,29 @@ def motion(samples, ref=None, leave=None) -> float:
         return 0.0
     d = np.abs(np.diff(np.array(qs), axis=0))
     return float((d @ _weights(d.shape[1])).sum())
+
+
+def better_spin(tr, k, zone, sq, results, points, q, label, lift, dp, ref=None, leave=None):
+    """core.paths.trace: ``dp`` (optimize_sequence) unless the planned spins (from q, as the
+    tracer does) have fewer problem samples, or as many and less joint motion; None = take the
+    planned ones."""
+    from core.path_types import PathSample
+    from core.paths import _bad
+
+    pids, plain = sq.pids, []
+    r0 = results[pids[0]]
+    plain.append(PathSample(k, zone, pids[0], pids[0], 0.0, tr.tcp_pose(r0), r0.tcp, q))
+    for m, (a, b) in enumerate(zip(pids[:-1], pids[1:], strict=True)):
+        (Pa, Na), (Pb, Nb) = points[a], points[b]
+        h = lift if sq.lifts[m] else 0.0
+        seg = tr.segment(k, zone, results[a], results[b], Pa, Pb, Na, Nb, q, label, h)
+        seg = tr.around(seg, k, zone, q, results[b])
+        plain += seg
+        q = next((p.q for p in reversed(seg) if p.q is not None), q)
+    bd, bp = _bad(dp), _bad(plain)
+    md, mp = motion(dp, ref, leave), motion(plain, ref, leave)
+    if bd < bp or (bd == bp and md <= mp * 1.001 + 1e-9):  # ties: dp keeps away from the limits
+        STATS["spin"] += 1
+        return dp
+    STATS["planned"] += 1
+    return None

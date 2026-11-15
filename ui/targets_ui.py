@@ -119,6 +119,9 @@ class TargetsTab:
             self.tilt = gui.add_number("Tilt cone (deg)", 0.0, min=0.0, max=90.0, step=0.5)
             self.standoff = gui.add_vector2("Standoff min/max (mm)", (0.0, 0.0), step=1.0)
             self.tcps = gui.add_text("TCPs (comma, empty = any)", "")
+            from core.patterns import GROUP_DEFAULT, PATTERNS  # v10 T15: a pattern per group
+
+            self.g_pattern = gui.add_dropdown("Path pattern", (GROUP_DEFAULT, *PATTERNS))
             self.apply_tol = gui.add_button("Apply to group")
         with gui.add_folder("Edit points", expand_by_default=False):
             self.count = gui.add_markdown("")
@@ -263,6 +266,7 @@ class TargetsTab:
                     tilt_deg=self.tilt.value,
                     standoff_m=lo if lo == hi else (lo, hi),
                     tcps=tcps,
+                    pattern=None if self.g_pattern.value.startswith("(") else self.g_pattern.value,
                 )
                 groups = [g if x.name == name else x for x in self.s.targets.groups]
                 self.s.targets = self.s.targets.model_copy(update={"groups": groups})
@@ -418,6 +422,7 @@ class TargetsTab:
         so = tol.standoff_m if isinstance(tol.standoff_m, tuple) else (tol.standoff_m, tol.standoff_m)
         self.standoff.value = tuple(v * 1000 for v in so)
         self.tcps.value = ", ".join(g.tcps) if g else ""
+        self.g_pattern.value = g.pattern if g is not None and g.pattern else self.g_pattern.options[0]
 
     def _draw_selection(self) -> None:
         self._drop("sel")
