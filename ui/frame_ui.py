@@ -29,7 +29,7 @@ def frame_job(payload: dict, emit, cancelled) -> list[dict]:
     from core import schema
     from core.robot import Robot
     from core.standoff import footprint
-    from opt.frame_place import rank_frames
+    from opt.frame_place import pick_top, rank_frames
     from opt.reachability import map_for_tcps
     from ui.plan_job import session_from, station_job
     from ui.session import Session
@@ -64,7 +64,7 @@ def frame_job(payload: dict, emit, cancelled) -> list[dict]:
         progress=lambda msg, f: emit("progress", (f"scoring frames: {msg}", f)),
         cancelled=cancelled,
     )
-    good = [f for f in ranked if not f.reason][: max(1, fs.top)]
+    good = pick_top(ranked, fs.top, fs.distinct_m)  # v10 T18: distinct frames only
     rows = []
     for n, f in enumerate(good):
         if cancelled():
@@ -106,6 +106,15 @@ def frame_job(payload: dict, emit, cancelled) -> list[dict]:
         )
     rows.sort(key=lambda r: (r["cost"] is None, r["cost"] if r["cost"] is not None else 0.0))
     return rows
+
+
+def beam_range(panel) -> dict:
+    """v10 T18: FrameSettings beam fields (only when the range differs from the frame's height)."""
+    b = panel.s.base
+    lo, hi = (v / 1000 for v in panel.beam.value)
+    if b.carrier != "gantry" or (abs(lo - hi) < 1e-9 and abs(lo - b.pose.xyz[2]) < 1e-9) or hi <= 0:
+        return {}
+    return {"beam_lo": lo, "beam_hi": hi, "beam_steps": int(panel.beam_steps.value)}
 
 
 def table(rows: list[dict], n_points: int) -> str:
@@ -154,6 +163,16 @@ class FramePanel:
                 hint="T_mount z range; equal values = keep it",
             )
             self.z_steps = gui.add_number("Height steps", 3, min=1, max=9, step=1)
+            self.beam = gui.add_vector2(  # v10 T18
+                "Beam height (mm)",
+                (0.0, 0.0),
+                step=50.0,
+                hint="gantry: frame height range (legs stretch); equal values = keep it",
+            )
+            self.beam_steps = gui.add_number("Beam height steps", 3, min=1, max=9, step=1)
+            self.refine = gui.add_checkbox(
+                "Refine the best frame", True, hint="a continuous search around the best grid frame"
+            )
             self.top = gui.add_number("Plan the best", 3, min=1, max=8, step=1, hint="frames planned in full")
             self.run = gui.add_button("Place the frame", color="green")
             self.gate_md = gui.add_markdown("", visible=False)
@@ -204,7 +223,9 @@ class FramePanel:
             else "_For a rail or a gantry (External axis tab)._"
         )
         self.standoff.visible = self.step.visible = kind == "rail"
-        self.shift.visible = kind == "gantry"
+        self.shift.visible = self.beam.visible = self.beam_steps.visible = kind == "gantry"
+        if kind == "gantry" and self.beam.value == (0.0, 0.0):
+            self.beam.value = (b.pose.xyz[2] * 1000,) * 2
         for w in (self.z, self.z_steps, self.top, self.run):
             w.visible = ok
         if ok and self.z.value == (0.0, 0.0):
@@ -222,6 +243,8 @@ class FramePanel:
             z_hi=hi,
             z_steps=int(self.z_steps.value),
             top=int(self.top.value),
+            refine=bool(self.refine.value),
+            **beam_range(self),
         )
 
     def start(self, event=None, block: bool = False) -> None:
