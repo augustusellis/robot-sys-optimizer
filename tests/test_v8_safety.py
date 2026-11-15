@@ -66,7 +66,9 @@ def test_reduced_speed_zones_slow_the_cycle_and_do_not_block():
     cs = CycleSettings(settle_s=0.0)
     fast = path_time(plan, cs)
     slow = path_time(plan, cs, slow=lambda smp: 0.25 if smp.T_part_tcp[0, 3] > 0.15 else 1.0)
-    assert "reduced" not in fast and slow["reduced"] == pytest.approx(0.1 / cs.process_speed * 3)
+    # the second move (half the run's distance) takes half the run's time, 4 x as long in the zone
+    # (v10 T14: the run's profile, with its acceleration; pre-v10 counted the move at cruise speed)
+    assert "reduced" not in fast and slow["reduced"] == pytest.approx(fast["process"] / 2 * 3)
     assert slow["total"] == pytest.approx(fast["total"] + slow["reduced"])
 
 

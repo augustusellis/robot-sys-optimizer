@@ -74,6 +74,9 @@ class SimPanel:
             self.restart = gui.add_button(
                 "⏮ Back to start", disabled=True, hint="playback to the first sample"
             )
+            self.timed = gui.add_checkbox(  # v10 T14
+                "Play at program timing", True, hint="as the cycle time has it; untick: the Speed below"
+            )
             self.speed = gui.add_slider("Speed (mm/s)", 20.0, 2000.0, 10.0, 250.0)
             self.frame = gui.add_slider("Sample", 0, 1, 1, 0, disabled=True)
             self.status = gui.add_markdown("")
@@ -177,19 +180,22 @@ class SimPanel:
                     smooth=bool(self.smooth.value),  # v10 T13
                 )
                 # local until done: the 1 s targets watcher must not see it half-built
-                plan = trace(checker, mesh, sol, res, pts, poses, **kw)
+                from core.motion_check import check_moves
+
+                def checked(p):  # v8 T7: the arm sweeps between clear samples (before comparing:
+                    if self.motion.value:  # a sweep collision makes a build worse, v10 T14 fix)
+                        self._build_progress(1.0)
+                        check_moves(checker, p, cancelled=self._cancel.is_set)
+                    return p
+
+                plan = checked(trace(checker, mesh, sol, res, pts, poses, **kw))
                 spin, self.spin_used = self._spin(res), None
                 if spin is not None:  # v10 #9: also with the spin chosen along the path; keep
-                    alt = trace(checker, mesh, sol, res, pts, poses, **kw, spin=spin)  # the better
+                    alt = checked(trace(checker, mesh, sol, res, pts, poses, **kw, spin=spin))
                     better = sim_build.score(alt, self._cycle_of(alt)) < sim_build.score(
                         plan, self._cycle_of(plan)
                     )
                     plan, self.spin_used = (alt, True) if better else (plan, False)
-                if self.motion.value:  # v8 T7: the arm sweeps between clear samples
-                    from core.motion_check import check_moves
-
-                    self._build_progress(1.0)
-                    check_moves(checker, plan, cancelled=self._cancel.is_set)
                 blocked = blocked_stops(checker, home, plan.stations)  # the home pose itself collides
                 self.label, self._targets_key, self.home_blocked = sol.label, targets_key, blocked
                 self.plan = plan  # last: key and label already match it
@@ -215,17 +221,19 @@ class SimPanel:
         self.progress.value = 100.0 * f
         self.info.content = f"_Building paths… {100 * f:.0f} % · {took(self._t0)}_"
 
-    def _cycle_of(self, plan) -> dict:
+    def _cycle_of(self, plan, times: list | None = None) -> dict:
         from core.cycle_time import CycleSettings, path_time
         from ui.safety_ui import reduced_speed_fn
 
         vlim = self.s.robot.model.velocityLimit if self.s.robot else None
-        return path_time(plan, self.s.cycle or CycleSettings(), vlim, reduced_speed_fn(self.s, plan))
+        cs = self.s.cycle or CycleSettings()
+        return path_time(plan, cs, vlim, reduced_speed_fn(self.s, plan), times)
 
     def _cycle_line(self, plan) -> str:
         """v8 T6: cycle time of the built paths (Optimize -> Cycle time speeds; v8 T18 reduced-speed
         zones). v10 #9: whether the optimized tool spin was used."""
-        self.cycle = c = self._cycle_of(plan)
+        self.times: list = []  # v10 T14: time of every sample (playback at program timing)
+        self.cycle = c = self._cycle_of(plan, self.times)
         parts = ", ".join(f"{k} {v:.0f} s" for k, v in c.items() if k != "total" and v > 0.05)
         used = getattr(self, "spin_used", None)
         spin = ""
@@ -428,8 +436,14 @@ class SimPanel:
             dt = 0.05
             pos = float(self.frame.value)
             n = len(self.plan.samples)
+            times = getattr(self, "times", [])
+            clock = times[int(pos)] if len(times) == n else None
             while self._playing.is_set():
-                pos += self.speed.value / 1000 * dt / self.plan.step  # samples per frame
+                if clock is not None and self.timed.value:  # v10 T14: as the cycle time has it
+                    clock += dt
+                    pos = float(np.searchsorted(times, clock))
+                else:
+                    pos += self.speed.value / 1000 * dt / self.plan.step  # samples per frame
                 if pos >= n - 1:
                     pos = n - 1
                     self._playing.clear()

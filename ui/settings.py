@@ -81,6 +81,8 @@ SAVED: dict[str, tuple[str, ...]] = {
         "carrier_acc",
         "lift_speed",
         "settle_s",
+        "joint_jerk",  # v10 T14
+        "timing",
     ),
     "picker": ("choice",),  # v10 #6: the chosen Optimizer
     "frame": ("standoff", "step", "shift", "z", "z_steps", "top"),  # Gantry placement
@@ -89,6 +91,7 @@ SAVED: dict[str, tuple[str, ...]] = {
     "sim": (
         "motion",
         "smooth",  # v10 T13
+        "timed",  # v10 T14
         "order",
         "step",
         "jump",

@@ -2,7 +2,7 @@
 and cycle time.
 
     python scripts/measure_paths.py plan <example> <robot> <out_folder>   # plan once, save the project
-    python scripts/measure_paths.py paths <project_folder> [--no-spin] [--no-smooth]  # build, print
+    python scripts/measure_paths.py paths <project_folder> [--no-spin] [--no-smooth] [--trapezoid]
 
 ``plan`` loads a shipped example in a headless app, switches the robot, confirms the setup, runs the
 station planner and saves the project (with its plans) to ``out_folder``. ``paths`` opens that
@@ -80,6 +80,8 @@ def main() -> None:
             sim.spin_opt.value = False
         if "--no-smooth" in sys.argv and hasattr(sim, "smooth"):  # v10 T13
             sim.smooth.value = False
+        if "--trapezoid" in sys.argv:  # v10 T14: the pre-v10 timing
+            app["cycle"].timing.value = "Trapezoid per move (pre-v10)"
         app["results"].refresh()
         sim.build(block=True)
         print(sim.info.content.replace("  \n", "\n"))
