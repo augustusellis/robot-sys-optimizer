@@ -235,6 +235,7 @@ def build_app(
 
     with tab_handles["Optimize"]:
         workflow.optimize_header()
+        workflow.confirm_all_button()  # v11 #5
         from ui.optimizer_select import OptimizerSelect
 
         picker = OptimizerSelect(server)  # v9 #10: one Optimizer dropdown, one panel shown
@@ -299,8 +300,8 @@ def build_app(
         from ui.compare_view import CompareView
 
         compare_view = CompareView(server, session)  # v9 #6: Results -> Robot (compared robots)
-        results = ResultsTab(server, session, set_base=cell.set_base)
-        optimize.build_inspect()  # v7 round 2 (T18): Inspect result lives in Results
+        # v7 round 2 (T18): Inspect result lives in Results; v11 #4: right under the solutions
+        results = ResultsTab(server, session, set_base=cell.set_base, after_solutions=optimize.build_inspect)
         sim = SimPanel(  # paths along the selected solution + playback (v2 phase 5)
             server,
             session,
@@ -453,6 +454,7 @@ def build_app(
         workflow.hooks.append(clear_stale)  # and plans when the part, tool or targets change
         workflow.hooks.append(coll_view.check)  # v10 #5: collision files changed on disk
         workflow.hooks.append(frame.watch)  # v10 #6: the height range resets on carrier changes
+        workflow.hooks.append(lambda: picker.sync(session))  # v11 #3: optimizers by axis type
         workflow.hooks.append(cable.follow_robot)  # the hose follows a robot change
         workflow.hooks.append(lambda: floor_grid(server).update(session))  # floor fits the cell
         workflow.start_watch()

@@ -66,7 +66,8 @@ class OptimizeTab:
     def build_inspect(self) -> None:
         """The *Inspect result* folder; app.py builds it in the Results tab (v7 round 2, T18)."""
         gui = self.server.gui
-        with gui.add_folder("Inspect result", expand_by_default=False):
+        self.inspect_folder = gui.add_folder("Inspect result", expand_by_default=False)
+        with self.inspect_folder:
             self.source = gui.add_dropdown("Show", INSPECT_SOURCES, initial_value=INSPECT_SOURCES[1])
             self.pick = gui.add_slider("Point #", 0, 1, 1, 0)
             self.step_pts = gui.add_button_group(

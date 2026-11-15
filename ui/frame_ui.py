@@ -350,12 +350,21 @@ class FramePanel:
             index = labels.index(self.choice.value) if self.choice.value in labels else 0
         r = self.rows[index]
         s = self.s
+        from ui.staleness import STEP_COMPONENTS, confirm_step, step_state
+
+        was = [k for k in STEP_COMPONENTS if step_state(s, k) == "confirmed"]  # v11 #1
         if self.carrier is not None:
             self.carrier.load(r["base"])
             if not self.carrier.commit(event):
                 return False
         else:
             s.base = r["base"]
+        for k in was:  # placing the frame is not a setup edit to confirm again (the planners stay usable)
+            confirm_step(s, k)
+        best = r["plans"][0][0] if r.get("plans") else None
+        if self.carrier is not None and best is not None and best.stations:
+            # v11 #2: the bridge / carriage (and the robot) shown on the moved frame, at the first stop
+            self.carrier.set_values(dict(best.stations[0].carrier))
         s.results = [sol for sol, _ in r["plans"]]
         s.result_points = {sol.label: dict(res) for sol, res in r["plans"]}
         s.stamps = {**{k: v for k, v in s.stamps.items() if k == "feasibility"}, **r["stamps"]}

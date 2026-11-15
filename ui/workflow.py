@@ -182,6 +182,55 @@ class Workflow:
     def optimize_header(self) -> None:
         self.opt_md = self.server.gui.add_markdown("")
 
+    def confirm_all_button(self) -> None:
+        """v11 #5: Optimize -> **Confirm all setup steps** (a dialog lists what is not confirmed)."""
+        self.confirm_all_btn = self.server.gui.add_button(
+            "Confirm all setup steps", hint="steps 1-4 at once, after a dialog listing the unconfirmed ones"
+        )
+        self.confirm_all_btn.on_click(lambda e: self.confirm_all(e))
+
+    def unconfirmed(self) -> list[str]:
+        """'2 External axis (changed since it was confirmed)', ... for the steps not confirmed."""
+        out = []
+        for i, st in enumerate(STEPS):
+            state = step_state(self.s, st)
+            if state != "confirmed":
+                why = "changed since it was confirmed" if state == "changed" else "not confirmed yet"
+                out.append(f"{i + 1} {TITLES[st]} ({why})")
+        return out
+
+    def confirm_all(self, event=None, sure: bool = False) -> bool:
+        """Confirm every setup step; with a browser client, after an *Are you sure?* dialog."""
+        from ui.widgets import notify
+
+        todo = self.unconfirmed()
+        if not todo:
+            notify(event, "Already confirmed", "Every setup step is confirmed", ok=True)
+            return True
+        client = getattr(event, "client", None)
+        if client is not None and not sure:
+            with client.gui.add_modal("Confirm all setup steps?") as modal:
+                client.gui.add_markdown(
+                    "These setup tabs have not been confirmed:\n\n"
+                    + "\n".join(f"- **{t}**" for t in todo)
+                    + "\n\nConfirm them all as they are now?"
+                )
+                yes = client.gui.add_button("Confirm all", color="green")
+                no = client.gui.add_button("Cancel")
+
+            def go(_e) -> None:
+                modal.close()
+                self.confirm_all(event, sure=True)
+
+            yes.on_click(go)
+            no.on_click(lambda _e: modal.close())
+            return False
+        for st in STEPS:
+            confirm_step(self.s, st)
+        self.refresh(force=True)
+        notify(event, "Setup confirmed", ", ".join(todo), ok=True)
+        return True
+
     def results_header(self) -> None:
         self.results_md = self.server.gui.add_markdown("")
 

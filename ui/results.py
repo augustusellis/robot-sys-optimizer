@@ -30,7 +30,13 @@ def station_T(st, session: Session | None = None) -> np.ndarray:
 
 
 class ResultsTab:
-    def __init__(self, server: viser.ViserServer, session: Session, set_base: Callable[[np.ndarray], None]):
+    def __init__(
+        self,
+        server: viser.ViserServer,
+        session: Session,
+        set_base: Callable[[np.ndarray], None],
+        after_solutions: Callable[[], None] | None = None,
+    ):
         self.server = server
         self.s = session
         self.set_base = set_base
@@ -51,6 +57,8 @@ class ResultsTab:
             "Move robot with the plan", True, hint="switching plans moves the robot to the first stop"
         )
         self.compare = gui.add_markdown("")
+        if after_solutions is not None:  # v11 #4: e.g. Inspect result, right under the solutions
+            after_solutions()
         self.summary = gui.add_markdown("_No results yet: run the station planner (Optimize tab)._")
         self.breakdown = gui.add_markdown("")
         self.station = gui.add_dropdown("Station", ("-",))

@@ -34,12 +34,17 @@ class JogPanel:
             self.step = gui.add_number("Step (mm)", 10.0, min=0.1, step=1.0)
             self.turn = gui.add_number("Turn step (deg)", 5.0, min=0.1, step=1.0)
             self.joint_step = gui.add_number("Joint step (deg)", 5.0, min=0.1, step=1.0)
-            self.minus = gui.add_button_group("Move −", AXES[:3])
-            self.plus = gui.add_button_group("Move +", AXES[:3])
-            self.turn_minus = gui.add_button_group("Turn −", AXES[3:])
-            self.turn_plus = gui.add_button_group("Turn +", AXES[3:])
-            self.j_minus = gui.add_button_group("Joint −", ("J1", "J2", "J3", "J4", "J5", "J6"))
-            self.j_plus = gui.add_button_group("Joint +", ("J1", "J2", "J3", "J4", "J5", "J6"))
+            from ui.jog_arrows import JogArrows
+
+            # v11 #6: arrows that jog on a click and keep jogging while held
+            self.arrows = JogArrows(gui, lambda axis, sign: self.jog(axis, sign))
+            with gui.add_folder("Single steps", expand_by_default=False):  # the pre-v11 buttons
+                self.minus = gui.add_button_group("Move −", AXES[:3])
+                self.plus = gui.add_button_group("Move +", AXES[:3])
+                self.turn_minus = gui.add_button_group("Turn −", AXES[3:])
+                self.turn_plus = gui.add_button_group("Turn +", AXES[3:])
+                self.j_minus = gui.add_button_group("Joint −", ("J1", "J2", "J3", "J4", "J5", "J6"))
+                self.j_plus = gui.add_button_group("Joint +", ("J1", "J2", "J3", "J4", "J5", "J6"))
             self.allow = gui.add_checkbox(
                 "Allow collisions", False, hint="jog steps into the floor, part or external axis"
             )
@@ -70,6 +75,8 @@ class JogPanel:
             w.visible = not joint
         for w in (self.j_minus, self.j_plus, self.joint_step):
             w.visible = joint
+        self.joint_step.visible = True  # the arrows always have the joint row
+        self.arrows.show(self.s.robot.nq if self.s.robot is not None else 6, not joint)
         names = (FLANGE, *(t.name for t in self.s.tool.tcps)) if self.s.tool is not None else (FLANGE,)
         if tuple(self.point.options) != names:
             keep = self.point.value if self.point.value in names else names[-1]

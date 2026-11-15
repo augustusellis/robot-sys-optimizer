@@ -26,6 +26,15 @@ OPTIMIZERS = {
 }
 
 
+# v11 #3: optimizers that belong to external axis types (others: always shown)
+ONLY_FOR = {"Gantry placement": ("rail", "gantry")}
+
+
+def available(kind: str | None) -> tuple[str, ...]:
+    """The optimizers offered for external axis ``kind`` (None / "static": no moving axis)."""
+    return tuple(n for n in OPTIMIZERS if n not in ONLY_FOR or kind in ONLY_FOR[n])
+
+
 class OptimizerSelect:
     """The dropdown (built first, at the top of the tab); ``bind`` gives it each optimizer's
     folders once the panels exist."""
@@ -38,6 +47,17 @@ class OptimizerSelect:
         self.folders: dict[str, list] = {}
         self.on_show: dict[str, object] = {}  # name -> called when that optimizer is shown
         self.choice.on_update(lambda _e: self.show())
+
+    def sync(self, session) -> None:
+        """Watcher hook (v11 #3): only the optimizers of the workspace's external axis type."""
+        b = session.base
+        names = available(b.carrier if b.mode == "movable" else None)
+        if tuple(self.choice.options) == names:
+            return
+        keep = self.choice.value if self.choice.value in names else names[0]
+        self.choice.options = names
+        self.choice.value = keep
+        self.show()
 
     def bind(self, folders: dict[str, list]) -> None:
         self.folders = folders

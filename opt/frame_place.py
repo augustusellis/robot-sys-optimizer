@@ -165,6 +165,23 @@ def fixed_clear(c, obstacles=None) -> str:
     return "" if ok else f"fixed bodies too close to the {what}"
 
 
+def sweep_clear(c, part_mesh, T_part, step: float = 0.2) -> str:
+    """v11 #2: why a gantry's bridge (bodies on the X axis) cannot travel: somewhere along the X
+    travel it comes closer to the part than the carrier's minimum standoff (a floor gantry whose
+    rails straddle the part); "" = fine (e.g. an overhead bridge above the part)."""
+    from core.standoff import distance_3d
+
+    if c.kind != "gantry" or "x" not in c.dofs:
+        return ""
+    lo, hi = c.bounds[c.dofs.index("x")]
+    mid = c.clip({})
+    for x in np.linspace(lo, hi, max(2, int(np.ceil((hi - lo) / step)) + 1)):
+        bodies = c._bodies("x_axis", c.T_world_axis({**mid, "x": float(x)}))
+        if bodies and distance_3d(bodies, part_mesh, T_part) < c.base.standoff_m.carrier_part_min - 1e-6:
+            return "the bridge would travel through the part"
+    return ""
+
+
 def score_frame(
     base: Base, rmap, t, part_mesh, T_part, st: FrameSettings, resolve=None, obstacles=None
 ) -> FrameScore:
@@ -180,7 +197,7 @@ def score_frame(
     fixed = c.static_bodies()
     if fixed and distance_3d(fixed, part_mesh, T_part) < base.standoff_m.carrier_part_min - 1e-6:
         return FrameScore(pose, mount_z, len(t.ids), 0, 0.0, "fixed bodies too close to the part", base)
-    why = fixed_clear(c, obstacles)
+    why = fixed_clear(c, obstacles) or sweep_clear(c, part_mesh, T_part)
     if why:
         return FrameScore(pose, mount_z, len(t.ids), 0, 0.0, why, base)
     sites = CarrierSites(c, part_mesh, T_part, obstacles=obstacles)

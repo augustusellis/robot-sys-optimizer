@@ -344,7 +344,7 @@ def test_carrier_sliders_and_arm_jog_are_in_the_left_jog_panel(app):
     assert car.dof_folder is objects.carrier_slot and set(car._dof) == {"x", "y"}
     for sl in car._dof.values():  # the carrier's axis sliders, rebuilt in the left panel
         assert sl._impl.parent_container_id == objects.carrier_slot._impl.uuid
-    for w in (jp.frame, jp.minus, jp.j_plus, jp.readout):  # the arm jog
+    for w in (jp.frame, jp.arrows.html, jp.readout):  # the arm jog (v11: arrows; steps in a folder)
         assert w._impl.parent_container_id == objects.arm_slot._impl.uuid
     car._dof["x"].value = 500.0  # the slider still drives the carrier (and the robot with it)
     car._jog()
