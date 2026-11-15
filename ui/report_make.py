@@ -231,12 +231,13 @@ def write_text(out_dir: Path, name: str, text: str) -> tuple[Path, bytes]:
 
 
 def export_all(
-    session, sol, out_dir, pdf: bool = False, *, stale=None, sim=None, length_samples=None
+    session, sol, out_dir, pdf: bool = False, *, stale=None, sim=None, length_samples=None, images=None
 ) -> dict:
     """Write tcp_poses.csv, userframes.csv and report.html (+ report.pdf) into ``out_dir``.
 
     Returns {file name: Path}. A file that could not be made maps to the error text (str)
-    instead; a PDF failure never raises."""
+    instead; a PDF failure never raises. ``images`` = [(caption, PNG)] rendered offline (the batch
+    runner); without them the report says the 3D views are missing."""
     out_dir = Path(out_dir)
     out: dict = {}
     jobs = [
@@ -245,7 +246,13 @@ def export_all(
         (
             "report.html",
             lambda: make_report(
-                session, sol, stale=stale, sim=sim, length_samples=length_samples, notes=[NO_VIEWS_BATCH]
+                session,
+                sol,
+                stale=stale,
+                sim=sim,
+                length_samples=length_samples,
+                notes=[] if images else [NO_VIEWS_BATCH],
+                images=images,
             ),
         ),
     ]

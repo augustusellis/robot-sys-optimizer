@@ -53,11 +53,20 @@ def cell_pad_radius(manifest: bt.BatchManifest, batch_dir: Path) -> float | None
         return None
 
 
+def _remember(job: bt.BatchJob, g) -> None:
+    """Keep the detected and secondary faces on the job (not saved) for the review pictures."""
+    job._detected = [int(f) for f in g.faces]
+    sec = [np.asarray(c.faces, int) for c in g.secondary]
+    job._secondary = [int(f) for f in np.unique(np.concatenate(sec))] if sec else []
+
+
 def apply_rule(job: bt.BatchJob, mesh, who: str, pad_radius_m: float | None = None) -> None:
     """tool_surface job: detect, store confidence + summary, set ``job.selection``. Raises
     ``bt.NeedsReview`` (one line) when the confidence is below ``job.min_confidence``."""
     g = detect_for_pose(mesh, np.array(job.pose, float), pad_radius_m)
     job.confidence = float(g.confidence)
+    job.warnings = [str(w) for w in g.warnings]
+    _remember(job, g)
     job.detect_summary = str(g.summary).replace("²", "2")
     if g.confidence < job.min_confidence or len(g.faces) == 0:
         raise bt.NeedsReview(
@@ -111,3 +120,69 @@ def materialize(manifest: bt.BatchManifest, job: bt.BatchJob, batch_dir: Path) -
     job.out_dir = job.id
     save_project(s, out)
     return out
+
+
+# --- review pictures ------------------------------------------------------------------------
+
+VIEWS = (("iso", "Iso view (offline render)"), ("top", "Top view (offline render)"))
+
+
+def job_pictures(job: bt.BatchJob, batch_dir: Path) -> tuple[list[tuple[str, bytes]], str]:
+    """Render iso + top pictures of the job's part with its selection highlighted (for a
+    tool_surface job without a selection: the detected faces, secondary candidates in a second
+    colour), save ``<job id>/review_<view>.png`` and record the relative paths in
+    ``job.summary["review"]``. Returns ([(caption, png)], note). Never raises: a failure gives
+    ([], one-line note) and ``job.summary["review_note"]``."""
+    from core import soft_render
+
+    batch_dir = Path(batch_dir)
+    try:
+        mesh = load_mesh(batch_dir / job.part, job.units)
+        pose = np.array(job.pose, float)
+        faces, second = list(job.selection), []
+        if job.selection_rule == "tool_surface" and not faces:
+            if not job._detected:  # a batch run before this feature: detect again
+                _remember(job, detect_for_pose(mesh, pose))
+            faces, second = list(job._detected), list(job._secondary)
+        up = up_in_part(pose)
+        out, review = [], {}
+        (batch_dir / job.id).mkdir(parents=True, exist_ok=True)
+        for view, caption in VIEWS:
+            png = soft_render.render(mesh, highlight=faces, secondary=second or None, view=view, up=up)
+            rel = f"{job.id}/review_{view}.png"
+            (batch_dir / rel).write_bytes(png)
+            review[view] = rel
+            out.append((caption, png))
+        job.summary = {k: v for k, v in job.summary.items() if k != "review_note"} | {"review": review}
+        return out, ""
+    except Exception as err:  # noqa: BLE001 - pictures never fail a job
+        first = str(err).splitlines()[0] if str(err) else ""
+        note = f"pictures not rendered: {type(err).__name__}: {first}"
+        job.summary = {k: v for k, v in job.summary.items() if k != "review"} | {"review_note": note}
+        return [], note
+
+
+def build_review(batch_dir: Path, on_note=None, force: bool = False) -> Path:
+    """(Re)write ``review.html``. Jobs whose pictures are missing (a batch run before this
+    feature, or a deleted file) are rendered now when their mesh is available (``force``: all
+    jobs); the manifest on disk gets the picture paths. ``on_note(text)`` reports progress."""
+    from core.batch_review import write_review
+
+    batch_dir = Path(batch_dir)
+    path = batch_dir / bt.MANIFEST_NAME
+    m = bt.load_manifest(path)
+    todo = [j for j in m.jobs if force or not _has_pictures(j, batch_dir)]
+    for i, job in enumerate(todo):
+        if on_note:
+            on_note(f"rendering pictures {i + 1}/{len(todo)} ({job.name or job.id})")
+        if bt.check_job(job, batch_dir) and job.selection_rule == "faces":
+            job.summary = {**job.summary, "review_note": "the part mesh is missing or changed"}
+            continue
+        job_pictures(job, batch_dir)
+        bt.update_job(path, job)
+    return write_review(bt.load_manifest(path), batch_dir)
+
+
+def _has_pictures(job: bt.BatchJob, batch_dir: Path) -> bool:
+    rev = (job.summary or {}).get("review") or {}
+    return bool(rev) and all((batch_dir / rel).is_file() for rel in rev.values())

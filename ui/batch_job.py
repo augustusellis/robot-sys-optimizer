@@ -170,7 +170,30 @@ def run_job(manifest: bt.BatchManifest, job: bt.BatchJob, batch_dir, emit, cance
     finally:
         job.run_s = round(time.monotonic() - t0, 1)
         _restore_collision(saved)
+        if not {"review", "review_note"} & job.summary.keys():  # needs_review, failed, cancelled
+            _pictures(job, batch_dir)
         save()
+        _write_review(path, batch_dir)
+
+
+def _pictures(job, batch_dir: Path) -> list:
+    """Render the review pictures (never raises); returns the report images."""
+    from ui.batch_materialize import job_pictures
+
+    try:
+        return job_pictures(job, batch_dir)[0]
+    except Exception:  # noqa: BLE001 - job_pictures already catches; belt and braces
+        return []
+
+
+def _write_review(path: Path, batch_dir: Path) -> None:
+    """Refresh ``review.html`` so a long batch can be looked at while it runs."""
+    try:
+        from core.batch_review import write_review
+
+        write_review(bt.load_manifest(path), batch_dir)
+    except Exception:  # noqa: BLE001 - an extra page must not fail the job
+        pass
 
 
 def _keep(box: dict) -> int:
@@ -220,7 +243,9 @@ def _run(manifest, job, batch_dir: Path, emit, cancelled, box: dict, t0: float) 
     if best is None:
         raise ValueError(f"{who}: no station plan found ({len(s.targets.points)} targets)")
     emit("progress", (f"{who}: writing the exports", 1.0))
-    files = report_make.export_all(s, best, out / "export")
+    images = _pictures(job, batch_dir)
+    keep_review = {k: v for k, v in job.summary.items() if k in ("review", "review_note")}
+    files = report_make.export_all(s, best, out / "export", images=images)
     exports, failed = {}, []
     for name, v in files.items():
         if isinstance(v, Path):
@@ -241,6 +266,7 @@ def _run(manifest, job, batch_dir: Path, emit, cancelled, box: dict, t0: float) 
         "cycle_s": best.cycle_s,
         "report": "" if report.startswith("error") else report,
         "exports": exports,
+        **keep_review,
     }
     if failed:  # the plan is done; say which files are missing
         job.error = "export failed: " + "; ".join(failed)
@@ -408,13 +434,27 @@ def _line(row: dict) -> str:
     return f"{row['id']:<10} {row['status']:<12} {what} ({row['run_s']:.0f} s){tail}"
 
 
+def _review_only(batch_dir: Path) -> int:
+    from ui.batch_materialize import build_review
+
+    try:
+        print(f"review page: {build_review(batch_dir, lambda t: print(t, flush=True))}", flush=True)
+        return 0
+    except Exception as err:  # noqa: BLE001
+        print(f"review page failed: {one_line(err)}", flush=True)
+        return 1
+
+
 def main(argv=None) -> int:
     import argparse
 
     ap = argparse.ArgumentParser(description="Run the pending jobs of a batch folder (batch.json).")
     ap.add_argument("batch_dir", type=Path)
     ap.add_argument("--in-process", action="store_true", help="no worker process per job")
+    ap.add_argument("--review-only", action="store_true", help="only (re)build review.html, run no jobs")
     a = ap.parse_args(argv)
+    if a.review_only:
+        return _review_only(a.batch_dir)
     cancel = threading.Event()
     done: dict = {}
 
@@ -438,6 +478,9 @@ def main(argv=None) -> int:
     rows = done.get("jobs", [])
     bad = [r for r in rows if r["status"] != "done"]
     print(f"batch {done.get('status', 'failed')}: {len(rows) - len(bad)}/{len(rows)} job(s) done", flush=True)
+    review = Path(a.batch_dir) / "review.html"
+    if review.is_file():
+        print(f"review page: {review}", flush=True)
     return 0 if done.get("status") == "done" and not bad else 1
 
 

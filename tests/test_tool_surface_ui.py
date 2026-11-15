@@ -163,7 +163,7 @@ def test_ambiguous_becomes_needs_review_not_planned(tmp_path, fake):  # noqa: F8
     j1 = bt.load_manifest(bdir / bt.MANIFEST_NAME).jobs[0]
     assert j1.confidence < 0.7 and "confidence" in j1.error and "\n" not in j1.error
     assert fake["seen"] == [("job_002", "running")]  # job_001 was never planned
-    assert not (bdir / "job_001").exists()
+    assert not (bdir / "job_001" / "project.json").exists()  # only the review pictures live there
     csv = (bdir / "summary.csv").read_text(encoding="utf-8").splitlines()
     assert "confidence" in csv[0] and any("needs_review" in r for r in csv)
     # needs_review is not pending; after Reset it is

@@ -60,6 +60,7 @@ class BatchPanel:
         self._thread: threading.Thread | None = None
         self._cancel = threading.Event()
         self.last_summary: Path | None = None
+        self._review: threading.Thread | None = None
         gui = server.gui
         self.folder = gui.add_folder("Batch queue", expand_by_default=False)  # Optimizer -> Batch queue
         with self.folder:
@@ -90,6 +91,7 @@ class BatchPanel:
             )
             self.min_conf = gui.add_number("Min confidence", 0.7, min=0.0, max=1.0, step=0.05)
             self.folder_btn = gui.add_button("Add folder…")
+            self.review_page_btn = gui.add_button("Open review page", hint="write review.html")
             self.run_btn = gui.add_button("Run batch", color="green")
             self.stop = gui.add_button("Cancel", visible=False)
             self.progress = gui.add_progress_bar(0.0, visible=False)
@@ -104,6 +106,7 @@ class BatchPanel:
         self.review_btn.on_click(self._guard(lambda e: self.open_for_review(e)))
         self.folder_btn.on_click(self._guard(lambda e: self.add_folder(self.folder.value, e)))
         self.run_btn.on_click(self._guard(lambda e: self.run(e)))
+        self.review_page_btn.on_click(self._guard(lambda e: self.open_review(e)))
         self.stop.on_click(lambda e: self._cancel.set())
         self._lock_stations()
         self.list_batches()
@@ -461,6 +464,29 @@ class BatchPanel:
             log(f"Batch finished ({data['status']}).", "done" if data["status"] == "done" else "warn", t0)
         finally:
             self.run_btn.visible, self.stop.visible, self.progress.visible = True, False, False
+
+    def open_review(self, event=None, block: bool = False) -> None:
+        """Write ``<batch>/review.html`` (rendering missing pictures first, in a thread); the status
+        line shows the path."""
+        from ui.batch_materialize import build_review
+
+        if self.batch_dir is None or not (self.batch_dir / bt.MANIFEST_NAME).is_file():
+            return notify(event, "Review page", "No batch yet: add a job first")
+        if self._review is not None and self._review.is_alive():
+            return notify(event, "Review page", "Already being written")
+
+        def work() -> None:
+            try:
+                p = build_review(self.batch_dir, lambda t: setattr(self.status, "content", f"_{t}_"))
+                self.status.content, ok = f"Review page: `{p}` (open this file in a browser)", "done"
+            except Exception as err:  # say what happened
+                self.status.content, ok = f"⚠ Review page failed: {type(err).__name__}: {err}", "error"
+            log(self.status.content.replace("`", ""), ok)
+
+        self._review = threading.Thread(target=work, daemon=True, name="batch-review")
+        self._review.start()
+        if block:
+            self._review.join()
 
     def open_result(self, event=None) -> bool:
         m, jid = self.manifest(), self._job_id()

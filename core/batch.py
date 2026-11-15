@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Literal
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from core.target_gen import GenSettings
 
@@ -52,6 +52,7 @@ class BatchJob(BaseModel):
     min_confidence: float = 0.7  # below this a tool_surface job is marked needs_review, not planned
     confidence: float | None = None  # detection confidence of the last tool_surface run
     detect_summary: str = ""  # one line from the detector (ASCII)
+    warnings: list[str] = Field(default_factory=list)  # detector warnings of the last tool_surface run
     gen: GenSettings = Field(default_factory=GenSettings)
     planner: dict = Field(default_factory=dict)  # PlannerSettings fields + objective/weights/workers
     status: Status = "pending"
@@ -60,6 +61,9 @@ class BatchJob(BaseModel):
     out_dir: str = ""
     summary: dict = Field(default_factory=dict)  # stations, reached, total, cost
     auto_confirmed: list[str] = Field(default_factory=list)  # setup steps confirmed by the batch
+    # detected / secondary faces of the last detection (not saved; the review pictures use them)
+    _detected: list = PrivateAttr(default_factory=list)
+    _secondary: list = PrivateAttr(default_factory=list)
 
 
 class BatchManifest(BaseModel):
@@ -289,8 +293,15 @@ def summary_html(manifest: BatchManifest) -> str:
 
 
 def write_summary(manifest: BatchManifest, batch_dir: Path) -> tuple[Path, Path]:
-    """``summary.csv`` and ``summary.html`` in the batch folder."""
+    """``summary.csv`` and ``summary.html`` in the batch folder, plus ``review.html`` (an extra
+    that never fails the summary)."""
     batch_dir = Path(batch_dir)
+    try:
+        from core.batch_review import write_review
+
+        write_review(manifest, batch_dir)
+    except Exception:  # noqa: BLE001
+        pass
     out = []
     for name, text in (("summary.csv", summary_csv(manifest)), ("summary.html", summary_html(manifest))):
         p = batch_dir / name
