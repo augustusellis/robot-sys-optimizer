@@ -355,3 +355,41 @@ def tolerance_job(payload: dict, emit, cancelled):
         progress=say,
         cancelled=cancelled,
     )
+
+
+def edge_job(payload: dict, emit, cancelled):
+    """v10 T10: dense reach check of a plan at its zone edges (``spec``: sol, results, workers).
+    Returns core.edge_check.EdgeResult."""
+    from core import edge_check as ec
+    from core import targets as tg
+    from core.export import station_pose
+    from core.robot import Robot
+    from ui.stations import world_targets
+
+    s = session_from(payload)
+    spec = payload["spec"]
+    sol, res = spec["sol"], spec["results"]
+    robot = Robot(s.robot.spec)
+
+    def say(msg: str, f: float) -> None:
+        emit("progress", (msg, f))
+
+    say("placing edge points", 0.0)
+    ids, P, N, _ = tg.as_arrays(s.targets)
+    stop_of, zone_of, low = ec.plan_maps(sol, res)
+    h = ec.spacing_of(P)
+    pts = ec.edge_points(s.part_mesh(), ids, P, N, stop_of, zone_of, low, spacing=h)
+    checker = build_checker(s, robot, s.sites(), int(spec.get("workers", 1)), say, emit)
+    t = world_targets(s)
+    group = {int(pid): g for pid, g in zip(t.ids, t.groups, strict=True)}
+    T_stops = [station_pose(s.base, st, s.T_world_base) for st in sol.stations]
+    gaps = ec.check_edges(
+        checker,
+        pts,
+        T_stops,
+        lambda pid: group[int(pid)],
+        cancelled,
+        lambda f: say(f"checking {len(pts)} edge points", f),
+        pool=checker.pool,
+    )
+    return ec.EdgeResult(sol.label, pts, gaps, h)

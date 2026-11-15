@@ -66,6 +66,7 @@ SAVED: dict[str, tuple[str, ...]] = {
         "bend_step",
     ),
     "tolerance": ("part_mm", "part_deg", "station_mm", "samples", "seed"),
+    "edge": ("auto",),  # v10 T10
     "cable": ("mode", "dress", "diameter", "offset", "side", "show", "wrap"),  # v8 T18
     "safety": ("show", "distance"),
     "collision": ("pad_mm",),  # Robot & cell: the arm padding (v9: the rest is in the Package builder)

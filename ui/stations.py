@@ -55,6 +55,7 @@ class StationsPanel:
         self.on_solution = on_solution
         self._thread: threading.Thread | None = None
         self._cancel = threading.Event()
+        self.on_done: Callable | None = None  # v10 T10: (best plan) after a full run, e.g. the edge check
         self.on_start: Callable[[], None] | None = None  # set by app.py: e.g. clear old paths
         gui = server.gui
         self.folder = gui.add_folder("Station planner")
@@ -330,6 +331,8 @@ class StationsPanel:
                         else "_No solution found._"
                     )
                 plan_log(s, best, self._cancel.is_set(), self._t0, what=what)
+                if self.on_done is not None and not (quick or rules or self._cancel.is_set()):
+                    self.on_done(best)
                 if self._cancel.is_set():
                     status.content = "**Cancelled.** " + (
                         f"Best so far: **{best.label}**, cost {best.cost:.2f}"

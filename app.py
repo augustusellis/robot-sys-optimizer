@@ -317,6 +317,13 @@ def build_app(
         tolerance = TolerancePanel(server, session, results.selected)  # v8 T5
         tolerance.on_done = lambda: targets.heat.draw()  # v8 T8: Colour part by -> tolerance
         stations.tolerance_settings = tolerance.settings  # v8 T12: robust objective
+        from ui.edge_ui import EdgePanel, gap_arrays
+
+        edge = EdgePanel(server, session, results.selected)  # v10 T10
+        edge.targets, edge.on_done = targets, targets.refresh
+        stations.on_done = edge.after_plan
+        targets.edge_result = edge.current
+        targets.edge_gaps = lambda: gap_arrays(edge.current())
         from ui.safety_ui import SafetyView
 
         safety = SafetyView(server, session, results.selected)  # v8 T18
@@ -372,6 +379,7 @@ def build_app(
     workflow.gate(tool_opt.run, tool_opt.gate_md)
     workflow.gate(compare.run, compare.gate_md)
     workflow.gate(tolerance.run, tolerance.gate_md, plan_reason(results.selected))
+    workflow.gate(edge.run, edge.gate_md, plan_reason(results.selected))
 
     def selected_results() -> dict:
         sol = results.selected()
@@ -468,6 +476,7 @@ def build_app(
         stations=stations,
         tool_opt=tool_opt,
         tolerance=tolerance,
+        edge=edge,
         cycle=cycle,
         compare=compare,
         builder=builder,

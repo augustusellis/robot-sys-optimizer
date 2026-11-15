@@ -52,6 +52,33 @@ def crosses(P: np.ndarray, N: np.ndarray, size: float) -> np.ndarray:
     return np.concatenate([np.stack([c - d1, c + d1], 1), np.stack([c - d2, c + d2], 1)])
 
 
+GAP = (0, 170, 210)  # v10 T10: edge-check gaps (cyan, apart from the reason colours)
+
+
+def draw_gaps(server, root: str, P: np.ndarray, N: np.ndarray, point_size: float) -> dict:
+    """Edge-check gaps (verification points no stop reaches): cyan dots + crosses, one label."""
+    if len(P) == 0:
+        return {}
+    P, N = np.asarray(P, np.float32), np.asarray(N, float)
+    size = max(2 * point_size, 0.008)
+    seg = crosses(P.astype(float), N, 1.2 * size).astype(np.float32)
+    return {
+        "edge_gaps": server.scene.add_point_cloud(
+            f"{root}/edge_gaps",
+            P,
+            np.tile(np.array(GAP, np.uint8), (len(P), 1)),
+            point_size=size,
+            point_shape="circle",
+        ),
+        "edge_gaps_x": server.scene.add_line_segments(
+            f"{root}/edge_gaps_x", seg, GAP, thickness=3.0, thickness_units="screen"
+        ),
+        "edge_gaps_label": server.scene.add_label(
+            f"{root}/edge_gaps_label", f"✘ {len(P)} edge gap(s)", position=tuple(P[0] + 0.03 * N[0])
+        ),
+    }
+
+
 def draw_unreached(server, root: str, ids, P, N, bad: list[int], point_size: float, results=None) -> dict:
     """Scene handles {name: handle} for the flagged points (empty when none); ``results``
     (point id -> PointResult) colours and labels them by reason."""

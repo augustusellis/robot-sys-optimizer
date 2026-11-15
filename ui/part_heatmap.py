@@ -11,13 +11,15 @@ from __future__ import annotations
 import math
 
 import numpy as np
+from scipy.spatial import cKDTree
 
 from core import targets as tg
 
 PATH = "/cell/part/heatmap"
 BINS = 10
 OFFSET = 1.1e-3  # m above the surface (station areas are at 0.8 mm)
-OFF = "Reached / unreached (points)"  # no surface colour: the points' own colours (pre-v8)
+OFF = "Reached / unreached (points)"
+EDGE = "Edge check"  # no surface colour: the points' own colours (pre-v8)
 
 # label -> (unit, lo, hi): scores are clipped to [lo, hi] for the colours
 SCORES = {
@@ -26,6 +28,7 @@ SCORES = {
     "Manipulability": ("% of max", 0.0, 100.0),
     "Joint-limit margin": ("°", 0.0, 30.0),
     "Tolerance reach rate": ("%", 0.0, 100.0),
+    EDGE: ("%", 0.0, 100.0),  # v10 T10: 0 = gap, 100 = reached
 }
 
 
@@ -108,36 +111,27 @@ class HeatmapLayer:
             else "every point has one._"
         )
 
-    def clear(self) -> None:
-        for h in self._handles:
-            h.remove()
-        self._handles = []
-        self.legend.content = ""
-
-    def draw(self) -> None:
-        self.clear()
-        what = self.choice.value
-        s = self.tab.s
-        spec = SCORES.get(what)
-        if spec is None or s.part is None:
+    def _draw_edges(self, unit: str, lo: float, hi: float) -> None:
+        """v10 T10: faces near the edge check's points, red at gaps, green where reached."""
+        get = getattr(self.tab, "edge_result", None)
+        r = get() if get is not None else None
+        if r is None:
+            self.legend.content = "_Nothing to show yet: run Results → Edge check on the selected plan._"
             return
-        unit, lo, hi = spec
-        sel = self.tab.selected_results() if self.tab.selected_results else {}
-        scores = point_scores(s, what, sel)
-        if not scores:
-            tol = what == "Tolerance reach rate"
-            src = "a tolerance check (Results)" if tol else "a plan or a feasibility check"
-            self.legend.content = f"_Nothing to show yet: run {src}._"
-            return
-        from ui.station_areas import display_mesh, face_labels
+        from ui.station_areas import display_mesh
 
-        ids, P, _, _ = tg.as_arrays(s.targets)
-        mesh = display_mesh(s.part_mesh(), P)
-        val = np.array([scores.get(int(i), np.nan) for i in ids])
-        lab = face_labels(mesh, P, np.where(np.isfinite(val), 0, -1))
-        painted = lab >= 0
-        self.face_bins = fb = np.full(len(mesh.faces), -1)
-        fb[painted] = bins(val[lab[painted]], lo, hi)
+        Pe = np.array([e.p for e in r.points])
+        mesh = display_mesh(self.tab.s.part_mesh(), Pe)
+        d, j = cKDTree(Pe).query(mesh.triangles_center, distance_upper_bound=0.5 * r.spacing)
+        near = np.isfinite(d)
+        val = np.array([100.0 if e.reached else 0.0 for e in r.points])
+        fb = np.full(len(mesh.faces), -1)
+        fb[near] = bins(val[j[near]], lo, hi)
+        self._paint(mesh, fb)
+        self.legend.content = f"🟥 gap → 🟩 reached  \n_{r.summary()}._"
+
+    def _paint(self, mesh, fb: np.ndarray) -> None:
+        self.face_bins = fb
         for b in range(BINS):
             faces = np.flatnonzero(fb == b)
             if len(faces) == 0:
@@ -154,6 +148,40 @@ class HeatmapLayer:
                     flat_shading=False,
                 )
             )
+
+    def clear(self) -> None:
+        for h in self._handles:
+            h.remove()
+        self._handles = []
+        self.legend.content = ""
+
+    def draw(self) -> None:
+        self.clear()
+        what = self.choice.value
+        s = self.tab.s
+        spec = SCORES.get(what)
+        if spec is None or s.part is None:
+            return
+        unit, lo, hi = spec
+        sel = self.tab.selected_results() if self.tab.selected_results else {}
+        if what == EDGE:
+            return self._draw_edges(unit, lo, hi)
+        scores = point_scores(s, what, sel)
+        if not scores:
+            tol = what == "Tolerance reach rate"
+            src = "a tolerance check (Results)" if tol else "a plan or a feasibility check"
+            self.legend.content = f"_Nothing to show yet: run {src}._"
+            return
+        from ui.station_areas import display_mesh, face_labels
+
+        ids, P, _, _ = tg.as_arrays(s.targets)
+        mesh = display_mesh(s.part_mesh(), P)
+        val = np.array([scores.get(int(i), np.nan) for i in ids])
+        lab = face_labels(mesh, P, np.where(np.isfinite(val), 0, -1))
+        painted = lab >= 0
+        fb = np.full(len(mesh.faces), -1)
+        fb[painted] = bins(val[lab[painted]], lo, hi)
+        self._paint(mesh, fb)
         vals = np.array(list(scores.values()))
         self.legend.content = (
             f"🟥 {lo:g} {unit} or less → 🟨 → 🟩 {hi:g} {unit} or more  \n"

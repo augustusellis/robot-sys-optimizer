@@ -28,6 +28,7 @@ from scipy.spatial import cKDTree
 KINDS = {"stops": "between stops", "zones": "between zones", "edge": "part edge", "margin": "low margin"}
 CREASE_DEG = 30.0  # dihedral angle of a crease inside the targeted surface
 LOW_MARGIN_DEG = 15.0
+SAME_SIDE = 0.5  # neighbours whose normals differ by more than 60 deg get no points between them
 MAX_POINTS = 3000
 
 
@@ -93,6 +94,8 @@ def edge_points(
     for i, j in pairs:
         a, b = int(ids[i]), int(ids[j])
         if a not in stop_of or b not in stop_of:
+            continue
+        if float(N[i] @ N[j]) < SAME_SIDE:  # e.g. two faces of a thin wall: no surface between them
             continue
         sa, sb = stop_of[a], stop_of[b]
         za, zb = zone_of.get(a), zone_of.get(b)
@@ -176,34 +179,71 @@ def check_edges(
     group_of: Callable[[int], object],
     cancelled: Callable[[], bool] | None = None,
     progress: Callable[[float], None] | None = None,
+    pool=None,
+    chunk: int = 200,
 ) -> list[EdgePoint]:
-    """Exact checks of the verification points, from their stops; returns the gaps (unreached).
+    """Exact checks of the verification points, from their stops (round r = each point's r-th
+    stop, only for points not reached yet); in ``pool`` when given. Returns the gaps (unreached).
     ``group_of(point id)``: the TargetGroup whose tolerances apply (the nearest target's)."""
     from core.feasibility import CancelledError
+    from opt.tolerance import run_calls
 
-    for i, e in enumerate(pts):
-        if cancelled is not None and cancelled():
-            raise CancelledError()
-        g = group_of(e.near)
-        best = ""
-        for k in e.stops:
-            checker.set_base(base_poses[k])
-            if e.kind == "zones":
-                opts = checker.check_point_configs(-(i + 1), e.p, e.n, g)
-                if any(c in opts for c in e.configs):
+    rounds = max((len(e.stops) for e in pts), default=0)
+    total = sum(len(e.stops) for e in pts) or 1
+    done = 0
+    for r in range(rounds):
+        todo = [i for i, e in enumerate(pts) if not e.reached and len(e.stops) > r]
+        for c0 in range(0, len(todo), chunk):
+            if cancelled is not None and cancelled():
+                raise CancelledError()
+            part = todo[c0 : c0 + chunk]
+            calls = []
+            for i in part:
+                e = pts[i]
+                kind = "configs" if e.kind == "zones" else "point"
+                mp = 40 if kind == "configs" else None
+                calls.append((base_poses[e.stops[r]], kind, -(i + 1), e.p, e.n, group_of(e.near), mp, False))
+            for i, res in zip(part, run_calls(checker, calls, pool, cancelled), strict=True):
+                e, k = pts[i], pts[i].stops[r]
+                if e.kind == "zones":
+                    if any(c in res for c in e.configs):
+                        e.reached, e.stop = True, k
+                    elif not e.reason:
+                        e.reason = "other configuration" if res else "no_ik"
+                elif res.status != "unreachable":
                     e.reached, e.stop = True, k
-                    break
-                best = best or ("other configuration" if opts else "no_ik")
-                continue
-            r = checker.check_point(-(i + 1), e.p, e.n, g, clearance=False)
-            if r.status != "unreachable":
-                e.reached, e.stop = True, k
-                break
-            best, e.notes = r.reason, list(r.notes)
-        e.reason = "" if e.reached else best
-        if progress is not None and i % 10 == 0:
-            progress(i / max(len(pts), 1))
+                else:
+                    e.reason, e.notes = res.reason, list(res.notes)
+            done += len(part)
+            if progress is not None:
+                progress(min(1.0, done / total))
+    for e in pts:
+        if e.reached:
+            e.reason, e.notes = "", []
     return [e for e in pts if not e.reached]
+
+
+def plan_maps(sol, results: dict) -> tuple[dict[int, int], dict[int, tuple[int, str]], set[int]]:
+    """(stop_of, zone_of, low) of a plan: reached points' stops, their zones (index, configuration)
+    and the low-margin ones (status marginal or a joint within ``LOW_MARGIN_DEG`` of its limit)."""
+    ok = {int(p): r for p, r in results.items() if r.status != "unreachable"}
+    stop_of = {int(p): int(k) for p, k in sol.assignment.items() if int(p) in ok}
+    zone_of = {int(p): (zi, z.config) for zi, z in enumerate(sol.zones) for p in z.points if int(p) in ok}
+    low = {p for p, r in ok.items() if r.status == "marginal" or r.limit_margin_deg < LOW_MARGIN_DEG}
+    return stop_of, zone_of, low
+
+
+@dataclass
+class EdgeResult:
+    """One edge check of a plan (``Session.edge_check``, not saved)."""
+
+    label: str
+    points: list[EdgePoint]
+    gaps: list[EdgePoint]
+    spacing: float
+
+    def summary(self) -> str:
+        return summary(self.points, self.gaps)
 
 
 def summary(pts: list[EdgePoint], gaps: list[EdgePoint]) -> str:
