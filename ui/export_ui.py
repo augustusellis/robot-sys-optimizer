@@ -17,6 +17,14 @@ from core.robot import Robot
 from ui.session import Session
 from ui.widgets import notify
 
+# v10 T21: Program format label -> core.robot_program format (None = from the robot)
+PROGRAM_FORMATS = {
+    "Auto": None,
+    "URScript (UR)": "urscript",
+    "TP / .ls (FANUC)": "fanuc",
+    "RAPID (ABB)": "rapid",
+}
+
 
 class ExportPanel:
     def __init__(
@@ -38,6 +46,10 @@ class ExportPanel:
                 "Userframes (CSV)", hint="robot base -> part frame for every stop, in this robot's format"
             )
             self.urdf = gui.add_button("Optimized tool URDF (zip)")
+            self.prog_format = gui.add_dropdown(  # v10 T21
+                "Program format", tuple(PROGRAM_FORMATS), hint="Auto: the robot's own language"
+            )
+            self.program = gui.add_button("Robot program", hint="from the built paths (Paths & simulation)")
             self.report_format = gui.add_dropdown(  # v9 #10: one report button
                 "Report format", ("PDF", "HTML"), hint="PDF: the HTML report printed by Edge headless"
             )
@@ -55,6 +67,7 @@ class ExportPanel:
         self.csv.on_click(lambda e: self._run(e, self.export_csv))
         self.uframes.on_click(lambda e: self._run(e, self.export_userframes))
         self.urdf.on_click(lambda e: self._run(e, self.export_urdf))
+        self.program.on_click(lambda e: self._run(e, self.export_program))
         self.report.on_click(
             lambda e: self._run(
                 e, self.export_pdf if self.report_format.value == "PDF" else self.export_report
@@ -147,6 +160,27 @@ class ExportPanel:
         data = userframe_csv(rows, conv).encode("utf-8")
         self.out_dir.mkdir(parents=True, exist_ok=True)
         path = self.out_dir / "userframes.csv"
+        path.write_bytes(data)
+        return path, data
+
+    def export_program(self, sol, client=None) -> tuple[Path, bytes]:
+        """v10 T21: URScript / FANUC TP / ABB RAPID from the selected plan's built paths."""
+        from core.robot_program import FORMATS, default_format, program
+
+        s, sim = self.s, getattr(self, "sim", None)
+        if s.robot is None or s.part is None or s.tool_model is None:
+            raise ValueError("needs a robot, a tool and a part")
+        if sim is None or sim.plan is None or sim.label != sol.label or not sim.plan.samples:
+            raise ValueError("build the paths of this plan first (Results -> Paths & simulation)")
+        fmt = PROGRAM_FORMATS[self.prog_format.value] or default_format(
+            s.robot_name or "", s.robot.spec.frame_convention
+        )
+        tcp = next((p.tcp for p in sim.plan.samples if p.tcp), s.tool.tcps[0].name)
+        carrier = s.carrier() if s.base.mode == "movable" else None
+        text = program(fmt, sim.plan, s.tool_model.T_flange_tcp(tcp), s.part.T_world_part, carrier, s.cycle)
+        data = text.encode("utf-8")
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+        path = self.out_dir / f"rso_path{FORMATS[fmt]}"
         path.write_bytes(data)
         return path, data
 

@@ -97,7 +97,7 @@ SAVED: dict[str, tuple[str, ...]] = {
         "refine",
     ),  # Gantry placement
     "results": ("choice", "show_lines", "show_ghosts", "show_areas"),
-    "results.export": ("screenshot", "flange"),
+    "results.export": ("screenshot", "flange", "prog_format"),  # + v10 T21
     "sim": (
         "motion",
         "smooth",  # v10 T13
