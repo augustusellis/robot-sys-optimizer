@@ -186,7 +186,7 @@ def test_old_manifest_loads(tmp_path):
 
 
 def test_add_folder_queues_and_skips(app, tmp_path):
-    panel = app["batch"]
+    panel = app["batch_queue"]
     panel.batch_dir = None
     load_part(app, case_mesh("plate_coarse"), "plate_f")
     confirm_all(app["session"])

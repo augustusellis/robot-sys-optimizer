@@ -96,7 +96,7 @@ class CellTab:
                 initial_value="mm",
                 hint="units of the file you upload next",
             )
-            self.part_upload = server.gui.add_upload_button("Upload mesh (.stl/.obj/.ply)")
+            self.part_upload = server.gui.add_upload_button("Upload part (.stl/.obj/.ply/.step)")
             self.part_units = server.gui.add_dropdown(
                 "Units", tuple(UNIT_SCALE), initial_value="mm", hint="units of the current part mesh"
             )
