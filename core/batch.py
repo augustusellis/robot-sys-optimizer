@@ -21,12 +21,17 @@ from core.target_gen import GenSettings
 
 VERSION = 1
 MANIFEST_NAME = "batch.json"
-Status = Literal["pending", "running", "done", "failed", "cancelled", "partial"]
+Status = Literal["pending", "running", "done", "failed", "cancelled", "partial", "needs_review"]
+Rule = Literal["faces", "tool_surface"]
 UNIT_SCALE = {"m": 1.0, "mm": 1e-3, "in": 0.0254}
 from core.step_import import STEP_EXTS, StepImportError, read_step  # noqa: E402
 
 MESH_EXTS = (".stl", ".obj", ".ply")
 PART_EXTS = MESH_EXTS + STEP_EXTS  # a part may also be a STEP model
+
+
+class NeedsReview(ValueError):  # noqa: N818
+    """A tool_surface job whose detection is not confident enough: a person must look (not a failure)."""
 
 
 def _identity() -> list[list[float]]:
@@ -43,6 +48,10 @@ class BatchJob(BaseModel):
     pose: list[list[float]] = Field(default_factory=_identity)  # 4x4 T_world_part
     mesh_sha1: str = ""
     selection: list[int] = Field(default_factory=list)  # face ids
+    selection_rule: Rule = "faces"  # "tool_surface": detected at materialize time (core.tool_surface_pick)
+    min_confidence: float = 0.7  # below this a tool_surface job is marked needs_review, not planned
+    confidence: float | None = None  # detection confidence of the last tool_surface run
+    detect_summary: str = ""  # one line from the detector (ASCII)
     gen: GenSettings = Field(default_factory=GenSettings)
     planner: dict = Field(default_factory=dict)  # PlannerSettings fields + objective/weights/workers
     status: Status = "pending"
@@ -151,6 +160,8 @@ def check_job(job: BatchJob, batch_dir: Path) -> str | None:
         return f"{who}: cannot read mesh {job.part}: {err}"
     if nf == 0:
         return f"{who}: mesh {job.part} contains no triangles"
+    if job.selection_rule != "faces":  # faces come from the detector at materialize time
+        return None
     if not job.selection:
         return f"{who}: no faces selected"
     bad = [f for f in job.selection if f < 0 or f >= nf]
@@ -199,7 +210,18 @@ def update_job(path: Path, job: BatchJob, fallback: BatchManifest | None = None)
     return False
 
 
-SUMMARY_COLUMNS = ("job", "name", "part", "status", "stations", "reached", "total", "cost", "run_s")
+SUMMARY_COLUMNS = (
+    "job",
+    "name",
+    "part",
+    "status",
+    "confidence",
+    "stations",
+    "reached",
+    "total",
+    "cost",
+    "run_s",
+)
 SUMMARY_COLUMNS += ("error", "report")
 
 
@@ -215,6 +237,7 @@ def summary_rows(manifest: BatchManifest) -> list[dict]:
                 "name": j.name,
                 "part": j.part,
                 "status": j.status,
+                "confidence": "" if j.confidence is None else f"{j.confidence:.2f}",
                 "stations": s.get("stations", ""),
                 "reached": s.get("reached", ""),
                 "total": s.get("total", ""),
@@ -257,7 +280,8 @@ def summary_html(manifest: BatchManifest) -> str:
         '<!doctype html><html><head><meta charset="utf-8"><title>Batch summary</title><style>'
         "body{font-family:sans-serif;margin:16px}table{border-collapse:collapse}"
         "td,th{border:1px solid #999;padding:3px 8px}.failed td{color:#c62828}"
-        ".partial td,.cancelled td{color:#b26a00}@media(prefers-color-scheme:dark){body{background:#1e1e1e;"
+        ".partial td,.cancelled td,.needs_review td{color:#b26a00}"
+        "@media(prefers-color-scheme:dark){body{background:#1e1e1e;"
         "color:#ddd}.failed td{color:#ef5350}}</style></head><body>"
         f"<h1>Batch summary</h1><p>Cell study: {html.escape(manifest.cell_project)}; created "
         f"{html.escape(manifest.created)}.</p><table><tr>{head}</tr>\n{body}</table></body></html>"

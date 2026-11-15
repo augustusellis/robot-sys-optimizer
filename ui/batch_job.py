@@ -161,6 +161,8 @@ def run_job(manifest: bt.BatchManifest, job: bt.BatchJob, batch_dir, emit, cance
             f"cancelled; {n} plan(s) finished before and saved" if n else "cancelled before a plan finished"
         )
         raise
+    except bt.NeedsReview as err:  # not an error: the detector is not sure, a person must look
+        job.status, job.error = "needs_review", one_line(err)
     except Exception as err:  # isolation: this job fails, the batch goes on
         _keep(box)
         job.status, job.error = "failed", one_line(err)
@@ -403,7 +405,7 @@ def _line(row: dict) -> str:
         else ""
     )
     tail = f"  {row['error']}" if row["error"] else ""
-    return f"{row['id']:<10} {row['status']:<9} {what} ({row['run_s']:.0f} s){tail}"
+    return f"{row['id']:<10} {row['status']:<12} {what} ({row['run_s']:.0f} s){tail}"
 
 
 def main(argv=None) -> int:

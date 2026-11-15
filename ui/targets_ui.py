@@ -29,6 +29,7 @@ from ui.targets_draw import (  # noqa: F401 (colours re-exported)
     draw_points,
     track_heat,
 )
+from ui.tool_surface_ui import ToolSurfacePanel
 from ui.unreached_view import LEGEND
 from ui.widgets import MAX_UPLOAD, notify
 
@@ -72,6 +73,7 @@ class TargetsTab:
 
         with gui.add_folder("Select surface & points"):
             self.surf = SurfaceTools(server, self)
+            self.detect = ToolSurfacePanel(server, self)  # T4: Detect tool surface
         s_ = self.surf  # the tab's names for the selection widgets (tests, saved settings)
         self.click_mode, self.angle, self.sel_info = s_.tool, s_.angle, s_.sel_info
         self.normal_dir, self.normal_angle, self.by_normal = s_.normal_dir, s_.normal_angle, s_.by_normal
@@ -399,6 +401,7 @@ class TargetsTab:
         self._draw_selection()
         self._draw_points()
         self._draw_preview()
+        self.detect.sync()
 
     def _show_group(self) -> None:
         g = next((x for x in self.s.targets.groups if x.name == self.group.value), None)

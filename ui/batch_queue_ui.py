@@ -14,6 +14,7 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import viser
 
 from core import batch as bt
@@ -22,7 +23,7 @@ from ui.log_panel import log
 from ui.widgets import notify
 
 MODES = {"Plan stations": False, "Quick plan": True}  # label -> planner_snapshot(quick=...)
-REDO = ("failed", "partial", "cancelled")  # statuses that can be reset to pending
+REDO = ("failed", "partial", "cancelled", "needs_review")  # statuses that can be reset to pending
 
 
 def _cell(text: str) -> str:
@@ -36,11 +37,14 @@ def job_table(m: bt.BatchManifest) -> str:
     for j in m.jobs:
         s = j.summary or {}
         n = s.get("total", s.get("targets_preview", ""))
+        auto = j.selection_rule == "tool_surface"
+        conf = f" ({j.confidence:.2f})" if auto and j.confidence is not None else ""
+        faces = f"auto{conf}" if auto and not j.selection else str(len(j.selection))
         got = f"{s.get('reached', '')}/{s.get('total', '')}, {s['cost']:.2f}" if s.get("stations") else ""
         mode = "quick" if j.planner.get("mode") == "quick" else "plan"
         name = f" {_cell(j.name)}" if j.name != j.id else ""
         lines.append(
-            f"| {j.id}{name} | {_cell(Path(j.part).name)} | {len(j.selection)} | {n} | {mode} | "
+            f"| {j.id}{name} | {_cell(Path(j.part).name)} | {faces} | {n} | {mode} | "
             f"{j.status} | {got} | {_cell(j.error)} |"
         )
     return (
@@ -77,7 +81,15 @@ class BatchPanel:
             self.reset_btn = gui.add_button(
                 "Reset to pending", hint="run a failed, partial or cancelled job again"
             )
+            self.review_btn = gui.add_button(
+                "Open for review", hint="load the part of a needs_review job and run Detect tool surface"
+            )
             self.open_btn = gui.add_button("Open result", hint="open the finished job's study as the project")
+            self.folder = gui.add_text(
+                "Mandrel folder", "", hint="queue every part file in it as auto: tool surface"
+            )
+            self.min_conf = gui.add_number("Min confidence", 0.7, min=0.0, max=1.0, step=0.05)
+            self.folder_btn = gui.add_button("Add folder…")
             self.run_btn = gui.add_button("Run batch", color="green")
             self.stop = gui.add_button("Cancel", visible=False)
             self.progress = gui.add_progress_bar(0.0, visible=False)
@@ -89,6 +101,8 @@ class BatchPanel:
         self.down_btn.on_click(self._guard(lambda e: self.move(1, e)))
         self.reset_btn.on_click(self._guard(lambda e: self.reset(e)))
         self.open_btn.on_click(self._guard(lambda e: self.open_result(e)))
+        self.review_btn.on_click(self._guard(lambda e: self.open_for_review(e)))
+        self.folder_btn.on_click(self._guard(lambda e: self.add_folder(self.folder.value, e)))
         self.run_btn.on_click(self._guard(lambda e: self.run(e)))
         self.stop.on_click(lambda e: self._cancel.set())
         self._lock_stations()
@@ -234,6 +248,109 @@ class BatchPanel:
         notify(event, "Queued", f"{job.id}: {len(sel)} faces, {len(P)} targets", ok=True)
         return True
 
+    def _ensure_batch(self) -> bool:
+        from ui.workflow import setup_reason
+
+        if reason := setup_reason(self.s):
+            raise ValueError(reason)
+        self.project.save_now()  # the cell project must be on disk
+        if self.batch_dir is None:
+            self.batch_dir = data_paths.workspace_dir() / f"batch_{datetime.now():%Y%m%d_%H%M%S}"
+            self.batch_dir.mkdir(parents=True, exist_ok=True)
+            self._save(bt.BatchManifest(cell_project=bt.rel_cell(self.s.project_dir, self.batch_dir)))
+        return True
+
+    def add_folder(self, folder: str, event=None) -> tuple[list[str], list[str]]:
+        """Queue every part file of ``folder`` as an auto: tool surface job (current generator and
+        planner settings, current part pose). Returns (queued job ids, skipped "name: why")."""
+        from ui.batch_planner import planner_snapshot
+
+        if self.running:
+            notify(event, "Batch running", "Wait for the batch to finish before adding jobs")
+            return [], []
+        d = Path(folder.strip().strip('"'))
+        if not folder.strip() or not d.is_dir():
+            notify(event, "Add folder", f"'{folder}' is not a folder on this computer")
+            return [], []
+        try:
+            if not self._ensure_batch():
+                notify(event, "Cannot queue", "Load a robot / part first")
+                return [], []
+        except ValueError as err:
+            notify(event, "Cannot queue", str(err))
+            return [], []
+        s, gen = self.s, self.targets.gen_settings()
+        units = s.part.units if s.part else "m"
+        pose = (s.part.T_world_part if s.part else np.eye(4)).tolist()
+        planner = planner_snapshot(self.stations, quick=MODES[self.mode.value])
+        m = self.manifest()
+        queued, skipped = [], []
+        parts = self.batch_dir / "parts"
+        parts.mkdir(exist_ok=True)
+        for src in sorted(d.iterdir(), key=lambda p: p.name.lower()):
+            if not src.is_file():
+                continue
+            if src.suffix.lower() not in bt.PART_EXTS:
+                skipped.append(f"{src.name}: unsupported file type {src.suffix or '(none)'}")
+                continue
+            dest, k = parts / src.name, 1
+            while dest.exists() and bt.mesh_sha1(dest) != bt.mesh_sha1(src):
+                dest, k = parts / f"{src.stem}_{k}{src.suffix}", k + 1
+            if not dest.exists():
+                shutil.copyfile(src, dest)
+            job = bt.add_job(
+                m,
+                part=dest.relative_to(self.batch_dir).as_posix(),
+                selection=[],
+                gen=gen,
+                name=src.stem,
+                units=units,
+                pose=pose,
+                mesh_sha1=bt.mesh_sha1(dest),
+                planner=planner,
+                selection_rule="tool_surface",
+                min_confidence=float(self.min_conf.value),
+            )
+            reason = bt.check_job(job, self.batch_dir)
+            if reason:
+                m.jobs.remove(job)
+                skipped.append(f"{src.name}: {reason.split(': ', 1)[-1]}")
+            else:
+                queued.append(job.id)
+        self._save(m)
+        self.list_batches()
+        self.refresh()
+        text = f"{len(queued)} queued"
+        if skipped:
+            text += f", {len(skipped)} skipped: " + "; ".join(skipped[:5])
+        self.status.content = text
+        notify(event, "Add folder", text, ok=not skipped or bool(queued))
+        return queued, skipped
+
+    def open_for_review(self, event=None) -> bool:
+        """Load the part of the picked needs_review job into the Targets tab and run Detect."""
+        from ui.session import PartState as _PartState
+
+        m, jid = self.manifest(), self._job_id()
+        job = next((j for j in m.jobs if j.id == jid), None)
+        if job is None or job.status != "needs_review":
+            notify(event, "Open for review", "Pick a job whose status is needs_review")
+            return False
+        src = self.batch_dir / job.part
+        dest = self.s.project_dir / "assets" / "parts" / src.name
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src, dest)
+        self.s.part = _PartState(self.s.relative(dest), job.units, np.array(job.pose, float))
+        refresh = getattr(self.targets.tools, "on_mesh_replaced", None)
+        if refresh:
+            refresh()
+        self.targets.on_part_changed()
+        self.status.content = (
+            f"_{job.id} loaded for review: accept or adjust the selection in the Targets tab, "
+            "then **Add to queue** (a faces job) and remove this one._"
+        )
+        return self.targets.detect.detect(event)
+
     # --- edit ---------------------------------------------------------------------------------
 
     def _editable(self, m: bt.BatchManifest, jid: str, event) -> bool:
@@ -274,7 +391,9 @@ class BatchPanel:
         m, jid = self.manifest(), self._job_id()
         job = next((j for j in m.jobs if j.id == jid), None)
         if job is None or job.status not in REDO:
-            notify(event, "Reset", "Only failed, partial or cancelled jobs can be reset to pending")
+            notify(
+                event, "Reset", "Only failed, partial, cancelled or needs_review jobs can be reset to pending"
+            )
             return False
         job.status, job.error = "pending", ""
         job.summary = {k: v for k, v in job.summary.items() if k == "targets_preview"}

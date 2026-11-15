@@ -24,6 +24,38 @@ def ensure_group(session: Session, name: str) -> None:
     session.targets = session.targets.model_copy(update={"groups": [*session.targets.groups, g]})
 
 
+def up_in_part(T_world_part) -> np.ndarray:
+    """World +Z expressed in the part frame (the part pose may be rotated)."""
+    return np.asarray(T_world_part, float)[:3, :3].T @ np.array([0.0, 0.0, 1.0])
+
+
+def detect_for_pose(mesh, T_world_part, pad_radius_m=None):
+    """Run the tool-surface detector on a part mesh placed with ``T_world_part``. STEP parts
+    pass their CAD face ids (``mesh.metadata["cad_face_ids"]``)."""
+    from core.tool_surface_pick import detect_tool_surface
+
+    return detect_tool_surface(
+        mesh,
+        up=up_in_part(T_world_part),
+        cad_face_ids=mesh.metadata.get("cad_face_ids"),
+        pad_radius_m=pad_radius_m,
+    )
+
+
+def apply_rule(job: bt.BatchJob, mesh, who: str) -> None:
+    """tool_surface job: detect, store confidence + summary, set ``job.selection``. Raises
+    ``bt.NeedsReview`` (one line) when the confidence is below ``job.min_confidence``."""
+    g = detect_for_pose(mesh, np.array(job.pose, float))
+    job.confidence = float(g.confidence)
+    job.detect_summary = str(g.summary).replace("²", "2")
+    if g.confidence < job.min_confidence or len(g.faces) == 0:
+        raise bt.NeedsReview(
+            f"{who}: tool surface confidence {g.confidence:.2f} is below {job.min_confidence:.2f}; "
+            f"review it ({job.detect_summary})"
+        )
+    job.selection = [int(f) for f in g.faces]
+
+
 def materialize(manifest: bt.BatchManifest, job: bt.BatchJob, batch_dir: Path) -> Path:
     """Create ``batch_dir/<job.id>/`` as a study folder and return it. ValueError (one line)
     if the job cannot run or generates no targets. Sets ``job.auto_confirmed`` / ``out_dir``."""
@@ -32,6 +64,8 @@ def materialize(manifest: bt.BatchManifest, job: bt.BatchJob, batch_dir: Path) -
     reason = bt.check_job(job, batch_dir)
     if reason:
         raise ValueError(reason)
+    if job.selection_rule == "tool_surface":  # before anything is copied: a doubtful job stays cheap
+        apply_rule(job, load_mesh(batch_dir / job.part, job.units), who)
     cell = bt.cell_path(manifest, batch_dir)
     if not manifest.cell_project or not (cell / "project.json").is_file():
         raise ValueError(f"{who}: the cell project '{manifest.cell_project}' has no project.json")
