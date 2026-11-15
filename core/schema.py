@@ -340,6 +340,8 @@ class ComparedRobot(_Model):
     """v9 #6: one robot of Optimize -> Compare robots, with its plans (viewable in Results)."""
 
     robot: str  # registry name
+    key: str = ""  # v10 T17: the setup ("ur10e", "ur10e · scanner"); "" = the robot's name
+    tool: EndEffector | None = None  # v10 T17: the setup's tool (None: the project's)
     metrics: dict[str, Any] = Field(default_factory=dict)  # the comparison table's row
     results: list[Solution] = Field(default_factory=list)
     result_points: dict[str, list[PointResultData]] = Field(default_factory=dict)  # label -> points

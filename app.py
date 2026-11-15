@@ -290,7 +290,7 @@ def build_app(
                 "Feasibility check": [optimize.folder],
                 "Base placement map": [placement.folder],
                 "Tool geometry": [tool_opt.folder],
-                "Compare robots": [compare.folder],
+                "Compare setups": [compare.folder],
                 "Gantry placement": [frame.folder],
             }
         )
@@ -344,6 +344,7 @@ def build_app(
         results.chosen_listeners.append(pareto.refresh)
     state["results"] = results
     compare_view.cell, compare_view.results, compare_view.sim = cell, results, sim
+    compare_view.tool_tab = tool  # v10 T17: compared tools
     compare_view.on_changed = lambda: pareto.refresh()
     compare.view_robot, compare.on_done = compare_view.view, compare_view.refresh
     state["compare_view"] = compare_view

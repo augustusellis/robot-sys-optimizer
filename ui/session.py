@@ -195,7 +195,9 @@ class Session:
 
         return [
             schema.ComparedRobot(
-                robot=name,
+                robot=c.get("robot", name),
+                key=name,
+                tool=c.get("tool"),
                 metrics={
                     k: v
                     for k, v in c.get("metrics", {}).items()
@@ -272,7 +274,7 @@ class Session:
         return schema.Project(
             robot=robot,
             part=part,
-            end_effector=self.tool,
+            end_effector=o.get("tool", self.tool),  # v10 T17: the project's tool while viewing a setup
             targets=self.targets,
             results=g("results"),
             base=self.base,
@@ -323,7 +325,9 @@ class Session:
 
         self.view_stash = None
         self.compared = {
-            c.robot: {
+            (c.key or c.robot): {
+                "robot": c.robot,
+                "tool": c.tool,
                 "results": list(c.results),
                 "points": {
                     label: {d.id: result_from_data(d) for d in pts} for label, pts in c.result_points.items()

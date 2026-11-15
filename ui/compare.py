@@ -1,4 +1,7 @@
-"""Optimize -> Compare robots (v8 T9): the same study planned with several robots.
+"""Optimize -> Compare setups (v8 T9 robots; v10 T17 robots and / or tools): the same study planned
+with several setups. A setup is a robot x a tool: the ticked robots (none: the project's) times the
+ticked tools (library tools and the project's tool packages; none: the project's tool); the
+project's own setup is always planned too (its row is marked, its plans stay the project's).
 
 For each chosen robot the job rebuilds the session from the project snapshot (the live
 session is not touched), swaps the robot (keeping the mount, base pose, tool, part, targets,
@@ -42,18 +45,71 @@ def _metrics(sol, res: dict, run_s: float) -> dict:
     }
 
 
+def setups(robots: list[str], tools: dict, own_robot: str | None, own_tool: str) -> list[dict]:
+    """The setups to plan: robots x tools ({name: EndEffector}); the project's (``own_robot``, its
+    tool) first and always. Keys: the robot's name with the project's tool, else "robot · tool"."""
+    rs = list(robots) or [own_robot]
+    ts = list(tools.items()) or [(None, None)]
+    out = []
+    for r in rs:
+        for tn, ee in ts:
+            same = tn is None or tn == own_tool
+            out.append(
+                {
+                    "key": r if same else f"{r} · {tn}",
+                    "robot": r,
+                    "tool": None if same else ee,
+                    "tool_name": own_tool if same else tn,
+                    "project": r == own_robot and same,
+                }
+            )
+    if not any(x["project"] for x in out):
+        out.insert(
+            0, {"key": own_robot, "robot": own_robot, "tool": None, "tool_name": own_tool, "project": True}
+        )
+    out.sort(key=lambda x: not x["project"])
+    return out
+
+
+def tool_choices(s) -> dict[str, object]:
+    """Tools to compare: {name: EndEffector}: the library's and the project's tool packages."""
+    from core.tool import list_tools, load_tool
+    from core.urdf_package import read_urdf, to_tool
+
+    out = {}
+    for name in list_tools():
+        try:
+            out[name] = load_tool(name)
+        except (OSError, ValueError):
+            continue
+    pk = s.project_dir / "assets" / "packages"
+    for d in sorted(pk.glob("*/package.yaml")) if pk.is_dir() else []:
+        if d.parent.name.startswith("_"):
+            continue
+        try:
+            urdf = next(d.parent.glob("*.urdf"))
+            pkg = read_urdf(urdf, "tool")
+            if pkg.kind == "tool":
+                out.setdefault(f"{pkg.name} (package)", to_tool(pkg, s.relative(urdf)))
+        except (StopIteration, OSError, ValueError):
+            continue
+    return out
+
+
 def compare_job(payload: dict, emit, cancelled) -> list[dict]:
-    """``spec``: robots (registry names), settings (PlannerSettings), weights, workers."""
+    """``spec``: setups (``setups``), settings (PlannerSettings), weights, workers."""
     from core import schema
     from ui.plan_job import station_job
     from ui.session import Session
 
     spec = payload["spec"]
     rows = []
-    for n, name in enumerate(spec["robots"]):
+    todo = spec["setups"]
+    for n, su in enumerate(todo):
+        name = su["robot"]
         if cancelled():
             raise CancelledError()
-        emit("progress", (f"planning with {name} ({n + 1} / {len(spec['robots'])})", n / len(spec["robots"])))
+        emit("progress", (f"planning {su['key']} ({n + 1} / {len(todo)})", n / len(todo)))
         s = Session()
         p = schema.Project.model_validate_json(payload["project"])
         if p.robot is not None:  # another arm: its own limits and home
@@ -68,6 +124,9 @@ def compare_job(payload: dict, emit, cancelled) -> list[dict]:
         s.T_world_base = payload["T_base"].copy()
         if payload["T_part"] is not None:
             s.part.T_world_part = payload["T_part"].copy()
+        if su.get("tool") is not None:  # v10 T17: another tool (its own TCPs, contacts, ranges)
+            s.set_tool(su["tool"])
+        tag = {"setup": su["key"], "robot": name, "tool": su.get("tool_name", ""), "project": su["project"]}
         t0 = time.monotonic()
         sols: dict = {}
         sub = {
@@ -86,7 +145,7 @@ def compare_job(payload: dict, emit, cancelled) -> list[dict]:
         out = station_job({"session": s, "spec": sub}, collect, cancelled)
         best = out["best"]
         if best is None:
-            rows.append({"robot": name, "label": "no plan"})
+            rows.append({**tag, "label": "no plan"})
             continue
         _, res = sols.get(best.label, (best, {}))
         m = _metrics(best, res, time.monotonic() - t0)
@@ -100,7 +159,13 @@ def compare_job(payload: dict, emit, cancelled) -> list[dict]:
         )
         stamp = stamp_for(s, "plan")  # this robot's setup: its plans are up to date when viewed with it
         rows.append(
-            {"robot": name, **m, "plans": plans, "stamps": {sol.label: dict(stamp) for sol, _ in plans}}
+            {
+                **tag,
+                **m,
+                "plans": plans,
+                "stamps": {sol.label: dict(stamp) for sol, _ in plans},
+                "ee": su.get("tool"),
+            }
         )
     return rows
 
@@ -111,9 +176,11 @@ def keep_plans(session, rows: list[dict]) -> list[dict]:
     out = []
     for r in rows:
         r = dict(r)
-        plans, stamps = r.pop("plans", []), r.pop("stamps", {})
-        if plans:
-            session.compared[r["robot"]] = {
+        plans, stamps, ee = r.pop("plans", []), r.pop("stamps", {}), r.pop("ee", None)
+        if plans and not r.get("project"):  # the project's own plans stay the project's
+            session.compared[r.get("setup", r["robot"])] = {
+                "robot": r["robot"],
+                "tool": ee,
                 "results": [sol for sol, _ in plans],
                 "points": {sol.label: dict(res) for sol, res in plans},
                 "stamps": stamps,
@@ -128,13 +195,14 @@ def table(rows: list[dict], n_points: int) -> str:
         return "—" if v is None else format(v, fmt)
 
     lines = [
-        f"| {r['robot']} | {f(r.get('stations'), 'd')} | {f(r.get('reached'), 'd')}/{n_points} | "
+        f"| {r.get('setup', r['robot'])}{' (project)' if r.get('project') else ''} | "
+        f"{f(r.get('stations'), 'd')} | {f(r.get('reached'), 'd')}/{n_points} | "
         f"{f(r.get('cycle_s'), '.0f')} | {f(r.get('clear_mm'), '.0f')} | {f(r.get('manip_pct'), '.0f')} | "
         f"{f(r.get('cost'), '.2f')}{' ✗' if r.get('violations') else ''} | {f(r.get('run_s'), '.0f')} |"
         for r in rows
     ]
     return (
-        "| robot | stations | reached | cycle (s) | worst clearance (mm) | lowest manip. (%) | cost "
+        "| setup | stations | reached | cycle (s) | worst clearance (mm) | lowest manip. (%) | cost "
         "| run (s) |\n"
         "|---|---|---|---|---|---|---|---|\n" + "\n".join(lines)
     )
@@ -147,25 +215,30 @@ class ComparePanel:
         self._cancel = threading.Event()
         self.rows: list[dict] = []
         gui = server.gui
-        self.folder = gui.add_folder("Compare robots", expand_by_default=False)
+        self.folder = gui.add_folder("Compare setups", expand_by_default=False)
         with self.folder:
             gui.add_markdown(
-                "_Plans the current study with each ticked robot (same tool, part, targets, carrier and "
-                "planner settings) and lists the results side by side._"
+                "_Plans the current study with each ticked robot and / or tool (every robot with every "
+                "tool; none ticked = the project's), same part, targets, carrier and planner settings, and "
+                "lists the results side by side. The project's own setup is always in the table._"
             )
-            self.pick = {
-                name: gui.add_checkbox(name, name in ("ur20", "ur10e", "ur30"))
-                for name in list_robots()
-                if name != "generic_6r"
-            }
-            self.run = gui.add_button("Compare robots", color="green")
+            with gui.add_folder("Robots"):
+                self.pick = {
+                    name: gui.add_checkbox(name, name in ("ur20", "ur10e", "ur30"))
+                    for name in list_robots()
+                    if name != "generic_6r"
+                }
+            self.tools_folder = gui.add_folder("Tools", expand_by_default=False)
+            self.tool_pick: dict = {}
+            self.refresh_tools(gui)
+            self.run = gui.add_button("Compare setups", color="green")
             self.gate_md = gui.add_markdown("", visible=False)
             self.stop = gui.add_button("Cancel", visible=False)
             self.progress = gui.add_progress_bar(0.0, visible=False)
             self.status = gui.add_markdown("")
-            self.choice = gui.add_dropdown("Robot", ("—",), visible=False)
+            self.choice = gui.add_dropdown("Setup", ("—",), visible=False)
             self.use = gui.add_button(
-                "View in Results", visible=False, hint="this robot at its stops, with its plans (Results tab)"
+                "View in Results", visible=False, hint="this setup at its stops, with its plans (Results tab)"
             )
         self.view_robot: Callable[[str], None] | None = None  # app.py: ui.compare_view.CompareView.view
         self.on_done: Callable[[], None] | None = None  # app.py: Results lists the compared robots
@@ -174,26 +247,38 @@ class ComparePanel:
 
         @self.use.on_click
         def _(e) -> None:
-            if self.choice.value not in list_robots():
+            key = self.choice.value
+            if key not in self.s.compared and key not in list_robots():
                 return
-            if self.view_robot is not None:  # v9: view it in Results (the project's robot stays)
-                self.view_robot(self.choice.value)
-                notify(
-                    e,
-                    "Viewing a compared robot",
-                    f"Results shows the {self.choice.value} and its plans",
-                    ok=True,
-                )
+            if self.view_robot is not None:  # v9: view it in Results (the project's setup stays)
+                self.view_robot(key)
+                notify(e, "Viewing a compared setup", f"Results shows {key} and its plans", ok=True)
             else:
-                self.use_robot(self.choice.value)
+                self.use_robot(self.s.compared.get(key, {}).get("robot", key))
+
+    def refresh_tools(self, gui=None) -> None:
+        """The Tools folder: one checkbox per library tool and project tool package (v10 T17)."""
+        gui = gui or self._gui
+        self._gui = gui
+        names = tuple(tool_choices(self.s))
+        if tuple(self.tool_pick) == names:
+            return
+        for cb in self.tool_pick.values():
+            cb.remove()
+        with self.tools_folder:
+            self.tool_pick = {n: gui.add_checkbox(n, False) for n in names}
 
     def start(self, event=None, block: bool = False) -> None:
         s = self.s
         if self._thread is not None and self._thread.is_alive():
             return notify(event, "Busy", "The comparison is already running")
         robots = [n for n, cb in self.pick.items() if cb.value]
-        if not robots:
-            return notify(event, "No robots", "Tick at least one robot")
+        all_tools = tool_choices(s)
+        tools = {n: all_tools[n] for n, cb in self.tool_pick.items() if cb.value and n in all_tools}
+        if not robots and not tools:
+            return notify(event, "Nothing to compare", "Tick at least one robot or tool")
+        if s.robot_name is None or s.tool is None:
+            return notify(event, "Cannot compare", "The project needs a library robot and a tool")
         if s.view_stash:
             return notify(
                 event, "Viewing a compared robot", "Results → Robot: go back to the project's robot first"
@@ -218,7 +303,7 @@ class ComparePanel:
             cycle=getattr(s, "cycle", None),
         )
         spec = {
-            "robots": robots,
+            "setups": setups(robots, tools, s.robot_name, s.tool.name),
             "settings": settings,
             "weights": st.costs.commit(),
             "workers": jobs.CHECK_WORKERS,
@@ -242,13 +327,13 @@ class ComparePanel:
                 if self.on_done is not None:
                     self.on_done()
                 self.status.content = table(self.rows, n)
-                names = tuple(r["robot"] for r in self.rows if r.get("stations"))
+                names = tuple(r["setup"] for r in self.rows if r.get("stations") and not r.get("project"))
                 self.choice.options = names or ("—",)
                 self.choice.visible = self.use.visible = bool(names)
-                log(f"Robot comparison finished ({', '.join(robots)}).", "done", t0)
+                log(f"Setup comparison finished ({', '.join(r['setup'] for r in self.rows)}).", "done", t0)
             except (CancelledError, jobs.JobCancelledError):
                 self.status.content = "**Cancelled.**"
-                log("Robot comparison cancelled.", "warn", t0)
+                log("Setup comparison cancelled.", "warn", t0)
             except Exception as err:
                 self.status.content = f"⚠ comparison failed: {err}"
                 log(f"Robot comparison failed: {err}", "error")

@@ -19,8 +19,8 @@ OPTIMIZERS = {
     "Base placement map": "A heatmap of how many targets a robot base reaches from each floor position "
     "(reach maps); move the base to the best one.",
     "Tool geometry": "Optimizes the tool (pose ranges, length and bends) together with the stations.",
-    "Compare robots": "Plans the same study with several robots and lists stations, reach, cycle time "
-    "and cost side by side.",
+    "Compare setups": "Plans the same study with several robots and / or tools and lists stations, "
+    "reach, cycle time and cost side by side.",
     "Gantry placement": "Places the whole rail or gantry frame relative to the part (standoff, shift, "
     "robot mount height), then plans the stops of the best frames.",
 }

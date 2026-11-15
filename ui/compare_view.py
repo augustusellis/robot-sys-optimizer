@@ -17,13 +17,25 @@ import viser
 from ui.log_panel import log
 from ui.widgets import notify
 
-STASH = ("robot", "robot_name", "robot_urdf", "q", "home_deg", "results", "result_points", "stamps")
+STASH = (
+    "robot",
+    "robot_name",
+    "robot_urdf",
+    "q",
+    "home_deg",
+    "results",
+    "result_points",
+    "stamps",
+    "tool",
+    "tool_model",
+)
 
 
 class CompareView:
     def __init__(self, server: viser.ViserServer, session) -> None:
         self.s = session
-        self.cell = self.results = self.sim = None  # set by app.py
+        self.cell = self.results = self.sim = self.tool_tab = None  # set by app.py
+        self.viewing: str | None = None  # v10 T17: the compared setup shown (its key)
         self.on_changed: Callable[[], None] | None = None  # app.py: e.g. the Pareto view
         self._quiet = False  # set while refresh() moves the dropdown itself
         gui = server.gui
@@ -50,7 +62,7 @@ class CompareView:
         names = [n for n in self.s.compared if self.s.compared[n].get("results")]
         self.folder.visible = bool(names)
         opts = (self.project_label(), *names)
-        viewing = self.s.robot_name if self.s.view_stash else None
+        viewing = self.viewing if self.s.view_stash else None
         if tuple(self.choice.options) != opts:
             self.choice.options = opts
         want = viewing if viewing in names else opts[0]
@@ -66,12 +78,12 @@ class CompareView:
         stash = self.s.view_stash
         self.back.visible = self.use.visible = bool(stash)
         if stash:
-            m = self.s.compared.get(self.s.robot_name, {}).get("metrics", {})
+            m = self.s.compared.get(self.viewing, {}).get("metrics", {})
             cyc = f", cycle {m['cycle_s']:.0f} s" if m.get("cycle_s") is not None else ""
             n = m.get("stations", "?")
             self.banner.content = (
-                f"⚠ **Viewing the {self.s.robot_name}** from Compare robots ({n} stations{cyc}). "
-                f"The project still uses the **{stash['robot_name']}**: saving saves that one."
+                f"⚠ **Viewing {self.viewing}** from Compare setups ({n} stations{cyc}). "
+                f"The project still uses the **{stash['robot_name']}** with its tool: saving saves that."
             )
         else:
             self.banner.content = "_Pick a compared robot to see it at its stops, with its plans and paths._"
@@ -79,6 +91,8 @@ class CompareView:
     def _apply(self) -> None:
         if self.cell is not None:
             self.cell.refresh()
+        if self.tool_tab is not None:  # v10 T17: a compared tool
+            self.tool_tab.refresh()
         if self.results is not None:
             self.results.refresh()
         if self.sim is not None:
@@ -94,24 +108,27 @@ class CompareView:
         s = self.s
         if name not in s.compared:
             name = None
-        current = s.robot_name if s.view_stash else None
+        current = self.viewing if s.view_stash else None
         if name == current:
             return self.refresh()
         if s.view_stash:  # back to the project first
             for k, v in s.view_stash.items():
                 setattr(s, k, v)
             s.view_stash = None
+        self.viewing = name
         if name is not None:
             c = s.compared[name]
             s.view_stash = {k: getattr(s, k) for k in STASH}
-            s.load_robot_from_registry(name)
+            s.load_robot_from_registry(c.get("robot", name))
+            if c.get("tool") is not None:
+                s.set_tool(c["tool"])
             s.results = list(c["results"])
             s.result_points = {label: dict(pts) for label, pts in c["points"].items()}
             s.stamps = {
                 **{k: v for k, v in s.view_stash["stamps"].items() if k == "feasibility"},
                 **{k: dict(v) for k, v in c["stamps"].items()},
             }
-            log(f"Results shows the {name} from Compare robots (the project keeps its robot).", "info")
+            log(f"Results shows {name} from Compare setups (the project keeps its setup).", "info")
         self._apply()
 
     def use_robot(self) -> str | None:
@@ -120,7 +137,7 @@ class CompareView:
         if not s.view_stash:
             return None
         old = s.view_stash["robot_name"]
-        s.view_stash = None
+        s.view_stash, self.viewing = None, None
         log(f"The project now uses the {s.robot_name} (was the {old}).", "done")
         self.refresh()
         return s.robot_name

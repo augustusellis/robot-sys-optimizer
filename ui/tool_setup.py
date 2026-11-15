@@ -137,6 +137,10 @@ class ToolSetupTab:
         @self.choice.on_update
         @g
         def _(e) -> None:
+            # v10 T17: a refresh that set the dropdown to the current tool also queues this
+            # callback (viser runs it later, on its thread pool): nothing to load then
+            if self.s.tool is not None and self.choice.value == self.s.tool.name:
+                return
             if self.choice.value == NONE:
                 self.s.set_tool(None)
             else:
