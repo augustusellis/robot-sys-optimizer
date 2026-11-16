@@ -188,6 +188,10 @@ def build_app(
     with tab_handles["Optimize"]:
         workflow.optimize_header()
         workflow.confirm_all_button()  # v11 #5
+        from ui.preflight_ui import SetupCheckPanel
+
+        # common setup mistakes, before a long plan (above the Optimizer dropdown: it applies to all)
+        setup_check = SetupCheckPanel(server, session)
         from ui.optimizer_select import OptimizerSelect
 
         picker = OptimizerSelect(server)  # v9 #10: one Optimizer dropdown, one panel shown
@@ -376,8 +380,9 @@ def build_app(
 
     results.choice.on_update(on_selection)
     results.tool_opt = tool_opt
-    stations.on_start = lambda: sim.reset("a new station plan started")
-    tool_opt.on_start = lambda: sim.reset("the tool optimizer started")
+    pre = setup_check.on_plan_start if autosave_thread else (lambda: None)  # the real app only
+    stations.on_start = lambda: (sim.reset("a new station plan started"), pre())
+    tool_opt.on_start = lambda: (sim.reset("the tool optimizer started"), pre())
     results.move_carrier = carrier.set_values
     results.set_q = cell.set_q
     workflow.cell, workflow.carrier, workflow.results = cell, carrier, results
@@ -458,6 +463,7 @@ def build_app(
         cycle=cycle,
         compare=compare,
         batch_queue=queue,
+        setup_check=setup_check,
         builder=builder,
         builder_window=builder_window,
         pareto=pareto,
