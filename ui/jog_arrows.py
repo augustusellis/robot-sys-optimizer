@@ -4,7 +4,7 @@ jogging while held (ui.robot_jog.JogPanel).
 Viser buttons only report clicks, so the arrows are HTML (``gui.add_html``) with an inline
 ``onpointerdown``: it sends one step at once and, when the button is still held after ``HOLD_MS``,
 one step every ``REPEAT_MS`` until the pointer is released or leaves the window. A step travels to
-Python through the hidden-input bridge of ui.joystick / ui.package_tabs: ``jog:<axis>,<sign>,<n>``
+Python through the hidden-input bridge (ui.html_bridge): ``jog:<axis>,<sign>,<n>``
 written into a text input (hidden by the pad itself). Steps arriving while one is being applied
 collapse into the newest (ui.widgets.Latest), so a slow IK or collision check never queues up.
 """
@@ -14,24 +14,18 @@ from __future__ import annotations
 import html
 import re
 
+from ui.html_bridge import SETTER, find_js, hide_tag, send_js
+
 HOLD_MS, REPEAT_MS = 350, 120
 MOVE, TURN = ("X", "Y", "Z"), ("Rx", "Ry", "Rz")
 _VALUE = re.compile(r"^jog:([A-Za-z0-9]+),(-?1),[\d.]+$")
-_FIND = (
-    "var inp=[...document.querySelectorAll('input')].find(function(i){return i.value.indexOf('jog:')==0});"
-)
-_HIDE = (
-    "(function(){" + _FIND + "if(!inp)return;var r=inp.closest('.mantine-InputWrapper-root')"
-    "||inp.parentElement&&inp.parentElement.parentElement;if(r)r.style.display='none'})()"
-)
+PREFIX = "jog:"
 
 
 def _down_js(axis: str, sign: int) -> str:
     return (
-        "(function(ev){" + _FIND + "if(!inp)return;"
-        "var set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;var n=0;"
-        f"function send(){{set.call(inp,'jog:{axis},{sign},'+Date.now()+'.'+(n++));"
-        "inp.dispatchEvent(new Event('input',{bubbles:true}))}"
+        "(function(ev){" + find_js(PREFIX) + "if(!inp)return;" + SETTER + "var n=0;"
+        "function send(){" + send_js(f"'jog:{axis},{sign},'+Date.now()+'.'+(n++)") + "}"
         f"send();var t=null;var d=setTimeout(function(){{t=setInterval(send,{REPEAT_MS})}},{HOLD_MS});"
         "function up(){clearTimeout(d);if(t)clearInterval(t);"
         "window.removeEventListener('pointerup',up);window.removeEventListener('pointercancel',up);"
@@ -68,7 +62,8 @@ def pad_html(joints: int = 6, cartesian: bool = True) -> str:
         '<div class="rso-jog">'
         + (row("Move (the frame's axes)", MOVE) + row("Turn", TURN) if cartesian else "")
         + row("Joints", [f"J{k + 1}" for k in range(joints)])
-        + f'</div><img src="x:" style="display:none" onerror="{html.escape(_HIDE)}">'
+        + "</div>"
+        + hide_tag(PREFIX)
     )
 
 

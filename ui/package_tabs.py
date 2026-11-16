@@ -1,10 +1,9 @@
 """Package builder tab bar (v10 #8): an HTML bar that shows which package type is open.
 
 Viser's button group has no "selected" look, so the bar is HTML (``gui.add_html``) redrawn by the
-server with the active tab highlighted. A click goes back to Python through the same bridge as the
-joystick (ui.joystick): the button's inline ``onclick`` writes ``tab:<kind>,<n>`` into a text input
-through the native value setter + an ``input`` event, which viser sends like typing. That input is
-hidden by the bar itself (an ``<img onerror>`` runs when the bar is drawn and hides the input's row).
+server with the active tab highlighted. A click goes back to Python through the hidden-input bridge
+(ui.html_bridge): the button's inline ``onclick`` writes ``tab:<kind>,<n>`` into a text input that the
+bar hides itself.
 """
 
 from __future__ import annotations
@@ -13,23 +12,20 @@ import html
 import re
 from collections.abc import Callable
 
+from ui.html_bridge import SETTER, find_js, hide_tag, send_js
+
 PREFIX = "tab:"
 _VALUE = re.compile(r"^tab:([a-z]+)(?:,\d+)?$")
-
-_FIND = (
-    "var inp=[...document.querySelectorAll('input')].find(function(i){return i.value.indexOf('tab:')==0});"
-)
-_HIDE = (
-    "(function(){" + _FIND + "if(!inp)return;var r=inp.closest('.mantine-InputWrapper-root')"
-    "||inp.parentElement&&inp.parentElement.parentElement;if(r)r.style.display='none'})()"
-)
 
 
 def _click_js(kind: str) -> str:
     return (
-        "(function(){" + _FIND + "if(!inp)return;"
-        "var set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;"
-        f"set.call(inp,'tab:{kind},'+Date.now());inp.dispatchEvent(new Event('input',{{bubbles:true}}))}})()"
+        "(function(){"
+        + find_js(PREFIX)
+        + "if(!inp)return;"
+        + SETTER
+        + send_js(f"'tab:{kind},'+Date.now()")
+        + "})()"
     )
 
 
@@ -53,7 +49,7 @@ def bar_html(tabs: dict[str, str], active: str) -> str:
             f'<button type="button" style="{style}" onclick="{html.escape(_click_js(kind))}">'
             f"{html.escape(label)}</button>"
         )
-    out.append(f'</div><img src="x:" style="display:none" onerror="{html.escape(_HIDE)}">')
+    out.append("</div>" + hide_tag(PREFIX))
     return "".join(out)
 
 

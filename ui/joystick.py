@@ -4,8 +4,8 @@ on-screen joystick.
 Viser has no joystick widget, so the pad is HTML (``gui.add_html``): its inline
 ``onpointerdown`` handler (inline handlers run; ``<script>`` in innerHTML would not) captures
 the pointer and, while held, writes ``joy:x,y,n`` (x right, y up, both -1..1; n counts up so
-React always sees a change) into the *Joystick* text input every 100 ms, through the native
-value setter + an ``input`` event, which viser sends to the server like typing. Release
+React always sees a change) into the *Joystick* text input every 100 ms (the hidden-input
+bridge, ui.html_bridge). Release
 sends 0,0. The server drives at ``RATE`` Hz while a command is fresh (``STALE_S``: a lost
 release stops the carrier).
 
@@ -24,6 +24,7 @@ import time
 import numpy as np
 import viser
 
+from ui.html_bridge import SETTER, find_js, send_js
 from ui.jog_gizmos import CarrierGizmo
 
 RATE = 10.0
@@ -35,12 +36,12 @@ _VALUE = re.compile(r"^joy:(-?[0-9.]+),(-?[0-9.]+)(?:,\d+)?$")
 
 PAD_JS = (
     "(function(el,ev){var r=el.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,"
-    "R=r.width/2-16,k=el.querySelector('.rso-knob'),inp=[...document.querySelectorAll('input')]"
-    ".find(function(i){return i.value.indexOf('joy:')==0});if(!inp)return;"
+    "R=r.width/2-16,k=el.querySelector('.rso-knob');" + find_js(PREFIX) + "if(!inp)return;"
     "el.setPointerCapture(ev.pointerId);var x=0,y=0,n=0;"
-    "var set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;"
-    "function send(){n++;set.call(inp,'joy:'+x.toFixed(2)+','+y.toFixed(2)+','+n);"
-    "inp.dispatchEvent(new Event('input',{bubbles:true}))}"
+    + SETTER
+    + "function send(){n++;"
+    + send_js("'joy:'+x.toFixed(2)+','+y.toFixed(2)+','+n")
+    + "}"
     "function mv(e){var dx=e.clientX-cx,dy=e.clientY-cy,d=Math.hypot(dx,dy);"
     "if(d>R){dx*=R/d;dy*=R/d}x=dx/R;y=-dy/R;k.style.transform='translate('+dx+'px,'+dy+'px)'}"
     "mv(ev);send();var t=setInterval(send,100);"
