@@ -4,8 +4,13 @@ before the stops are planned.
 Candidate frames:
     rail    the track along the part's long axis, on either side, its line at each **standoff**
             (``d_min`` .. ``d_max`` from the part outline, step ``step``)
-    gantry  the frame turned along or across the part's long axis, centred on the part and moved
-            by ``shift_step`` up to ``shift`` along both axes
+    gantry  over the part: the frame turned along or across the part's long axis, centred on the
+            part and moved by ``shift_step`` up to ``shift`` along both axes (overhead gantries);
+            beside the part (v12 #26: floor gantries): on every side of the part, the X rails
+            along that side or across it, the gantry's nearest body anywhere along its travel
+            (``swept_outline``) at each standoff ``d_min`` .. ``d_max`` from the part outline,
+            moved along the side by ``shift_step`` up to ``shift``
+    current the frame as placed by the user is always a candidate too (``FrameScore.own``)
 each with the robot mount height (``T_mount`` z, the **z range** ``z_lo`` .. ``z_hi`` in ``z_steps``
 values): how high the robot sits on the carriage (rail riser) or how low it hangs (gantry).
 
@@ -61,6 +66,7 @@ class FrameScore:
     reason: str = ""
     base: Base | None = field(default=None, repr=False)
     refined: bool = False  # v10 T18: found by the continuous refinement
+    own: bool = False  # v12 #26: the frame as the user placed it
 
     def key(self) -> tuple:
         return (self.uncovered, self.stops, -self.manip)
@@ -109,6 +115,7 @@ def candidate_frames(base: Base, part_fp, st: FrameSettings) -> list[tuple[Pose,
                 for b in offs:
                     o = centre + a * axis + b * ax
                     out.append(Pose(xyz=(float(o[0]), float(o[1]), z), rpy=(roll, pitch, yaw)))
+        out += beside_frames(base, part_fp, st)  # v12 #26: floor gantries stand next to the part
     else:
         raise ValueError("frame placement is for a rail or a gantry")
     heights = _mount_heights(base, st)
@@ -117,6 +124,49 @@ def candidate_frames(base: Base, part_fp, st: FrameSettings) -> list[tuple[Pose,
         zs = np.linspace(lo, hi, max(1, int(st.beam_steps))) if hi > lo + 1e-9 else [lo]
         out = [p.model_copy(update={"xyz": (p.xyz[0], p.xyz[1], float(z))}) for p in out for z in zs]
     return [(p, h) for p in out for h in heights]
+
+
+def swept_outline(base: Base, resolve=None):
+    """v12 #26: the gantry's floor outline in its own frame (x, y): the fixed bodies and the moving
+    ones (bridge, carriage, riser, lift stage) at the corners of their travel, as one convex hull."""
+    from shapely.geometry import Point
+    from shapely.ops import unary_union
+
+    from core.carrier import Carrier
+
+    c = Carrier(base.model_copy(update={"pose": Pose(xyz=(0.0, 0.0, base.pose.xyz[2]))}), resolve=resolve)
+    polys = [c._hulls(c.static_bodies())]
+    corners = np.array(np.meshgrid(*[list(r) for r in c.bounds], indexing="ij")).reshape(len(c.dofs), -1).T
+    for corner in corners:
+        polys.append(c._hulls(c.moving_bodies(dict(zip(c.dofs, map(float, corner), strict=True)))))
+    hull = unary_union([q for q in polys if q is not None]).convex_hull
+    if hull.is_empty or hull.geom_type != "Polygon":  # no bodies (or a line of them): the origin
+        hull = hull.buffer(1e-3) if not hull.is_empty else Point(0.0, 0.0).buffer(1e-3)
+    return hull
+
+
+def beside_frames(base: Base, part_fp, st: FrameSettings) -> list[Pose]:
+    """v12 #26: gantry frames next to the part: on each side of the part's minimum rectangle, the
+    X rails along that side or across it, the outline's near edge ``d`` from the part outline (d
+    over ``d_min`` .. ``d_max``), moved along the side by ``shift_step`` up to ``shift``."""
+    outline = np.asarray(swept_outline(base).exterior.coords)[:, :2]
+    centre, u, n = _axes(part_fp)
+    pts = np.asarray(part_fp.exterior.coords)[:, :2]
+    z, (roll, pitch) = base.pose.xyz[2], base.pose.rpy[:2]
+    offs = np.arange(-st.shift, st.shift + 1e-9, st.shift_step) if st.shift > 0 else np.array([0.0])
+    out = []
+    for side in (n, -n, u, -u):
+        along = np.array([-side[1], side[0]])
+        half = float(np.max((pts - centre) @ side))
+        for x_axis in (along, side):  # X rails along the side, or across it (towards the part)
+            yaw = float(np.arctan2(x_axis[1], x_axis[0]))
+            R = np.array([[np.cos(yaw), -np.sin(yaw)], [np.sin(yaw), np.cos(yaw)]])
+            near = float(np.min((outline @ R.T) @ side))  # the outline's edge towards the part
+            for d in np.arange(st.d_min, st.d_max + 1e-9, st.step):
+                for a in offs:
+                    o = centre + (half + d - near) * side + a * along
+                    out.append(Pose(xyz=(float(o[0]), float(o[1]), z), rpy=(roll, pitch, yaw)))
+    return out
 
 
 def with_frame(base: Base, pose: Pose, mount_z: float) -> Base:
@@ -300,6 +350,8 @@ def rank_frames(
     from core.feasibility import CancelledError
 
     cands = candidate_frames(base, part_fp, st)
+    own = (base.pose, float(base.T_mount.xyz[2]))  # v12 #26: the user's frame is always scored
+    cands = [own] + [(p, h) for p, h in cands if not _same(p, h, *own)]
     out = []
     cache: dict = {}  # v12 #20: coverage rows by base pose, shared by every frame
     for k, (pose, h) in enumerate(cands):
@@ -307,7 +359,9 @@ def rank_frames(
             raise CancelledError()
         if progress is not None:
             progress(f"frame {k + 1} / {len(cands)}", 0.5 * k / max(len(cands), 1))
-        f = score_frame(with_frame(base, pose, h), rmap, t, part_mesh, T_part, st, resolve, obstacles, cache)
+        b = base if k == 0 else with_frame(base, pose, h)
+        f = score_frame(b, rmap, t, part_mesh, T_part, st, resolve, obstacles, cache)
+        f.own = k == 0
         out.append(f)
     out.sort(key=lambda f: (bool(f.reason), f.key()))
     if st.refine and out and not out[0].reason:  # v10 T18: continuous refinement of the best one
@@ -363,6 +417,14 @@ def refine_frame(f: FrameScore, score, st: FrameSettings, progress=None) -> Fram
     return best
 
 
+def _same(pose: Pose, h: float, other: Pose, h2: float) -> bool:
+    return (
+        np.allclose(pose.xyz, other.xyz, atol=1e-6)
+        and np.allclose(pose.rpy, other.rpy, atol=1e-9)
+        and abs(h - h2) < 1e-6
+    )
+
+
 def pick_top(ranked: list[FrameScore], top: int, min_dist: float) -> list[FrameScore]:
     """The best ``top`` usable frames, skipping one that scores like an already chosen frame and
     stands within ``min_dist`` of it with the same heading (v9 planned two such frames 300 mm apart
@@ -384,6 +446,9 @@ def pick_top(ranked: list[FrameScore], top: int, min_dist: float) -> list[FrameS
             out.append(f)
         if len(out) >= max(1, top):
             break
+    mine = next((f for f in ranked if f.own and not f.reason), None)
+    if mine is not None and all(f is not mine for f in out):  # v12 #26: the user's frame is listed
+        out.append(mine)
     return out
 
 
@@ -393,4 +458,5 @@ def frame_text(f: FrameScore) -> str:
     x, y, z = T[0, 3] * 1000, T[1, 3] * 1000, f.mount_z * 1000
     beam = f", beam z {T[2, 3] * 1000:.0f} mm" if f.base is not None and f.base.carrier == "gantry" else ""
     tag = " (refined)" if f.refined else ""
+    tag += " (your frame)" if f.own else ""
     return f"x {x:.0f}, y {y:.0f} mm, yaw {yaw:.0f}°, mount z {z:.0f} mm{beam}{tag}"

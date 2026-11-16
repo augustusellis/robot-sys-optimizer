@@ -406,3 +406,7 @@ Launch with `scripts/run_app.bat` (Windows, uses the rso env) or `$PY app.py [--
   caches in `rank_frames`.
 - **Item 21:** `CollisionScene.part_clearance_grad`; `traj_opt.smooth_path(clearance_grad=)`.
 - **Items 22-24:** reduced test scenes; tests/test_v12_layers.py; this split of CLAUDE.md.
+- **Items 25-26 (gantry placement testing, 2026-11-16):** `CarrierPanel._fixed_moved` -> `draw()` in
+  `commit` (the fixed bodies were left at the old frame after *Use this frame*);
+  `opt.frame_place.swept_outline` / `beside_frames` (gantries beside the part, both headings,
+  standoff to the swept outline), `FrameScore.own` (the user's frame always scored and listed).

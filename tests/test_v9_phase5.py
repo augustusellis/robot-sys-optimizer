@@ -42,11 +42,13 @@ def test_gantry_candidates_along_and_across():
         T_mount=Pose(xyz=(0, 0, -0.8)),
     )
     c = candidate_frames(base, _fp(), FrameSettings(shift=0.3, shift_step=0.3))
-    assert len(c) == 2 * 3 * 3  # along / across, a 3 x 3 grid of shifts, the current mount height
+    over, beside = c[: 2 * 3 * 3], c[2 * 3 * 3 :]  # v12 #26: then the frames beside the part
+    assert len(over) == 2 * 3 * 3  # along / across, a 3 x 3 grid of shifts, the current mount height
+    assert len(beside) == 4 * 2 * 7 * 3  # 4 sides x 2 headings x 7 standoffs x 3 shifts
     yaws = {round(np.degrees(np.arctan2(*pose_to_matrix(p)[[1, 0], 0])) % 180) for p, _ in c}
     assert yaws == {0, 90}
     assert all(h == pytest.approx(-0.8) for _, h in c)
-    assert max(Point(p.xyz[:2]).distance(Point(0, 0)) for p, _ in c) == pytest.approx(0.3 * np.sqrt(2))
+    assert max(Point(p.xyz[:2]).distance(Point(0, 0)) for p, _ in over) == pytest.approx(0.3 * np.sqrt(2))
 
 
 @pytest.fixture(scope="module")
@@ -71,7 +73,7 @@ def test_place_the_rail_and_use_it(app):
     confirm_all(stations)
     frame.top.value = 2
     frame.start(block=True)
-    assert 1 <= len(frame.rows) <= 2 and "| 1 |" in frame.status.content
+    assert 1 <= len(frame.rows) <= 3 and "| 1 |" in frame.status.content  # top 2 (+ v12: the user's frame)
     best = frame.rows[0]
     assert best["reached"] == len(s.targets.points) and best["plans"]
     assert frame.use_frame(index=0)

@@ -256,12 +256,22 @@ class CarrierPanel:
             msg = err.errors()[0]["msg"] if isinstance(err, ValidationError) else str(err)
             notify(event, "Invalid base settings", msg)
             return False
-        self.s.base = base
+        old, self.s.base = self.s.base, base
         self.editor.sync()  # stretched body sizes
         self.update_visibility()
         self.realign()  # no-op unless the track follows the part
         self.refresh()
+        if self._fixed_moved(old, self.s.base):  # v12 #25: refresh only re-poses moving bodies
+            self.draw()
         return True
+
+    @staticmethod
+    def _fixed_moved(old, new) -> bool:
+        """The frame pose or a fixed body changed (posts, beams, rails must be drawn again)."""
+        if old is None or new.mode != "movable":
+            return True
+        fixed = [p for p in new.bodies if p.attach == "fixed"]
+        return old.pose != new.pose or fixed != [p for p in old.bodies if p.attach == "fixed"]
 
     def _carrier(self, base: Base | None = None):
         from core.carrier import Carrier

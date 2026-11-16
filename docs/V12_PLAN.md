@@ -46,7 +46,7 @@ per task, no push, no `Co-Authored-By`, new test files take viser ports 8983+).
 23. Test: `core/` and `opt/` never import viser or `ui`.
 24. CLAUDE.md slimmed: release history to `docs/HISTORY.md`.
 
-## Phase F: Gantry placement testing feedback (2026-11-16, planned, not started)
+## Phase F: Gantry placement testing feedback (2026-11-16)
 
 From the user's tests of Optimize -> Gantry placement with default settings.
 
@@ -123,4 +123,6 @@ From the user's tests of Optimize -> Gantry placement with default settings.
 | 22 | done, partly | Full fast suite on this branch before item 22: **582 passed, 0 failed, 2102 s** (30 batches of 4 files). Per-test timings of the three slowest batches show app start-up and project loads, not planning, dominate: most test files build their own app (~12 s each) and many load an example (~5 s). `test_work_state.py` now shares one second app between four tests: ~119 -> 84 s. The < 10 min target is **not** reached: it would need one app shared across test files (a session fixture), which the per-batch processes (needed for memory on this PC) prevent. Not done: reduced-scene rewrites of the `slow` tests, renaming test files by feature. |
 | 23 | done (4357a2b) | tests/test_v12_layers.py: ast check of every import + a fresh-interpreter import of all core / opt modules. |
 | 24 | done (07e5c58) | CLAUDE.md 536 -> 205 lines; docs/HISTORY.md. |
+| 25 | done | `CarrierPanel.commit` redraws all bodies when the frame pose or a fixed body changed (`_fixed_moved`). After *Use this frame* (turned + shifted frame) and after a typed frame-pose edit every drawn body is where the model has it (0 mm); both tests fail on v11's code. |
+| 26 | done | `swept_outline`, `beside_frames` (4 sides x 2 headings x standoffs x shifts), the user's frame always scored (`FrameScore.own`, "(your frame)", appended to the planned list when usable). floor_xy_rails (defaults): 281 of 331 frames usable (was 0 of 50); best frame beside the part, rails across the side (x 300, y -3500 mm, yaw -90): **1 station, 77/77, cost 7.32**; the user's frame 2 stations, 77/77, 8.94; whole Gantry placement 65 s. gantry_overhead: same best frame (11.73), the user's frame listed (12.74); scoring 7.1 -> 25.5 s (the beside frames), total 233 s with 3 frames planned. Not done from the plan: sweeping the carriage bodies in `sweep_clear` (each stop's check already rejects stops whose carriage is too close; moves between stops are checked when the paths are built). Not tried in a browser. |
 | 18 | done | Spin DP only where the planned-spin samples have a problem, a joint within 20 deg of its limit on the surface, or an unwinding step; Paths skips the whole spin build when the plan has none. rail_long_part (2 stops): build 7.3 -> 2.6 s, same paths (cycle 83 s, no flags). CRX-30 gantry_overhead (3 stops, `scripts/measure_paths.py`): 188.6 -> 148.2 s (-21 %), 7 of 12 sequences skip the DP, cycle 515 -> 517 s (+2 s), flags and joint margins unchanged. |
