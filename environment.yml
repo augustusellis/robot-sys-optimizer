@@ -16,7 +16,7 @@ dependencies:
   - pyyaml
   - pillow             # PNG snapshots in the HTML report
   - pytest>=8
-  - ruff>=0.8
+  - ruff=0.17.3          # pinned (v12 #12): CI lint must match the local one; CI lints on Linux
   - markdown-it-py>=3   # docs/USER_GUIDE.md -> USER_GUIDE.html (scripts/build_guide.py)
   - pip
   - pip:

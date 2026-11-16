@@ -1,4 +1,4 @@
-# v8 T21: lint and the fast tests on every push / pull request (Windows, the conda env `rso`).
+# v8 T21: lint (Linux, v12) and the fast tests (Windows, the conda env `rso`) on every push / PR.
 # The slow tests (full plans, tool optimizer, paths) and the browser tests run locally:
 #   python scripts/test_batches.py          # everything (~60 min)
 #   python scripts/test_batches.py --e2e    # headless Edge
@@ -10,6 +10,22 @@ on:
   workflow_dispatch:
 
 jobs:
+  # v12 #12: lint on Linux with the pinned ruff (the Windows runner's ruff crashed on 2026-11-15);
+  # no conda env needed for it
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Lint
+        run: |
+          pip install "ruff==$(grep -oP 'ruff=\K[0-9.]+' environment.yml)"
+          ruff check .
+          ruff format --check .
+
   fast:
     runs-on: windows-latest
     timeout-minutes: 60
@@ -31,11 +47,6 @@ jobs:
         with:
           path: cache/reachability
           key: maps-${{ hashFiles('assets/robots/**/spec.yaml', 'opt/reachability.py') }}
-
-      - name: Lint
-        run: |
-          ruff check .
-          ruff format --check .
 
       - name: Guide up to date
         run: python scripts/build_guide.py --check
