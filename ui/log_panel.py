@@ -16,6 +16,7 @@ import time
 
 import viser
 
+from core import app_log
 from ui.plan_ids import key as plan_key
 from ui.report_text import REASONS, _hit_objects, reason_text, unreached_report  # noqa: F401 (re-export)
 
@@ -83,6 +84,7 @@ def log(msg: str, level: str = "info", since: float | None = None) -> None:
     with _lock:
         _entries.append((time.time(), level if level in ICONS else "info", str(msg)))
         del _entries[:-MAX_KEEP]
+    app_log.panel(str(msg), level)  # also into the log file (the real app; a no-op elsewhere)
     if _panel is not None:
         _panel.render()
 

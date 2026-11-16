@@ -86,7 +86,7 @@ def build_app(
     server.scene.add_frame("/world/origin", axes_length=0.2, axes_radius=0.005)
 
     state: dict = {"session": session}
-    dark_toggle, worker_box, guide = build_settings(server, dark, guide_port)
+    dark_toggle, worker_box, guide = build_settings(server, dark, guide_port, session)
     dark_toggle.on_update(lambda e: apply_theme(server, dark_toggle.value))
     state["worker_box"] = worker_box
 
@@ -496,8 +496,11 @@ def main() -> None:
     parser.add_argument("--open", default=None, metavar="FOLDER", help="open this project folder (no popup)")
     args = parser.parse_args()
 
+    from core import app_log
     from ui import jobs
 
+    log_file = app_log.setup(app_version())  # <data>/logs/app.log, for the support bundle
+    print(f"Log file: {log_file}" if log_file else "Log file not written (folder not writable)", flush=True)
     jobs.USE_WORKER = True  # v8 T1: planners run in a worker process in the real app
     from opt.parallel import default_workers
 

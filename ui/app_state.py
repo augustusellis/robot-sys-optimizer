@@ -11,7 +11,7 @@ from ui import settings as ui_settings
 from ui.guide import add_guide_panel
 
 
-def build_settings(server: viser.ViserServer, dark: bool, guide_port: int | None):
+def build_settings(server: viser.ViserServer, dark: bool, guide_port: int | None, session=None):
     """The "Settings & help" folder. Returns (dark checkbox, worker checkbox, guide handle)."""
     with server.gui.add_folder("Settings & help", expand_by_default=False):  # v7: out of the way
         dark_toggle = server.gui.add_checkbox("Dark mode", dark)
@@ -46,7 +46,37 @@ def build_settings(server: viser.ViserServer, dark: bool, guide_port: int | None
         from core.version import app_version
 
         server.gui.add_markdown(f"Version: {app_version()}")
+        bundle_btn = server.gui.add_button(
+            "Save support bundle (zip)",
+            hint="version, system info, the log and the open study's project.json (no part or tool "
+            "files) in one zip to send along with a problem report; nothing is sent anywhere",
+        )
+        bundle_md = server.gui.add_markdown("")
+        bundle_btn.on_click(lambda e: save_bundle(e, session, bundle_md))
     return dark_toggle, worker_box, guide
+
+
+def save_bundle(event, session, info=None):
+    """Write the support bundle (core.support_bundle), offer it as a download and say where it is.
+    Returns its path, or None when it could not be written."""
+    from core.support_bundle import make_bundle
+    from ui import log_panel
+    from ui.widgets import notify
+
+    try:
+        path, data = make_bundle(
+            getattr(session, "project_dir", None) if session is not None else None, log_panel.entries()
+        )
+    except OSError as err:
+        notify(event, "Support bundle", f"could not be written: {err}")
+        return None
+    if info is not None:
+        info.content = f"Saved `{path}`"
+    client = getattr(event, "client", None)
+    if client is not None:
+        client.send_file_download(path.name, data)
+    notify(event, "Support bundle saved", str(path), ok=True)
+    return path
 
 
 def restore_work(state: dict, session) -> None:
