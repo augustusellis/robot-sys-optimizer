@@ -1,4 +1,4 @@
-# CI helper (release.yml): start the built exe, wait for its "ready" line, load the page in headless Edge,
+# CI helper (release.yml on GitHub and GitLab): start the built exe, wait for its "ready" line, load the page in headless Edge,
 # check that the Viser client rendered, then stop the exe. Exits 1 with a message on any failure.
 #   powershell -File packaging\ci_serve_check.ps1 -Exe dist\RobotCellOptimizer\RobotCellOptimizer.exe [-Port 8765]
 # The caller blocks the network (firewall rule) and sets RSO_OFFLINE_GUARD / RSO_DATA; this script only checks.

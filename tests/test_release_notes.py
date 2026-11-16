@@ -49,6 +49,29 @@ def test_notes_without_zip_drop_its_bullet(tmp_path):
     assert "win64.zip" not in text and "{{" not in text
 
 
+def test_changes_are_appended_only_when_given(tmp_path, monkeypatch):
+    rn = _load("rn4", "scripts/release_notes.py")
+    plain = rn.fill(_dist(tmp_path))
+    # GitHub appends its own list: without --changes the text is what it always was
+    assert rn.fill(tmp_path, None, None) == plain == rn.fill(tmp_path, changes="  \n")
+    template = (ROOT / "packaging" / "RELEASE_NOTES.md.in").read_text(encoding="utf-8")
+    assert plain.endswith(template[template.index("## Checksums") :].split("```")[-1])
+    assert "github" not in template.lower() and "gitlab" not in template.lower()  # host-neutral wording
+    text = rn.fill(tmp_path, changes="\n- one (abc1234)\n- two (def5678)\n\n")
+    assert text.startswith(plain.rstrip("\n"))
+    assert text.endswith("## Changes\n\n- one (abc1234)\n- two (def5678)\n")
+    # the command line: --changes FILE, and no flag = the plain text
+    (tmp_path / "c.md").write_text("- one (abc1234)\n", encoding="utf-8")
+    for extra, want in (
+        ([], plain),
+        (["--changes", str(tmp_path / "c.md")], plain.rstrip("\n") + "\n\n- one (abc1234)\n"),
+    ):
+        out = tmp_path / "notes.md"
+        monkeypatch.setattr(sys, "argv", ["release_notes.py", str(tmp_path), *extra, "--out", str(out)])
+        rn.main()
+        assert out.read_text(encoding="utf-8") == want
+
+
 def test_notes_fail_clearly(tmp_path):
     rn = _load("rn3", "scripts/release_notes.py")
     with pytest.raises(SystemExit, match="setup.exe"):

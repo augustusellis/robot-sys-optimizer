@@ -105,6 +105,8 @@ README.md         landing page -> docs/USER_GUIDE.md (user guide)
 packaging/        Windows exe: rso.spec (PyInstaller onedir), launch.py (entry point + --selftest + offline guard),
                   RobotCellOptimizer.iss (Inno Setup, per-user), ci_serve_check.ps1, README.md
 .github/workflows tests.yml (lint, guide check, fast tests on Windows + ubuntu-22.04), release.yml (tag -> exe, zip, setup, draft release)
+.gitlab-ci.yml    GitLab twin of both workflows: variables (runner tags, images) + workflow rules; includes .gitlab/ci/setup.yml
+                  (conda env, caches), tests.yml, release.yml. Change a check on one host, change it on the other.
 environment.yml   conda env `rso` (all dependencies)
 docs/             PROJECT_PLAN.md (the spec)
 scripts/          run_app.bat (Windows launcher); make_examples.py → examples/{rail_long_part,mobile_amr}/project.json;

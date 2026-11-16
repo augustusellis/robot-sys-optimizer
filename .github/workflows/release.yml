@@ -2,6 +2,7 @@
 #   git tag vX.Y.Z && git push origin vX.Y.Z      -> builds and creates a draft release; review it, then publish
 #   Actions -> release -> Run workflow             -> same, draft by default (input `draft`)
 # See packaging/README.md ("Releases from CI").
+# GitLab twin: .gitlab-ci.yml + .gitlab/ci/release.yml. Keep the steps the same on both.
 name: release
 
 on:

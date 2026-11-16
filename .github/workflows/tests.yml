@@ -3,6 +3,7 @@
 # The slow tests (full plans, tool optimizer, paths) and the browser tests run locally:
 #   python scripts/test_batches.py          # everything (~60 min)
 #   python scripts/test_batches.py --e2e    # headless Edge
+# GitLab twin: .gitlab-ci.yml + .gitlab/ci/tests.yml. Keep the checks the same on both.
 name: tests
 
 on:
