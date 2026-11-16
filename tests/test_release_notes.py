@@ -84,6 +84,12 @@ def test_app_version_frozen(tmp_path, monkeypatch):
     version.app_version.cache_clear()
     try:
         assert version.app_version() == "v0.9.0 (16de6e1, 2026-11-15)"
+        # an untagged build's version is the commit hash: it is not repeated
+        (tmp_path / "_version.py").write_text(
+            'VERSION = "55369ce-dirty"\nCOMMIT = "55369ce"\nDATE = "2026-11-15 10:30"\n', encoding="utf-8"
+        )
+        version.app_version.cache_clear()
+        assert version.app_version() == "55369ce-dirty (2026-11-15)"
         (tmp_path / "_version.py").unlink()
         version.app_version.cache_clear()
         assert version.app_version() == "unknown"

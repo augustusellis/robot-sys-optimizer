@@ -35,7 +35,10 @@ def app_version() -> str:
             info = frozen_version()
             if not info.get("VERSION"):
                 return "unknown"
-            extra = [x for x in (info.get("COMMIT"), (info.get("DATE") or "")[:10]) if x]
+            commit = info.get("COMMIT")
+            if commit and info["VERSION"].startswith(commit):  # untagged build: the version is the hash
+                commit = None
+            extra = [x for x in (commit, (info.get("DATE") or "")[:10]) if x]
             return info["VERSION"] + (f" ({', '.join(extra)})" if extra else "")
         out = subprocess.run(
             ["git", "describe", "--tags", "--always", "--dirty"],
