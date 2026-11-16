@@ -53,18 +53,23 @@ BETWEEN = ("direct", "home")  # moves between groups at a stop: planned joint pa
 
 
 from core.path_order import Seq, ordered_sequences, sequences  # noqa: E402,F401 (re-export)
-from core.path_types import ISSUES, PathPlan, PathSample, StationPath  # noqa: E402,F401 (re-export)
+from core.path_types import ISSUES, PathPlan, PathSample, StationPath, TraceOptions  # noqa: E402,F401
 
 
 class _Tracer:
-    def __init__(self, checker: FeasibilityChecker, mesh: trimesh.Trimesh, step: float, jump_deg: float):
+    def __init__(
+        self,
+        checker: FeasibilityChecker,
+        mesh: trimesh.Trimesh,
+        step: float,
+        jump_deg: float,
+        options: TraceOptions | None = None,
+    ):
         self.ch, self.mesh, self.step = checker, mesh, step
         self.jump = np.radians(jump_deg)
         self.batch = getattr(checker.ik, "batch", False)
-        self.park = None  # a clear arm pose (home) to go via when a direct joint move collides
-        self.via_home = False  # between groups at a stop: always via home (``park``)
-        self.smooth = False  # v10 T13: optimise planned joint moves (core.traj_opt)
-        self.smooth_stats: list = []
+        self.opts = options or TraceOptions()  # v12 #15: set once, read only
+        self.smooth_stats: list = []  # output: one entry per smoothed joint move
 
     def tcp_pose(self, r: PointResult) -> np.ndarray:
         """Planned TCP pose in the part frame (from the planned joints, exact)."""
@@ -110,7 +115,7 @@ class _Tracer:
                     break
         if way is None:
             out_a, in_b = [], []
-        elif self.smooth and len(way) > 2:  # v10 T13: smoother, shorter, clear of the part
+        elif self.opts.smooth and len(way) > 2:  # v10 T13: smoother, shorter, clear of the part
             way = smooth_move(self, hit, way, tcp, HOME_STEP)
         qs = out_a + densify(way if way is not None else [qa, qb], HOME_STEP)
         if in_b:
@@ -190,9 +195,9 @@ class _Tracer:
         without one via ``park``, if that is better. ``group`` (a move between groups or a
         configuration change) with ``via_home``: always via home / ``park``."""
         qa, qb = np.asarray(qa, float), np.asarray(qb, float)
-        via = home if home is not None else self.park
+        via = home if home is not None else self.opts.park
         out = None
-        if not (group and self.via_home and via is not None):
+        if not (group and self.opts.via_home and via is not None):
             out = self.joint_move(k, zone, qa, qb, tcp, a, b, at_point)
             if via is None or not _hits(out):
                 return out
@@ -330,10 +335,8 @@ def trace(
     from the travel direction, and samples that cannot follow it are flagged."""
     if between not in BETWEEN:
         raise ValueError(f"between must be one of {BETWEEN}")
-    tr = _Tracer(checker, part_mesh, step, jump_deg)
-    tr.park = home if home is not None else park
-    tr.via_home = between == "home"
-    tr.smooth = smooth
+    opts = TraceOptions(park=home if home is not None else park, via_home=between == "home", smooth=smooth)
+    tr = _Tracer(checker, part_mesh, step, jump_deg, opts)
     seqs = ordered_sequences(  # unzoned stops: one group per joint configuration
         sol,
         results,
@@ -471,11 +474,13 @@ def trace(
                     )
                 )  # fmt: skip
             q_arm = (back or [q])[-1]
-            if tr.park is not None and _drive_hits(
+            if tr.opts.park is not None and _drive_hits(
                 checker, carrier_path(k, stops[idx + 1], q_arm), q_arm, last.tcp
             ):
-                sp.samples += tr.joint_move(k, last.zone, q_arm, tr.park, last.tcp, last.b, 0, (False, False))
-                q_arm = np.asarray(tr.park, float)  # the backed-off pose would hit something on the way
+                sp.samples += tr.joint_move(
+                    k, last.zone, q_arm, tr.opts.park, last.tcp, last.b, 0, (False, False)
+                )
+                q_arm = np.asarray(tr.opts.park, float)  # the backed-off pose would hit something on the way
             checker.set_base(base_poses[k])
             carry = (q_arm, last.tcp, last.b)
         plan.stations.append(sp)

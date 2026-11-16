@@ -7,7 +7,7 @@ import viser
 
 from core.export import station_pose
 from core.feasibility import PointResult
-from core.paths import PathSample, _Tracer, trace
+from core.paths import PathSample, TraceOptions, _Tracer, trace
 from opt.tool_geometry import top_designs
 from tests.helpers import confirm_all
 
@@ -137,7 +137,7 @@ def test_tool_panel_offers_designs_that_miss_points(app):
 
 def test_colliding_surface_move_becomes_a_joint_move():
     tr = _Tracer.__new__(_Tracer)
-    tr.park = None
+    tr.opts = TraceOptions()  # v12 #15: no park pose
     hit = PathSample(0, None, 1, 2, 0.5, np.eye(4), "tcp", np.zeros(6), "collision")
     ok = PathSample(0, None, 1, 2, 1.0, np.eye(4), "tcp", np.zeros(6))
     detour = [PathSample(0, None, 1, 2, 1.0, np.eye(4), "tcp", np.ones(6), kind="home")]

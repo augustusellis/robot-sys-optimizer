@@ -1,4 +1,5 @@
-"""v12 item 14: one chord sampler for the three path builders (core.path_sample).
+"""v12 items 14-15: one chord sampler for the three path builders (core.path_sample), and the
+tracer's options given once (core.path_types.TraceOptions).
 
 Done when ``chord_poses`` gives the v11 samples (pinned against a copy of the old code on the curved
 panel, with and without a lift) and the tracer, the spin optimizer and coordinated motion all use it.
@@ -57,3 +58,18 @@ def test_the_three_builders_use_it():
     for fn in (paths._Tracer.segment, path_spin.segment_poses, coordinated._pass):
         src = inspect.getsource(fn)
         assert "chord_poses" in src and "closest_point" not in src, fn.__qualname__
+
+
+def test_tracer_options_are_given_once():
+    from types import SimpleNamespace
+
+    from core.paths import TraceOptions, _Tracer
+
+    ch = SimpleNamespace(ik=SimpleNamespace(batch=True))
+    tr = _Tracer(ch, None, 0.02, 20.0, TraceOptions(park=np.zeros(6), via_home=True, smooth=True))
+    assert tr.opts.via_home and tr.opts.smooth and tr.opts.park is not None
+    assert _Tracer(ch, None, 0.02, 20.0).opts == TraceOptions()
+    for flag in ("park", "via_home", "smooth"):  # no flags set on the tracer from outside any more
+        assert flag not in vars(tr)
+    src = inspect.getsource(paths.trace)
+    assert "tr.park =" not in src and "tr.smooth =" not in src and "tr.via_home =" not in src

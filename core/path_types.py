@@ -12,6 +12,16 @@ ISSUES = (
 )  # fmt: skip
 
 
+@dataclass(frozen=True)
+class TraceOptions:
+    """How core.paths._Tracer moves between points, given once when it is made (v12 #15; before,
+    ``trace`` set these as flags on the tracer after construction)."""
+
+    park: np.ndarray | None = None  # a clear arm pose (home) to go via when a direct joint move collides
+    via_home: bool = False  # between groups at a stop: always via ``park`` (``between="home"``)
+    smooth: bool = False  # v10 T13: optimise planned joint moves (core.traj_opt)
+
+
 @dataclass
 class PathSample:
     station: int
