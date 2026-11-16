@@ -55,6 +55,15 @@ def worked(tmp_path_factory):
     server.stop()
 
 
+@pytest.fixture(scope="module")
+def second():
+    """A second app the reopen tests load the saved folder into (v12 #22: one for the module, was
+    one per test at ~12 s each)."""
+    server, st = _app(8776)
+    yield server, st
+    server.stop()
+
+
 def test_saved_file_has_the_work_state(worked):
     st, folder, path = worked
     p = schema.load_project(path)
@@ -67,38 +76,33 @@ def test_saved_file_has_the_work_state(worked):
     assert not list(folder.glob("*.tmp"))  # atomic write leaves no temp file
 
 
-def test_reopen_restores_where_left_off(worked):
+def test_reopen_restores_where_left_off(worked, second):
     st, folder, _ = worked
     s0 = st["session"]
-    server, st2 = _app(8776)
-    try:
-        assert st2["project"]._load(None, folder)
-        s, t = st2["session"], st2["targets"]
-        assert np.allclose(s.q, s0.q)  # joint pose, and the sliders show it
-        assert np.allclose([sl.value for sl in st2["cell"].sliders], np.degrees(s0.q))
-        assert np.array_equal(t.selection, st["targets"].selection)
-        assert {k: r.status for k, r in s.feasibility.items()} == {
-            k: r.status for k, r in s0.feasibility.items()
-        }
-        label = s0.results[0].key
-        for pid, r in s0.result_points[label].items():
-            r2 = s.result_points[label][pid]
-            assert r2.status == r.status and (r.q is None or np.allclose(r2.q, r.q))
-        # settings
-        assert t.tools.row.value == 12.0 and t.tools.radius.value == 33.0
-        assert t.color_by.value == "feasibility" and st2["placement"].half.value == 1.7
-        assert st2["dark_toggle"].value is True
-        # results come back with ghosts, and the CSV export works without re-planning
-        res = st2["results"]
-        assert sum(1 for h in res._ghosts if hasattr(h, "update_cfg")) == len(s.results[0].stations)
-        from core import export as ex
+    server, st2 = second
+    assert st2["project"]._load(None, folder)
+    s, t = st2["session"], st2["targets"]
+    assert np.allclose(s.q, s0.q)  # joint pose, and the sliders show it
+    assert np.allclose([sl.value for sl in st2["cell"].sliders], np.degrees(s0.q))
+    assert np.array_equal(t.selection, st["targets"].selection)
+    assert {k: r.status for k, r in s.feasibility.items()} == {k: r.status for k, r in s0.feasibility.items()}
+    label = s0.results[0].key
+    for pid, r in s0.result_points[label].items():
+        r2 = s.result_points[label][pid]
+        assert r2.status == r.status and (r.q is None or np.allclose(r2.q, r.q))
+    # settings
+    assert t.tools.row.value == 12.0 and t.tools.radius.value == 33.0
+    assert t.color_by.value == "feasibility" and st2["placement"].half.value == 1.7
+    assert st2["dark_toggle"].value is True
+    # results come back with ghosts, and the CSV export works without re-planning
+    res = st2["results"]
+    assert sum(1 for h in res._ghosts if hasattr(h, "update_cfg")) == len(s.results[0].stations)
+    from core import export as ex
 
-        rows = ex.tcp_rows(
-            s.results[0], s.result_points[label], s.targets, s.robot, s.tool_model, s.base, s.T_world_base
-        )
-        assert sum(r["status"] != "unreachable" for r in rows) == len(s.results[0].assignment)
-    finally:
-        server.stop()
+    rows = ex.tcp_rows(
+        s.results[0], s.result_points[label], s.targets, s.robot, s.tool_model, s.base, s.T_world_base
+    )
+    assert sum(r["status"] != "unreachable" for r in rows) == len(s.results[0].assignment)
 
 
 def test_autosave(worked, tmp_path):
@@ -132,20 +136,17 @@ def test_remember_last_project(tmp_path, monkeypatch):
     assert session_mod.last_project() == job.resolve()
 
 
-def test_panel_records_last_project_only_when_asked(tmp_path, monkeypatch):
+def test_panel_records_last_project_only_when_asked(tmp_path, monkeypatch, second):
     from ui.project_panel import ProjectPanel
 
     monkeypatch.setattr(session_mod, "LAST_PROJECT", tmp_path / "last.txt")
     monkeypatch.setattr("ui.project_panel.remember_last", session_mod.remember_last)
-    server, st = _app(8778)
-    try:
-        st["project"].save_now(tmp_path / "a")
-        assert not (tmp_path / "last.txt").exists()  # tests / scripts: off
-        p = ProjectPanel(server, st["session"], on_loaded=lambda: None, remember=True)
-        p.save_now(tmp_path / "b")
-        assert session_mod.last_project() == (tmp_path / "b").resolve()
-    finally:
-        server.stop()
+    server, st = second
+    st["project"].save_now(tmp_path / "a")
+    assert not (tmp_path / "last.txt").exists()  # tests / scripts: off
+    p = ProjectPanel(server, st["session"], on_loaded=lambda: None, remember=True)
+    p.save_now(tmp_path / "b")
+    assert session_mod.last_project() == (tmp_path / "b").resolve()
 
 
 def test_old_project_without_work_still_loads():
@@ -155,42 +156,36 @@ def test_old_project_without_work_still_loads():
     assert p.work == schema.WorkState()
 
 
-def test_settings_apply_skips_bad_values():
+def test_settings_apply_skips_bad_values(second):
     from ui import settings
 
-    server, st = _app(8779)
-    try:
-        t = st["targets"]
-        done = settings.apply(
-            st,
-            {
-                "targets.method": "no such method",  # not an option
-                "targets.spacing": "ten",  # wrong type
-                "targets.direction": [1.0, 2.0],  # wrong length
-                "targets.tools.col": 40.0,  # fine
-                "unknown.key": 1,
-            },
-        )
-        assert done == ["targets.tools.col"] and t.tools.col.value == 40.0
-        assert t.method.value != "no such method"
-    finally:
-        server.stop()
+    _, st = second
+    t = st["targets"]
+    done = settings.apply(
+        st,
+        {
+            "targets.method": "no such method",  # not an option
+            "targets.spacing": "ten",  # wrong type
+            "targets.direction": [1.0, 2.0],  # wrong length
+            "targets.tools.col": 40.0,  # fine
+            "unknown.key": 1,
+        },
+    )
+    assert done == ["targets.tools.col"] and t.tools.col.value == 40.0
+    assert t.method.value != "no such method"
 
 
-def test_selection_not_restored_on_a_different_mesh(worked):
+def test_selection_not_restored_on_a_different_mesh(worked, second):
     st, folder, _ = worked
-    server, st2 = _app(8780)
-    try:
-        s = st2["session"]
-        st2["project"]._load(None, folder)
-        assert len(st2["targets"].selection) > 0  # restored on the same mesh
-        s.selection = ("assets/parts/other.stl", [0, 1, 2])  # saved on a different mesh
-        st2["targets"].selection = np.zeros(0, int)
-        st2["project"].on_loaded()  # runs the restore step again
-        assert len(st2["targets"].selection) == 0  # not applied to the wrong mesh
-        s.selection = (s.part.mesh_path, [10**9])  # index past the mesh: ignored, no crash
-        st2["project"].on_loaded()
-        assert len(st2["targets"].selection) == 0
-        assert tg.as_arrays(s.targets)[1].shape[1] == 3
-    finally:
-        server.stop()
+    _, st2 = second
+    s = st2["session"]
+    st2["project"]._load(None, folder)
+    assert len(st2["targets"].selection) > 0  # restored on the same mesh
+    s.selection = ("assets/parts/other.stl", [0, 1, 2])  # saved on a different mesh
+    st2["targets"].selection = np.zeros(0, int)
+    st2["project"].on_loaded()  # runs the restore step again
+    assert len(st2["targets"].selection) == 0  # not applied to the wrong mesh
+    s.selection = (s.part.mesh_path, [10**9])  # index past the mesh: ignored, no crash
+    st2["project"].on_loaded()
+    assert len(st2["targets"].selection) == 0
+    assert tg.as_arrays(s.targets)[1].shape[1] == 3
