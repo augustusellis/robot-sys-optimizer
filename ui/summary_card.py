@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import math
 
+from ui.plan_ids import key as plan_key
+
 PLANNERS = {
     "cost": "Station planner (cost based)",
     "quick": "Quick station plan",
@@ -23,7 +25,7 @@ def card(s, sol) -> str:
     if sol is None:
         return ""
     n = len(s.targets.points)
-    res = s.result_points.get(sol.label, {})
+    res = s.result_points.get(plan_key(sol), {})
     ok = [r for r in res.values() if r.status != "unreachable" and r.q is not None]
     groups = str(len(sol.zones)) if sol.zones else "— (best per point)"
     clear = [r.clearance for r in ok if r.clearance is not None and math.isfinite(r.clearance)]

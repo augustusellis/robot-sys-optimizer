@@ -33,7 +33,7 @@ def _plan(app, zoning: bool):
     sol = min(s.results, key=lambda r: (len(r.unreached), r.cost))
     assert not sol.unreached
     app["results"].choice.value = next(o for o in app["results"].choice.options if sol.label in o)
-    return s, sol, s.result_points[sol.label]
+    return s, sol, s.result_points[sol.key]
 
 
 def _trace(app, s, sol, res, **kw):

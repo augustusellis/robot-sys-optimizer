@@ -73,7 +73,7 @@ def test_mobile_plans_have_one_area_per_stop(app):
     for sol in s.results:
         assert not sol.unreached and not sol.split_stops
         assert _pieces(s, sol) == [1] * len(sol.stations)
-        res = s.result_points[sol.label]
+        res = s.result_points[sol.key]
         assert all(res[p].q is not None for p in sol.assignment)  # every moved point has its joints
     # the colour layer: one painted mesh per stop, in the station colours, on the part
     from ui.results import STATION_COLORS

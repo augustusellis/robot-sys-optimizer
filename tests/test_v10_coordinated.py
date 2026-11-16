@@ -59,7 +59,7 @@ def test_rail_both_ways_cycle_times_compared():
             out[m] = (dict(sim.cycle), sim.plan)
         (cu, _), (cc, pc) = out[MOTION[0]], out[MOTION[1]]
         assert sum(pc.counts().values()) == 0  # coordinated paths are clean
-        reached = {p for p, r in s.result_points[sol.label].items() if r.status != "unreachable"}
+        reached = {p for p, r in s.result_points[sol.key].items() if r.status != "unreachable"}
         assert {x.b for x in pc.samples if not x.kind} >= reached  # every reached point visited
         sv = [x.carrier["s"] for x in pc.samples if not x.kind]
         lo, hi = s.carrier().bounds[0]

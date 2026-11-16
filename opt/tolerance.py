@@ -53,6 +53,7 @@ class ToleranceResult:
     all_reached: float = 0.0  # fraction of samples in which every planned point was reached
     unplanned: list[int] = field(default_factory=list)  # unreached in the plan itself: not tested
     lost: list[int] = field(default_factory=list)  # per sample: planned points not reached (v8 T12)
+    key: str = ""  # v12 #8: the plan's key (Solution.key)
 
     def worst(self, n: int = 10) -> list[PointTolerance]:
         return sorted(self.points.values(), key=lambda p: (p.rate, p.fail_mm or np.inf))[:n]
@@ -97,7 +98,7 @@ def tolerance_check(
         for pid, k in sol.assignment.items()
         if int(pid) in index and getattr(results.get(int(pid)), "status", "unreachable") != "unreachable"
     }
-    out = ToleranceResult(sol.label, st)
+    out = ToleranceResult(sol.label, st, key=sol.key)
     out.unplanned = sorted(int(p) for p in index if p not in planned)
     T_stop = [np.asarray(T, float) for T in T_stops]
     centre = t.P_world.mean(axis=0) if len(t.P_world) else T_part0[:3, 3]

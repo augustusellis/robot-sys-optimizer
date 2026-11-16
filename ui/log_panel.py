@@ -17,6 +17,8 @@ from collections import Counter
 
 import viser
 
+from ui.plan_ids import key as plan_key
+
 ICONS = {"error": "✘", "warn": "⚠", "done": "✔", "info": "•"}
 # row colours per level (light theme, dark theme), v7 round 2 T7
 COLORS = {
@@ -204,6 +206,6 @@ def plan_log(
         "warn" if cancelled else "done",
         since,
     )
-    msg = unreached_report(s.result_points.get(best.label, {}), best.unreached, best.label)
+    msg = unreached_report(s.result_points.get(plan_key(best), {}), best.unreached, best.label)
     if msg:
         log(msg, "warn")

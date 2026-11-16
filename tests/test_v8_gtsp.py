@@ -46,7 +46,7 @@ def test_examples_order_with_less_joint_motion_and_clean_paths():
             confirm_all(app["stations"])
             app["stations"].start(block=True, quick=True)
             sol = s.results[0]
-            res = s.result_points[sol.label]
+            res = s.result_points[sol.key]
             pts = {p.id: (np.array(p.p, float), np.array(p.n, float)) for p in s.targets.points}
             ik = make_ik(s.robot)
             label = lambda r, ik=ik: config_label(ik, np.asarray(r.q, float))  # noqa: E731

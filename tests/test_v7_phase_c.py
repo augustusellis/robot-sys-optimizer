@@ -156,7 +156,7 @@ def test_quick_plan_full_coverage_and_fast(app):
     assert s.results and all(r.label.startswith("Quick: ") for r in s.results)
     best = min(s.results, key=lambda r: (len(r.unreached), r.cost))
     assert not best.unreached and len(best.assignment) == len(s.targets.points)
-    assert best.label in s.result_points and not best.zones
+    assert best.key in s.result_points and not best.zones
     assert "not optimized" in st.quick_status.content
     t0 = time.monotonic()
     st.start(block=True)
@@ -177,7 +177,7 @@ def _rules(app, objective, pct=5.0):
     st.start(block=True)
     assert len(s.results) == 1, st.status.content
     sol = s.results[0]
-    return sol, s.result_points[sol.label]
+    return sol, s.result_points[sol.key]
 
 
 @pytest.mark.slow

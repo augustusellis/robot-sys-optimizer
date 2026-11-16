@@ -327,7 +327,7 @@ def test_summary_card_and_inspect_in_results(app):
         for k, i in enumerate(ids[1:])
     }
     res[ids[0]] = PointResult(ids[0], "unreachable", "singular")
-    s.result_points[sol.label] = res
+    s.result_points[sol.key] = res
     s.max_manip = 0.6
     md = card(s, sol)
     assert "| Stations | **2** | Groups | **1** |" in md

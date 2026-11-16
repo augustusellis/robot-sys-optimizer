@@ -85,7 +85,7 @@ def test_two_tip_tool_plans_with_both_maps_and_part_family(tmp_path):
         st = app["stations"]
         confirm_all(st)
         st.start(block=True, quick=True)
-        res = s.result_points[s.results[0].label]
+        res = s.result_points[s.results[0].key]
         used = {r.tcp for r in res.values() if r.status != "unreachable"}
         assert used <= {tip.name, "tip2"} and used
         # the tool optimizer on the family: the other part's cost is added

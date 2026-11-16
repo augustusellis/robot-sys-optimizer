@@ -14,6 +14,7 @@ from collections.abc import Callable
 from html import escape
 
 from opt.pareto import OBJECTIVES, measures
+from ui.plan_ids import key as plan_key
 
 DOT = "#3d6fc4"
 PICKED = "#e8762c"
@@ -179,7 +180,7 @@ class ParetoView:
         kx, ky = key[self.x.value], key[self.y.value]
         pts = []
         for sol in plans:
-            m = measures(sol, self.s.result_points.get(sol.label, {}), self.tool_length(sol))
+            m = measures(sol, self.s.result_points.get(plan_key(sol), {}), self.tool_length(sol))
             pts.append((self.number(sol), m[kx], m[ky]))
         cur = self.picked()
         picked = self.number(cur) if cur is not None and cur.label.startswith("Pareto ") else None

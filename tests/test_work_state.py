@@ -62,7 +62,7 @@ def test_saved_file_has_the_work_state(worked):
     assert len(w.q) == 6 and np.allclose(w.q, np.radians([10, -80, 70, -80, -90, 15]))
     assert w.selection and w.selection_mesh == st["session"].part.mesh_path
     assert len(w.feasibility) == len(p.targets.points) > 0
-    assert set(w.result_points) == {sol.label for sol in p.results}
+    assert set(w.result_points) == {sol.key for sol in p.results}
     assert w.ui["targets.tools.row"] == 12.0 and w.ui["app.dark"] is True
     assert not list(folder.glob("*.tmp"))  # atomic write leaves no temp file
 
@@ -80,7 +80,7 @@ def test_reopen_restores_where_left_off(worked):
         assert {k: r.status for k, r in s.feasibility.items()} == {
             k: r.status for k, r in s0.feasibility.items()
         }
-        label = s0.results[0].label
+        label = s0.results[0].key
         for pid, r in s0.result_points[label].items():
             r2 = s.result_points[label][pid]
             assert r2.status == r.status and (r.q is None or np.allclose(r2.q, r.q))

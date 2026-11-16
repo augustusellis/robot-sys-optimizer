@@ -14,6 +14,7 @@ import json
 import numpy as np
 
 from ui.fingerprint import content
+from ui.plan_ids import key as plan_key
 
 COMPONENTS = ("robot", "carrier", "tool", "part", "targets", "stayout", "collision")
 LABELS = {
@@ -152,7 +153,7 @@ def changed(old: dict | None, new: dict) -> list[str]:
 def solution_changes(s, sol) -> list[str]:
     """What changed since solution ``sol`` was computed ([] = up to date or unknown)."""
     kind = "tool" if getattr(sol, "tool_values", None) is not None else "plan"
-    return changed(s.stamps.get(sol.label), stamp_for(s, kind))
+    return changed(s.stamps.get(plan_key(sol)), stamp_for(s, kind))
 
 
 def feasibility_changes(s) -> list[str]:
@@ -180,7 +181,7 @@ def clearing_changes(s, sol) -> list[str]:
     """The components among ``CLEARS`` that changed since ``sol`` was computed (its plan no
     longer applies: the part moved, the tool or the targets changed); [] = keep it."""
     kind = "tool" if getattr(sol, "tool_values", None) is not None else "plan"
-    old, new = s.stamps.get(sol.label), stamp_for(s, kind)
+    old, new = s.stamps.get(plan_key(sol)), stamp_for(s, kind)
     if not old:
         return []
     return [LABELS[k] for k in CLEARS if k in old and old[k] != new.get(k)]
@@ -191,17 +192,17 @@ def drop_stale_results(s, fresh: set[str]) -> dict[str, list[str]]:
     changed after they were seen up to date. ``fresh`` (kept by the caller between calls)
     collects the labels seen up to date: results that load already out of date (e.g. saved
     by an older version) are only flagged, never removed. Returns {label: what changed}."""
-    gone = {}
+    gone, labels = {}, {}  # v12 #8: by plan key; the caller gets labels to show
     for sol in list(s.results):
-        c = clearing_changes(s, sol)
+        c, k = clearing_changes(s, sol), plan_key(sol)
         if not c:
-            fresh.add(sol.label)
-        elif sol.label in fresh:
-            gone[sol.label] = c
+            fresh.add(k)
+        elif k in fresh:
+            gone[k], labels[sol.label] = c, c
     if gone:
-        s.results = [r for r in s.results if r.label not in gone]
-        for label in gone:
-            s.result_points.pop(label, None)
-            s.stamps.pop(label, None)
-            fresh.discard(label)
-    return gone
+        s.results = [r for r in s.results if plan_key(r) not in gone]
+        for k in gone:
+            s.result_points.pop(k, None)
+            s.stamps.pop(k, None)
+            fresh.discard(k)
+    return labels

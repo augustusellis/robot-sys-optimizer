@@ -224,7 +224,7 @@ def test_gui_zoning_option_results_and_save(tmp_path):
         stations.start(block=True)
         sol = s.results[0]
         assert sol.zones and "Zones" in st["results"].summary.content
-        res = s.result_points[sol.label]
+        res = s.result_points[sol.key]
         assert all(res[p].config and res[p].zone is not None for p in sol.assignment)
         t.color_by.value = "zone"  # colours from the selected solution's zones
         t.color_by.value = "configuration"
@@ -232,7 +232,7 @@ def test_gui_zoning_option_results_and_save(tmp_path):
         s2 = Session()
         load_project(s2, tmp_path)
         assert s2.results[0].zones == sol.zones
-        r2 = s2.result_points[sol.label]
+        r2 = s2.result_points[sol.key]
         assert all(r2[p].zone == res[p].zone and r2[p].config == res[p].config for p in sol.assignment)
     finally:
         server.stop()

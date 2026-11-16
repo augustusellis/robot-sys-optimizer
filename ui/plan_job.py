@@ -394,4 +394,4 @@ def edge_job(payload: dict, emit, cancelled):
         lambda f: say(f"checking {len(pts)} edge points", f),
         pool=checker.pool,
     )
-    return ec.EdgeResult(sol.label, pts, gaps, h)
+    return ec.EdgeResult(sol.label, pts, gaps, h, key=sol.key)

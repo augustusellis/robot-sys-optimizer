@@ -21,6 +21,7 @@ import viser
 from core.feasibility import CancelledError
 from opt.frame_place import FrameSettings, frame_text
 from ui.log_panel import log
+from ui.plan_ids import give_ids, key
 from ui.widgets import notify
 
 
@@ -89,6 +90,7 @@ def frame_job(payload: dict, emit, cancelled) -> list[dict]:
         out = station_job({"session": s, "spec": {**sub, "rules": None}}, collect, cancelled)
         best = out["best"]
         plans = sorted(sols.values(), key=lambda sr: (bool(sr[0].violations), sr[0].cost))
+        give_ids([sol for sol, _ in plans])  # v12 #8
         stamp = stamp_for(s, "plan")
         rows.append(
             {
@@ -101,7 +103,7 @@ def frame_job(payload: dict, emit, cancelled) -> list[dict]:
                 "cost": best.cost if best is not None else None,
                 "cycle_s": best.cycle_s if best is not None else None,
                 "plans": plans,
-                "stamps": {sol.label: dict(stamp) for sol, _ in plans},
+                "stamps": {key(sol): dict(stamp) for sol, _ in plans},
             }
         )
     rows.sort(key=lambda r: (r["cost"] is None, r["cost"] if r["cost"] is not None else 0.0))
@@ -371,7 +373,7 @@ class FramePanel:
             # v11 #2: the bridge / carriage (and the robot) shown on the moved frame, at the first stop
             self.carrier.set_values(dict(best.stations[0].carrier))
         s.results = [sol for sol, _ in r["plans"]]
-        s.result_points = {sol.label: dict(res) for sol, res in r["plans"]}
+        s.result_points = {key(sol): dict(res) for sol, res in r["plans"]}
         s.stamps = {**{k: v for k, v in s.stamps.items() if k == "feasibility"}, **r["stamps"]}
         self.on_results()
         log(f"Carrier frame placed: {r['frame']} ({len(s.results)} plan(s) in Results).", "done")

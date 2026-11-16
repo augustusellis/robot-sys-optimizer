@@ -68,7 +68,7 @@ def test_dense_targets_plan_on_a_subsample_and_verify_all(app, monkeypatch):
     assert sizes and max(sizes) <= 150 and max(sizes) < n  # the coarse search
     best = min(s.results, key=lambda r: (len(r.unreached), r.cost))
     assert not best.unreached and len(best.assignment) == n  # every point verified exactly
-    res = s.result_points[best.label]
+    res = s.result_points[best.key]
     assert all(res[p].q is not None for p in best.assignment)
     # ghosts are re-posed, not rebuilt, when the Results tab redraws
     r = app["results"]

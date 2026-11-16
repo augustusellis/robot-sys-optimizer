@@ -34,7 +34,7 @@ def test_compared_plans_are_kept(compared):
     s = compared["session"]
     assert set(s.compared) == {"ur10e", "ur20 (project)"}  # v10 T22: the project's row (no plans)
     c = s.compared["ur10e"]
-    assert c["results"] and set(c["points"]) == {sol.label for sol in c["results"]}
+    assert c["results"] and set(c["points"]) == {sol.key for sol in c["results"]}
     assert c["metrics"]["label"] == c["results"][0].label  # the best plan first, as in Results
     assert all("robot" in st for st in c["stamps"].values())
     assert "plans" not in compared["compare"].rows[0]  # the table rows stay small
@@ -73,7 +73,7 @@ def test_use_a_compared_robot(compared):
     view.confirm_use(E)  # no browser client: no dialog
     assert s.robot_name == "ur10e" and s.view_stash is None
     assert s.snapshot().robot.name == "ur10e"
-    assert s.results and s.results[0].label in s.compared["ur10e"]["points"]
+    assert s.results and s.results[0].key in s.compared["ur10e"]["points"]
 
 
 def test_compared_robots_are_saved(compared, tmp_path):
@@ -82,7 +82,7 @@ def test_compared_robots_are_saved(compared, tmp_path):
     assert project._load(E, tmp_path / "study")
     assert set(s.compared) == {"ur10e", "ur20 (project)"} and s.compared["ur10e"]["results"]
     pts = s.compared["ur10e"]["points"]
-    label = s.compared["ur10e"]["results"][0].label
+    label = s.compared["ur10e"]["results"][0].key
     assert pts[label] and next(iter(pts[label].values())).q is not None
 
 

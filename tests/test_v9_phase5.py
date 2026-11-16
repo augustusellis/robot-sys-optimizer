@@ -77,4 +77,4 @@ def test_place_the_rail_and_use_it(app):
     assert frame.use_frame(index=0)
     assert s.base.pose == best["base"].pose and not s.base.align_to_part
     assert s.results and solution_changes(s, s.results[0]) == []  # its plans, up to date
-    assert s.results[0].label in s.result_points
+    assert s.results[0].key in s.result_points

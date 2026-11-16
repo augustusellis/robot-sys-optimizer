@@ -65,7 +65,7 @@ def test_large_offsets_lose_points_and_report_them(app):
     s = app["session"]
     sol = app["results"].selected()
     st = ToleranceSettings(part_mm=800.0, part_deg=10.0, station_mm=300.0, samples=12, seed=3)
-    spec = {"sol": sol, "results": s.result_points[sol.label], "settings": st, "workers": 1}
+    spec = {"sol": sol, "results": s.result_points[sol.key], "settings": st, "workers": 1}
     r = tolerance_job({"session": s, "spec": spec}, lambda k, d: None, lambda: False)
     rates = [p.rate for p in r.points.values()]
     assert min(rates) < 1.0 and r.all_reached < 1.0

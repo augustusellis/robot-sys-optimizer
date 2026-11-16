@@ -365,12 +365,19 @@ class ToolOptPanel:
             )
             log(f"Tool optimization finished: {r.message}.", "done", getattr(self, "_t0", None))
         run_s = round(time.monotonic() - self._t0, 1) if hasattr(self, "_t0") else None
+        from ui.plan_ids import give_ids, key
+
+        labels = {d.solution.label for d in ds}
+        keep = [x for x in self.s.results if x.label not in labels]  # a new run replaces its designs
+        for x in self.s.results if ds else []:
+            if x.label in labels:
+                self.s.stamps.pop(key(x), None)
+                self.s.result_points.pop(key(x), None)
+        give_ids([d.solution for d in ds], keep)  # v12 #8: designs copied from one plan get own ids
         for d in ds:  # every offered design is a result to inspect / build paths for
             d.solution.planner, d.solution.run_s = "tool", run_s  # the Results summary card
-            self.s.stamps[d.solution.label] = self._stamp
-            self.s.result_points[d.solution.label] = d.point_results
+            self.s.stamps[key(d.solution)] = self._stamp
+            self.s.result_points[key(d.solution)] = d.point_results
         if ds:
-            labels = {d.solution.label for d in ds}
-            keep = [x for x in self.s.results if x.label not in labels]
             self.s.results = sorted([*keep, *(d.solution for d in ds)], key=lambda x: x.cost)
             self.on_solution()

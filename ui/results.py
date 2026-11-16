@@ -12,6 +12,7 @@ from viser.extras import ViserUrdf
 
 from core import targets as tg
 from core.transforms import make_T, matrix_to_wxyz, rpy_to_matrix
+from ui.plan_ids import key as plan_key
 from ui.robot_view import quiet_remove
 from ui.session import Session
 
@@ -148,7 +149,7 @@ class ResultsTab:
             self.move_carrier(st.carrier)
         else:
             self.set_base(station_T(st, self.s))
-        res = self.s.result_points.get(sol.label, {})
+        res = self.s.result_points.get(plan_key(sol), {})
         order = [p for z in sol.zones if z.station == k for p in z.points]
         order += sorted(p for p, s in sol.assignment.items() if s == k)
         for pid in order:
@@ -160,7 +161,7 @@ class ResultsTab:
     def go_to_point(self, sol, pid: int) -> None:
         """Robot (carrier, base, arm) to point ``pid`` as solved in ``sol``."""
         k = sol.assignment.get(pid)
-        r = self.s.result_points.get(sol.label, {}).get(pid)
+        r = self.s.result_points.get(plan_key(sol), {}).get(pid)
         if k is not None:
             self.go_to_station(sol, k)
         if r is not None and r.q is not None and self.set_q is not None:
@@ -214,7 +215,7 @@ class ResultsTab:
         from core.ik import make_ik
 
         robot = self.s.robot
-        res = self.s.result_points.get(sol.label, {})
+        res = self.s.result_points.get(plan_key(sol), {})
         if robot is None or not res:
             return {}
         if getattr(self, "_ik_for", None) is not robot:
@@ -290,7 +291,7 @@ class ResultsTab:
         Tp = self.s.part.T_world_part if self.s.part else np.eye(4)
         Pw = P @ Tp[:3, :3].T + Tp[:3, 3] if len(P) else P
         where = {int(i): k for k, i in enumerate(ids)}
-        res = self.s.result_points.get(sol.label, {})
+        res = self.s.result_points.get(plan_key(sol), {})
         for k, st in enumerate(sol.stations):
             T = station_T(st, self.s)
             color = STATION_COLORS[k % len(STATION_COLORS)]

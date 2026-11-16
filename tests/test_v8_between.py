@@ -39,7 +39,7 @@ def rail():
     confirm_all(stp)
     stp.start(block=True)
     sol = min(s.results, key=lambda r: (len(r.unreached), r.cost))
-    yield app, s, sol, s.result_points[sol.label]
+    yield app, s, sol, s.result_points[sol.key]
     server.stop()
 
 

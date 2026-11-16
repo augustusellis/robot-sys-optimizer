@@ -217,6 +217,7 @@ class Session:
 
     def work_state(self, overrides: dict | None = None) -> schema.WorkState:
         from core.feasibility import result_to_data
+        from ui.plan_ids import key as plan_key
 
         o = overrides or {}
         q, results = o.get("q", self.q), o.get("results", self.results)
@@ -230,13 +231,13 @@ class Session:
             result_points={
                 label: [result_to_data(r) for r in pts.values()]
                 for label, pts in result_points.items()
-                if label in {sol.label for sol in results}
+                if label in {plan_key(sol) for sol in results}
             },
             ui=dict(self.ui),
             stamps={
                 k: dict(v)
                 for k, v in stamps.items()
-                if k == "feasibility" or k in {sol.label for sol in results}
+                if k == "feasibility" or k in {plan_key(sol) for sol in results}
             },
             steps={k: dict(v) for k, v in self.steps.items()},
         )
@@ -354,12 +355,13 @@ class Session:
 
     def _apply_work(self, w: schema.WorkState) -> None:
         from core.feasibility import result_from_data
+        from ui.plan_ids import key as plan_key
 
         if w.q is not None and self.robot is not None and len(w.q) == self.robot.nq:
             self.q = np.clip(np.array(w.q, float), self.robot.lower, self.robot.upper)
         ids = {p.id for p in self.targets.points}
         self.feasibility = {d.id: result_from_data(d) for d in w.feasibility if d.id in ids}
-        labels = {sol.label for sol in self.results}
+        labels = {plan_key(sol) for sol in self.results}  # v12 #8: ids (labels before v12)
         self.result_points = {
             label: {d.id: result_from_data(d) for d in pts}
             for label, pts in w.result_points.items()

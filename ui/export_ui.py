@@ -14,6 +14,7 @@ import viser
 from core import export as ex
 from core.report import ReportInput, build_report, png_data_uri
 from core.robot import Robot
+from ui.plan_ids import key as plan_key
 from ui.session import Session
 from ui.widgets import notify
 
@@ -131,7 +132,7 @@ class ExportPanel:
             raise ValueError("no robot in this study (tab 1 Robot & cell)")
         return ex.tcp_rows(
             sol,
-            s.result_points.get(sol.label, {}),
+            s.result_points.get(plan_key(sol), {}),
             s.targets,
             Robot(s.robot.spec),
             self._tool(sol),
@@ -170,7 +171,7 @@ class ExportPanel:
         s, sim = self.s, getattr(self, "sim", None)
         if s.robot is None or s.part is None or s.tool_model is None:
             raise ValueError("needs a robot, a tool and a part")
-        if sim is None or sim.plan is None or sim.label != sol.label or not sim.plan.samples:
+        if sim is None or sim.plan is None or sim.key != plan_key(sol) or not sim.plan.samples:
             raise ValueError("build the paths of this plan first (Results -> Paths & simulation)")
         fmt = PROGRAM_FORMATS[self.prog_format.value] or default_format(
             s.robot_name or "", s.robot.spec.frame_convention
@@ -241,7 +242,7 @@ class ExportPanel:
         if (
             sim is not None
             and sim.plan is not None
-            and sim.label == sol.label
+            and sim.key == plan_key(sol)
             and getattr(sim, "cycle", None)
         ):
             c = sim.cycle
@@ -265,7 +266,7 @@ class ExportPanel:
 
             out.append(("Gantry placement", gantry_placement(s, frame.rows)))
         tol = getattr(s, "tolerance", None)
-        if tol is not None and tol.label == sol.label:
+        if tol is not None and (tol.key or tol.label) == plan_key(sol):
             from ui.tolerance_ui import summary
 
             out.append(("Tolerance check", md_html(summary(tol))))
@@ -274,7 +275,7 @@ class ExportPanel:
         fit = report_md(s)  # v10 T12: points the tool cannot fit
         if fit:
             out.append(("Tool fit", md_html(fit)))
-        msg = unreached_report(s.result_points.get(sol.label, {}), sol.unreached, sol.label)
+        msg = unreached_report(s.result_points.get(plan_key(sol), {}), sol.unreached, sol.label)
         out.append(("Unreached points", md_html(msg) if msg else "<p>Every point is reached.</p>"))
         return out
 
@@ -302,10 +303,10 @@ class ExportPanel:
                 notes.append(f"3D snapshot not included ({type(err).__name__}).")
         # per-point notes (if any) go into the report
         flagged = sorted(
-            {n for r in s.result_points.get(sol.label, {}).values() for n in getattr(r, "notes", [])}
+            {n for r in s.result_points.get(plan_key(sol), {}).values() for n in getattr(r, "notes", [])}
         )
         notes += flagged
-        if not s.result_points.get(sol.label):
+        if not s.result_points.get(plan_key(sol)):
             notes.append(
                 "Per-point joint solutions are not stored for this solution (loaded from a project): "
                 "re-run the plan for the full point table."

@@ -121,7 +121,7 @@ def test_move_robot_to_station_moves_carrier(planned):
         assert v[d] == pytest.approx(sol.stations[k].carrier[d], abs=1e-6)
     assert np.allclose(s.T_world_base, c.T_world_base(v), atol=1e-9)
     # the arm shows the solution of a point that station serves
-    rp = s.result_points[sol.label]
+    rp = s.result_points[sol.key]
     served = [p for p, st in sol.assignment.items() if st == k]
     assert any(np.allclose(s.q, rp[p].q, atol=1e-6) for p in served)
 

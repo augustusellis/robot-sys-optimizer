@@ -18,6 +18,7 @@ import viser
 from core.feasibility import CancelledError
 from ui import sim_build, sim_fields
 from ui.log_panel import log, took
+from ui.plan_ids import key as plan_key
 from ui.robot_view import quiet_remove
 from ui.session import Session
 from ui.sim_build import carrier_path as sim_carrier_path
@@ -49,7 +50,8 @@ class SimPanel:
         self.set_q = set_q or show_q  # syncs the joint sliders (scrubbing, end of playback)
         self.plan = None
         self.on_home: Callable[[], None] | None = None  # v10 #8: the paths found another home
-        self.label = None  # solution the paths belong to
+        self.label = None  # solution the paths belong to (shown)
+        self.key = None  # v12 #8: its plan key (ui.plan_ids)
         self._handles: list = []
         self._thread: threading.Thread | None = None
         self._cancel = threading.Event()
@@ -124,7 +126,7 @@ class SimPanel:
         s, sol = self.s, self.selected()
         if sol is None:
             return notify(event, "No solution", "Plan stations and select a solution in Results first")
-        res = s.result_points.get(sol.label)
+        res = s.result_points.get(plan_key(sol))
         if not res:
             return notify(
                 event, "No joint solutions", "Re-run the planner: this solution has no stored joints"
@@ -200,6 +202,7 @@ class SimPanel:
                     plan, self.spin_used = (alt, True) if better else (plan, False)
                 blocked = blocked_stops(checker, home, plan.stations)  # the home pose itself collides
                 self.label, self._targets_key, self.home_blocked = sol.label, targets_key, blocked
+                self.key = plan_key(sol)
                 self.plan = plan  # last: key and label already match it
                 self._after_build()
             except CancelledError:
@@ -302,7 +305,7 @@ class SimPanel:
         if self.plan is None and not self._handles:
             return
         self.pause()
-        self.plan, self.label, self._targets_key = None, None, None
+        self.plan, self.label, self.key, self._targets_key = None, None, None, None
         self.clear()
         self.frame.disabled = self.play.disabled = self.restart.disabled = self.export.disabled = (
             self.clear_btn.disabled
@@ -323,10 +326,10 @@ class SimPanel:
         """Results selection changed: paths of another plan are cleared (not misleadingly
         shown for the new one)."""
         sol = self.selected()
-        if self.plan is None or sol is None or sol.label == self.label:
+        if self.plan is None or sol is None or plan_key(sol) == self.key:
             return
         self.pause()
-        self.plan, self.label = None, None
+        self.plan, self.label, self.key = None, None, None
         self.clear()
         self.frame.disabled = self.play.disabled = self.restart.disabled = self.export.disabled = (
             self.clear_btn.disabled

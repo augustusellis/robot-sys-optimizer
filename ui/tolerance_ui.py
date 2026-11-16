@@ -12,6 +12,7 @@ import viser
 from core.feasibility import CancelledError
 from opt.tolerance import ToleranceSettings
 from ui.log_panel import log
+from ui.plan_ids import key as plan_key
 from ui.widgets import notify
 
 
@@ -64,7 +65,7 @@ class TolerancePanel:
         if self._thread is not None and self._thread.is_alive():
             return notify(event, "Busy", "The tolerance check is already running")
         sol = self.selected()
-        res = s.result_points.get(sol.label) if sol is not None else None
+        res = s.result_points.get(plan_key(sol)) if sol is not None else None
         if sol is None or not res:
             return notify(
                 event, "No plan", "Select a plan in the Results list first (with its joint solutions)"

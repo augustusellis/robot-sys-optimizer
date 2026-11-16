@@ -16,6 +16,7 @@ from core.ik import make_ik
 from core.schema import Optimizer, TargetGroup
 from opt.placement import PlannerSettings, Targets
 from ui.log_panel import log, plan_log
+from ui.plan_ids import give_id, key
 from ui.session import Session
 from ui.staleness import stamp_for
 from ui.widgets import notify
@@ -279,13 +280,14 @@ class StationsPanel:
             for old in [
                 r for r in s.results if len(r.stations) == len(sol.stations) and r.tool_values is None
             ]:
-                s.result_points.pop(old.label, None)
-                s.stamps.pop(old.label, None)
+                s.result_points.pop(key(old), None)
+                s.stamps.pop(key(old), None)
             keep = [
                 r for r in s.results if not (len(r.stations) == len(sol.stations) and r.tool_values is None)
             ]
-            s.stamps[sol.label] = stamp
-            s.result_points[sol.label] = res
+            k = give_id(sol, keep)  # v12 #8: keyed by id, not by the label
+            s.stamps[k] = stamp
+            s.result_points[k] = res
             s.results = sorted([*keep, sol], key=lambda x: (bool(x.violations), x.cost))
             self.on_solution()
 
@@ -305,8 +307,9 @@ class StationsPanel:
             elif kind == "replace":  # v8 T11 / T12: the front / robust plans replace the list
                 s.results, s.result_points = [], {}
                 for sol, res in data:
-                    s.stamps[sol.label] = stamp
-                    s.result_points[sol.label] = res
+                    k = give_id(sol, s.results)
+                    s.stamps[k] = stamp
+                    s.result_points[k] = res
                     s.results.append(sol)
                 self.on_solution()
 

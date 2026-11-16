@@ -163,7 +163,7 @@ def test_carrier_drives_between_stops_without_home(app):
     sol = min(s.results, key=lambda r: (len(r.unreached), r.cost))
     assert len(sol.stations) >= 2
     app["results"].choice.value = next(o for o in app["results"].choice.options if sol.label in o)
-    res = s.result_points[sol.label]
+    res = s.result_points[sol.key]
     sim = app["sim"]
     ch = sim._checker()
     pts = {p.id: (np.array(p.p, float), np.array(p.n, float)) for p in s.targets.points}

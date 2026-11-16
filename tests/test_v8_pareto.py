@@ -39,7 +39,7 @@ def test_pareto_objective_on_the_rail():
         confirm_all(st)
         st.start(block=True)  # weighted cost: the reference best plan
         ref = s.results[0]
-        ref_m = measures(ref, s.result_points[ref.label])
+        ref_m = measures(ref, s.result_points[ref.key])
         st.objective_m.value = "Pareto front (NSGA-II)"
         assert all(cb.visible for cb in st.pareto_keys.values())
         confirm_all(st)
@@ -47,7 +47,7 @@ def test_pareto_objective_on_the_rail():
         plans = s.results
         assert plans and all(p.label.startswith("Pareto ") for p in plans)
         keys = ("stations", "cycle", "clearance")
-        vs = [vector(measures(p, s.result_points[p.label]), keys) for p in plans]
+        vs = [vector(measures(p, s.result_points[p.key]), keys) for p in plans]
         assert not any(dominates(a, b) for a in vs for b in vs)
         v_ref = vector(ref_m, keys)
         assert any(dominates(v, v_ref) or np.allclose(v, v_ref) for v in vs)  # the front covers it

@@ -56,7 +56,7 @@ def test_userframes_put_the_targets_where_the_robot_reaches(app):
     rows = list(csv.DictReader(io.StringIO(data.decode())))
     assert path.name == "userframes.csv" and len(rows) == len(sol.stations)
     assert {"rx_rad", "ry_rad", "rz_rad", *MATRIX_COLUMNS} <= set(rows[0])  # UR20: UR pose columns
-    res = s.result_points[sol.label]
+    res = s.result_points[sol.key]
     pts = {p.id: p for p in s.targets.points}
     tm = s.tool_model
     for pid, k in sol.assignment.items():

@@ -41,7 +41,7 @@ def test_robust_plan_survives_tolerance_better(app):
     judge = ToleranceSettings(part_mm=350, part_deg=4, station_mm=175, samples=30, seed=99)
 
     def rate(sol):
-        spec = {"sol": sol, "results": s.result_points[sol.label], "settings": judge, "workers": 1}
+        spec = {"sol": sol, "results": s.result_points[sol.key], "settings": judge, "workers": 1}
         return tolerance_job({"session": s, "spec": spec}, lambda k, d: None, lambda: False).all_reached
 
     confirm_all(st)

@@ -313,6 +313,7 @@ class Solution(_Model):
     """A placement result: stations in visiting order and which station serves each point."""
 
     label: str = ""
+    id: str = ""  # v12 #8: the key of its joint solutions / stamps / paths (ui.plan_ids); "" = the label
     stations: list[Station] = Field(min_length=1)
     assignment: dict[int, int] = Field(default_factory=dict)  # point id -> station index
     unreached: list[int] = Field(default_factory=list)
@@ -337,6 +338,11 @@ class Solution(_Model):
         if bad:
             raise ValueError(f"points {bad[:5]} assigned to unknown stations")
         return self
+
+    @property
+    def key(self) -> str:
+        """v12 #8: what dicts of this plan's data are keyed by (ui.plan_ids)."""
+        return self.id or self.label
 
 
 # --- Project -------------------------------------------------------------------

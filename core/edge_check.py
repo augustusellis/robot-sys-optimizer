@@ -259,6 +259,7 @@ class EdgeResult:
     points: list[EdgePoint]
     gaps: list[EdgePoint]
     spacing: float
+    key: str = ""  # v12 #8: the plan's key (Solution.key)
 
     def summary(self) -> str:
         return summary(self.points, self.gaps)

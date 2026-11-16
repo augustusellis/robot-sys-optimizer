@@ -103,7 +103,7 @@ def test_results_go_out_of_date_and_exports_ask(app):
     confirm_all(app["stations"])
     app["stations"].start(block=True)
     sol = res.selected()
-    assert sol is not None and s.stamps[sol.label]
+    assert sol is not None and s.stamps[sol.key]
     wf.refresh()
     assert wf.results_md.content == "" and solution_changes(s, sol) == []
     # change the targets: the plan is out of date and says why
@@ -121,7 +121,7 @@ def test_results_go_out_of_date_and_exports_ask(app):
     save_project(s)
     s2 = Session()
     load_project(s2, s.project_dir)
-    assert s2.stamps[sol.label] == s.stamps[sol.label]
+    assert s2.stamps[sol.key] == s.stamps[sol.key]
 
 
 def test_applying_the_tool_result_does_not_outdate_it(app):

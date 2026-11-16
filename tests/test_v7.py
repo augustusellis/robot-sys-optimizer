@@ -139,7 +139,7 @@ def test_plan_with_a_non_ur_robot(app):
     best = s.results[0]
     reached = len(s.targets.points) - len(best.unreached)
     assert reached > 0 and all(
-        r.config.startswith("S") for r in s.result_points[best.label].values() if r.config
+        r.config.startswith("S") for r in s.result_points[best.key].values() if r.config
     )
     cell.robot_choice.value = "ur20"
 

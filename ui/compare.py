@@ -26,6 +26,7 @@ import viser
 from core.feasibility import CancelledError
 from core.robot import list_robots
 from ui.log_panel import log
+from ui.plan_ids import give_ids, key
 from ui.widgets import notify
 
 
@@ -187,13 +188,14 @@ def compare_job(payload: dict, emit, cancelled) -> list[dict]:
             (v for k, v in sols.items() if k != "__max_manip"),
             key=lambda sr: (bool(sr[0].violations), sr[0].cost),
         )
+        give_ids([sol for sol, _ in plans])  # v12 #8
         stamp = stamp_for(s, "plan")  # this robot's setup: its plans are up to date when viewed with it
         rows.append(
             {
                 **tag,
                 **m,
                 "plans": plans,
-                "stamps": {sol.label: dict(stamp) for sol, _ in plans},
+                "stamps": {key(sol): dict(stamp) for sol, _ in plans},
                 "ee": su.get("tool"),
             }
         )
@@ -237,7 +239,7 @@ def keep_plans(session, rows: list[dict]) -> list[dict]:
                 "tool": ee,
                 "base": base,
                 "results": [sol for sol, _ in plans],
-                "points": {sol.label: dict(res) for sol, res in plans},
+                "points": {key(sol): dict(res) for sol, res in plans},
                 "stamps": stamps,
                 "metrics": dict(r),
             }

@@ -16,6 +16,7 @@ import viser
 from core import targets as tg
 from core.feasibility import CancelledError
 from ui.log_panel import log
+from ui.plan_ids import key as plan_key
 from ui.widgets import notify
 
 ROOT = "/cell/part/edge_gaps"
@@ -51,12 +52,12 @@ class EdgePanel:
     def current(self):
         """The last edge check if it belongs to the selected plan, else None."""
         r, sol = getattr(self.s, "edge_check", None), self.selected()
-        return r if r is not None and sol is not None and r.label == sol.label else None
+        return r if r is not None and sol is not None and (r.key or r.label) == plan_key(sol) else None
 
     def after_plan(self, best) -> None:
         """StationsPanel.on_done (in the planner's thread): check the best plan when *Check after
         planning* is on; the planner run ends after it (nothing else edits the session meanwhile)."""
-        if self.auto.value and best is not None and self.s.result_points.get(best.label):
+        if self.auto.value and best is not None and self.s.result_points.get(plan_key(best)):
             self.start(sol=best, block=True)
 
     def start(self, event=None, block: bool = False, sol=None) -> None:
@@ -64,7 +65,7 @@ class EdgePanel:
         if self._thread is not None and self._thread.is_alive():
             return notify(event, "Busy", "The edge check is already running")
         sol = sol or self.selected()
-        res = s.result_points.get(sol.label) if sol is not None else None
+        res = s.result_points.get(plan_key(sol)) if sol is not None else None
         if sol is None or not res:
             return notify(
                 event, "No plan", "Select a plan in the Results list first (with its joint solutions)"

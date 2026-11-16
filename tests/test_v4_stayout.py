@@ -81,7 +81,7 @@ def test_planner_keeps_carrier_and_arm_clear(app):
         floor=False,
         obstacles=s.obstacle_entries(),
     )
-    res = s.result_points[sol.label]
+    res = s.result_points[sol.key]
     for pid, k in sol.assignment.items():
         scene.set_base(station_pose(s.base, sol.stations[k], s.T_world_base))
         assert not scene.collides(res[pid].q, res[pid].tcp)
