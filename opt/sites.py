@@ -146,8 +146,8 @@ class CarrierSites:
         """DOF values with the lift filled in (its mid height when v has none)."""
         return {**self._lift, **v}
 
-    def candidates(self, P_world: np.ndarray, step: float, cancelled=None) -> list[dict]:
-        return _accepted(self, self.c.samples(step), cancelled)
+    def candidates(self, P_world: np.ndarray, step: float, cancelled=None, anchor=None) -> list[dict]:
+        return _accepted(self, self.c.samples(step, anchor=anchor), cancelled)
 
     def T(self, v: dict) -> np.ndarray:
         return self.c.T_world_base(self.full(v))

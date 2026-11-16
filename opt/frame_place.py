@@ -182,13 +182,80 @@ def sweep_clear(c, part_mesh, T_part, step: float = 0.2) -> str:
     return ""
 
 
+def lattice_anchor(c, step: float) -> dict[str, float]:
+    """v12 #20: DOF offsets that put a rail's / gantry's candidate stops on one world lattice
+    (``step`` apart along the frame's axes, through the world origin): frames shifted against each
+    other then share stop poses, and ``score_frame`` reuses their coverage rows."""
+    T = c.T_frame
+    out = {}
+    for dof in (d for d in c.dofs if d in ("s", "x", "y")):
+        axis = T[:3, 0] if dof in ("s", "x") else T[:3, 1]
+        out[dof] = float((-(T[:3, 3] @ axis)) % step)
+    return out
+
+
+def _cached_accept(sites, memo: dict):
+    """``sites.accept`` remembered by the moving bodies' world poses (carriage, X axis / bridge,
+    lift): the same for every frame of one ranking (only the fixed bodies differ between frames:
+    legs, checked by ``score_frame`` itself)."""
+    accept, c = sites.accept, sites.c
+
+    def run(v: dict):
+        w = sites.full(v)
+        if any(not lo - 1e-9 <= w[d] <= hi + 1e-9 for d, (lo, hi) in zip(c.dofs, c.bounds, strict=True)):
+            return False, 1.0
+        k = (
+            tuple(np.round(c.T_world_carriage(w)[:3, :4], 6).ravel()),
+            tuple(np.round(c.T_world_axis(w)[:3, :4], 6).ravel()),
+            round(float(w.get("lift", 0.0)), 6),
+        )
+        if k not in memo:
+            memo[k] = accept(v)
+        return memo[k]
+
+    return run
+
+
+def _coverage(rmap, t, Ts: np.ndarray, cache: dict | None):
+    """(score, mu) of every base pose in ``Ts`` against the targets; rows of base poses seen before
+    come from ``cache`` (key: the pose rounded to 1 um / 1e-9: the map depends on nothing else)."""
+    from opt.reachability import coverage_matrix
+
+    keys = [tuple(np.round(T[:3, :4], 6).ravel()) for T in Ts]
+    todo = [i for i, k in enumerate(keys) if cache is None or k not in cache]
+    score = np.zeros((len(Ts), len(t.ids)))
+    mu = np.zeros_like(score)
+    rots = np.round(Ts[:, :3, 2], 6)
+    todo_set = set(todo)
+    for key in np.unique(rots[todo], axis=0) if todo else []:
+        rows = [i for i in np.flatnonzero(np.all(rots == key, axis=1)) if i in todo_set]
+        sc, m = coverage_matrix(rmap, t.P_world, t.N_world, t.cones, Ts[rows, :3, 3], Ts[rows[0], :3, :3])
+        score[rows], mu[rows] = sc, m
+    for i, k in enumerate(keys):
+        if cache is None:
+            continue
+        if i in todo_set:
+            cache[k] = (score[i].copy(), mu[i].copy())
+        else:
+            score[i], mu[i] = cache[k]
+    return score, mu
+
+
 def score_frame(
-    base: Base, rmap, t, part_mesh, T_part, st: FrameSettings, resolve=None, obstacles=None
+    base: Base,
+    rmap,
+    t,
+    part_mesh,
+    T_part,
+    st: FrameSettings,
+    resolve=None,
+    obstacles=None,
+    cache: dict | None = None,
 ) -> FrameScore:
-    """How well a frame's stops can cover the targets (the planner's first step)."""
+    """How well a frame's stops can cover the targets (the planner's first step). ``cache``
+    (v12 #20): coverage rows by base pose, shared by the frames of one ranking."""
     from core.carrier import Carrier
     from core.standoff import distance_3d
-    from opt.reachability import coverage_matrix
     from opt.set_cover import greedy_cover
     from opt.sites import CarrierSites
 
@@ -201,17 +268,13 @@ def score_frame(
     if why:
         return FrameScore(pose, mount_z, len(t.ids), 0, 0.0, why, base)
     sites = CarrierSites(c, part_mesh, T_part, obstacles=obstacles)
-    cand = sites.candidates(t.P_world, st.candidate_step)
+    if cache is not None:  # v12 #20: a stop's acceptance depends only on where its moving bodies are
+        sites.accept = _cached_accept(sites, cache.setdefault("accept", {}))
+    cand = sites.candidates(t.P_world, st.candidate_step, anchor=lattice_anchor(c, st.candidate_step))
     if not cand:
         return FrameScore(pose, mount_z, len(t.ids), 0, 0.0, "no admissible stop", base)
     Ts = np.array([sites.T(v) for v in cand])
-    score = np.zeros((len(cand), len(t.ids)))
-    mu = np.zeros_like(score)
-    rots = np.round(Ts[:, :3, 2], 6)
-    for key in np.unique(rots, axis=0):
-        rows = np.flatnonzero(np.all(rots == key, axis=1))
-        sc, m = coverage_matrix(rmap, t.P_world, t.N_world, t.cones, Ts[rows, :3, 3], Ts[rows[0], :3, :3])
-        score[rows], mu[rows] = sc, m
+    score, mu = _coverage(rmap, t, Ts, cache)
     covered = score >= st.reach_threshold
     reach = covered.any(axis=0)
     chosen = greedy_cover(covered, mu / max(rmap.max_manip, 1e-12), len(cand))
@@ -238,19 +301,23 @@ def rank_frames(
 
     cands = candidate_frames(base, part_fp, st)
     out = []
+    cache: dict = {}  # v12 #20: coverage rows by base pose, shared by every frame
     for k, (pose, h) in enumerate(cands):
         if cancelled is not None and cancelled():
             raise CancelledError()
         if progress is not None:
             progress(f"frame {k + 1} / {len(cands)}", 0.5 * k / max(len(cands), 1))
-        out.append(score_frame(with_frame(base, pose, h), rmap, t, part_mesh, T_part, st, resolve, obstacles))
+        f = score_frame(with_frame(base, pose, h), rmap, t, part_mesh, T_part, st, resolve, obstacles, cache)
+        out.append(f)
     out.sort(key=lambda f: (bool(f.reason), f.key()))
     if st.refine and out and not out[0].reason:  # v10 T18: continuous refinement of the best one
 
         def score(pose, h):
             if cancelled is not None and cancelled():
                 raise CancelledError()
-            return score_frame(with_frame(base, pose, h), rmap, t, part_mesh, T_part, st, resolve, obstacles)
+            return score_frame(
+                with_frame(base, pose, h), rmap, t, part_mesh, T_part, st, resolve, obstacles, cache
+            )
 
         best = refine_frame(out[0], score, st, progress)
         if best.key() < out[0].key():

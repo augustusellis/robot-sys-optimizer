@@ -376,9 +376,13 @@ class Carrier:
             d = max(d, abs(a["lift"] - b["lift"]))
         return d
 
-    def samples(self, step: float, yaw_steps: int = 4, lift_step: float = 0.25) -> list[dict]:
+    def samples(
+        self, step: float, yaw_steps: int = 4, lift_step: float = 0.25, anchor: dict | None = None
+    ) -> list[dict]:
         """Grid of DOF values: ``step`` along the travel axes, ``yaw_steps`` headings, lift
-        heights every ``lift_step`` (2 to 6 levels, ends included)."""
+        heights every ``lift_step`` (2 to 6 levels, ends included). ``anchor`` (v12 #20): DOF ->
+        offset; that axis's values are offset + k * step (inside the travel) instead of starting at
+        its low end, so frames placed on one world lattice share their stops."""
         if self.kind == "static":
             return [{}]
         axes = []
@@ -389,6 +393,10 @@ class Carrier:
                 axes.append(np.linspace(lo, hi, k, endpoint=not full) if k > 1 else np.array([lo]))
             elif n == "lift":
                 axes.append(lift_levels(lo, hi, lift_step))
+            elif anchor is not None and n in anchor and hi > lo:
+                first = anchor[n] + np.ceil((lo - anchor[n]) / step - 1e-9) * step
+                vals = np.arange(first, hi + 1e-9, step)
+                axes.append(vals if len(vals) else np.array([lo]))
             else:
                 axes.append(np.arange(lo, hi + 1e-9, step) if hi > lo else np.array([lo]))
         grid = np.meshgrid(*axes, indexing="ij")
