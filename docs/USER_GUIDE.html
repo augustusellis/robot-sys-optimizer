@@ -33,7 +33,7 @@ mark.hit{background:#ffe066;color:#1d1f23;border-radius:2px;padding:0 1px}mark.h
 nav a.hide{display:none}
 @media print{mark.hit{background:none;color:inherit}}
 </style></head><body>
-<nav><div class='title'>Robot Cell &amp; End-Effector Optimizer: User Guide</div><input id='search' type='search' placeholder='Search the guide  ( / )' aria-label='Search the guide' autocomplete='off'><div id='hits'></div><a class="h2" href="#1-quickstart-5-minutes">1. Quickstart (5 minutes)</a><a class="h2" href="#2-set-up-on-a-new-computer">2. Set up on a new computer</a><a class="h3" href="#21-prerequisites">2.1 Prerequisites</a><a class="h3" href="#22-clone-and-create-the-environment">2.2 Clone and create the environment</a><a class="h3" href="#23-check-the-installation">2.3 Check the installation</a><a class="h3" href="#24-first-launch">2.4 First launch</a><a class="h3" href="#25-portable-copy-for-a-pc-without-conda-or-internet">2.5 Portable copy for a PC without conda or internet</a><a class="h2" href="#3-how-it-works-concepts-and-conventions">3. How it works: concepts and conventions</a><a class="h3" href="#31-frames-and-units">3.1 Frames and units</a><a class="h3" href="#32-target-tolerances-per-group">3.2 Target tolerances (per group)</a><a class="h3" href="#33-the-parametric-end-effector">3.3 The parametric end effector</a><a class="h3" href="#34-what-feasible-means">3.4 What &quot;feasible&quot; means</a><a class="h3" href="#35-the-optimizer-in-three-layers">3.5 The optimizer in three layers</a><a class="h2" href="#4-tools-and-features-tab-by-tab">4. Tools and features, tab by tab</a><a class="h3" href="#guided-steps">Guided steps</a><a class="h3" href="#top-of-the-panel">Top of the panel</a><a class="h3" href="#1-robot--cell-tab">1 Robot &amp; cell tab</a><a class="h3" href="#2-external-axis-tab">2 External axis tab</a><a class="h3" href="#3-tool-tab">3 Tool tab</a><a class="h3" href="#4-targets-tab">4 Targets tab</a><a class="h3" href="#5-optimize-tab">5 Optimize tab</a><a class="h3" href="#optimization-methods">Optimization methods</a><a class="h3" href="#joint-configuration-zones">Joint-configuration zones</a><a class="h3" href="#6-results-tab">6 Results tab</a><a class="h3" href="#collision-geometry">Collision geometry</a><a class="h3" href="#package-builder-tab">Package builder tab</a><a class="h2" href="#5-worked-examples">5. Worked examples</a><a class="h3" href="#example-a-sand-a-flat-plate-from-one-base-static">Example A: sand a flat plate from one base (static)</a><a class="h3" href="#example-b-a-long-rail-part-with-a-7th-axis-rail-carrier">Example B: a long rail part with a 7th-axis rail carrier</a><a class="h3" href="#example-b2-design-a-mobile-robot-from-simple-shapes">Example B2: design a mobile robot from simple shapes</a><a class="h3" href="#example-b3-avoid-joint-configuration-changes-on-the-rail">Example B3: avoid joint-configuration changes on the rail</a><a class="h3" href="#example-b4-tall-wall-with-a-gantry-floor-x-y-axes-or-a-mobile-lift">Example B4: tall wall with a gantry, floor X-Y axes or a mobile lift</a><a class="h3" href="#example-c-the-shortest-probe-for-a-deep-hole">Example C: the shortest probe for a deep hole</a><a class="h3" href="#example-d-your-own-robot-cell">Example D: your own robot cell</a><a class="h3" href="#adding-a-robot">Adding a robot</a><a class="h3" href="#building-urdf-packages">Building URDF packages</a><a class="h3" href="#checking-a-plan-in-ursim">Checking a plan in URSim</a><a class="h2" href="#6-files-folders-and-formats">6. Files, folders and formats</a><a class="h2" href="#7-using-it-from-python-headless">7. Using it from Python (headless)</a><a class="h2" href="#8-troubleshooting-and-limitations">8. Troubleshooting and limitations</a><a class="h2" href="#9-for-developers">9. For developers</a><button id='theme' type='button'>Dark mode</button></nav>
+<nav><div class='title'>Robot Cell &amp; End-Effector Optimizer: User Guide</div><input id='search' type='search' placeholder='Search the guide  ( / )' aria-label='Search the guide' autocomplete='off'><div id='hits'></div><a class="h2" href="#1-quickstart-5-minutes">1. Quickstart (5 minutes)</a><a class="h2" href="#2-set-up-on-a-new-computer">2. Set up on a new computer</a><a class="h3" href="#21-prerequisites">2.1 Prerequisites</a><a class="h3" href="#22-clone-and-create-the-environment">2.2 Clone and create the environment</a><a class="h3" href="#23-check-the-installation">2.3 Check the installation</a><a class="h3" href="#24-first-launch">2.4 First launch</a><a class="h3" href="#25-portable-copy-for-a-pc-without-conda-or-internet">2.5 Portable copy for a PC without conda or internet</a><a class="h2" href="#3-how-it-works-concepts-and-conventions">3. How it works: concepts and conventions</a><a class="h3" href="#31-frames-and-units">3.1 Frames and units</a><a class="h3" href="#32-target-tolerances-per-group">3.2 Target tolerances (per group)</a><a class="h3" href="#33-the-parametric-end-effector">3.3 The parametric end effector</a><a class="h3" href="#34-what-feasible-means">3.4 What &quot;feasible&quot; means</a><a class="h3" href="#35-the-optimizer-in-three-layers">3.5 The optimizer in three layers</a><a class="h2" href="#4-tools-and-features-tab-by-tab">4. Tools and features, tab by tab</a><a class="h3" href="#guided-steps">Guided steps</a><a class="h3" href="#top-of-the-panel">Top of the panel</a><a class="h3" href="#1-robot--cell-tab">1 Robot &amp; cell tab</a><a class="h3" href="#2-external-axis-tab">2 External axis tab</a><a class="h3" href="#3-tool-tab">3 Tool tab</a><a class="h3" href="#4-targets-tab">4 Targets tab</a><a class="h3" href="#5-optimize-tab">5 Optimize tab</a><a class="h3" href="#optimization-methods">Optimization methods</a><a class="h3" href="#joint-configuration-zones">Joint-configuration zones</a><a class="h3" href="#6-results-tab">6 Results tab</a><a class="h3" href="#collision-geometry">Collision geometry</a><a class="h3" href="#package-builder-tab">Package builder tab</a><a class="h2" href="#5-worked-examples">5. Worked examples</a><a class="h3" href="#example-a-sand-a-flat-plate-from-one-base-static">Example A: sand a flat plate from one base (static)</a><a class="h3" href="#example-b-a-long-rail-part-with-a-7th-axis-rail-carrier">Example B: a long rail part with a 7th-axis rail carrier</a><a class="h3" href="#example-b2-design-a-mobile-robot-from-simple-shapes">Example B2: design a mobile robot from simple shapes</a><a class="h3" href="#example-b3-avoid-joint-configuration-changes-on-the-rail">Example B3: avoid joint-configuration changes on the rail</a><a class="h3" href="#example-b4-tall-wall-with-a-gantry-floor-x-y-axes-or-a-mobile-lift">Example B4: tall wall with a gantry, floor X-Y axes or a mobile lift</a><a class="h3" href="#example-c-the-shortest-probe-for-a-deep-hole">Example C: the shortest probe for a deep hole</a><a class="h3" href="#example-d-your-own-robot-cell">Example D: your own robot cell</a><a class="h3" href="#adding-a-robot">Adding a robot</a><a class="h3" href="#building-urdf-packages">Building URDF packages</a><a class="h3" href="#checking-a-plan-in-ursim">Checking a plan in URSim</a><a class="h2" href="#6-files-folders-and-formats">6. Files, folders and formats</a><a class="h2" href="#7-using-it-from-python-headless">7. Using it from Python (headless)</a><a class="h2" href="#8-troubleshooting-and-limitations">8. Troubleshooting and limitations</a><a class="h2" href="#9-for-developers">9. For developers</a><a class="h2" href="#10-for-software-engineers">10. For software engineers</a><a class="h3" href="#101-languages-and-how-it-runs">10.1 Languages and how it runs</a><a class="h3" href="#102-packages-and-what-each-one-is-for">10.2 Packages and what each one is for</a><a class="h3" href="#103-layers">10.3 Layers</a><a class="h3" href="#104-how-the-main-parts-work">10.4 How the main parts work</a><a class="h3" href="#105-run-test-lint-ship">10.5 Run, test, lint, ship</a><a class="h3" href="#106-where-to-start-reading">10.6 Where to start reading</a><button id='theme' type='button'>Dark mode</button></nav>
 <main>
 <h1 id="robot-cell--end-effector-optimizer-user-guide">Robot Cell &amp; End-Effector Optimizer: User Guide</h1>
 <p>A browser-based tool that answers two questions for a robotic process (sanding, scanning, grinding, gripping, spraying):</p>
@@ -54,6 +54,7 @@ nav a.hide{display:none}
 <li><a href="#7-using-it-from-python-headless">Using it from Python (headless)</a></li>
 <li><a href="#8-troubleshooting-and-limitations">Troubleshooting and limitations</a></li>
 <li><a href="#9-for-developers">For developers</a></li>
+<li><a href="#10-for-software-engineers">For software engineers</a></li>
 </ol>
 <hr />
 <h2 id="1-quickstart-5-minutes">1. Quickstart (5 minutes)</h2>
@@ -987,6 +988,144 @@ $RUFF check . &amp;&amp; $RUFF format --check .   # lint + format
 <p>Each milestone's acceptance test lives in <code>tests/</code> (for example <code>test_kinematics.py</code>, <code>test_feasibility.py</code>, <code>test_reachability.py</code>, <code>test_placement.py</code>, <code>test_tool_geometry.py</code>, <code>test_carriers.py</code>, <code>test_export.py</code>). The carrier builder is covered by <code>test_carrier_builder.py</code> and <code>test_examples.py</code>, the brush / single points / tessellation by <code>test_point_tools.py</code>.</p>
 </li>
 </ul>
+<h2 id="10-for-software-engineers">10. For software engineers</h2>
+<p>A short map of the code for someone who has to review or change it. History and the decision log
+are in <code>CLAUDE.md</code>; a critical review of the current state is in <code>docs/V11_REVIEW.md</code>.</p>
+<h3 id="101-languages-and-how-it-runs">10.1 Languages and how it runs</h3>
+<ul>
+<li><strong>Python 3.12 only.</strong> No compiled extension of our own (the offset-wrist IK is compiled at first
+use by numba), no JavaScript build, no web framework. HTML / JavaScript appear only as small
+inline strings: the guide's search box, the report, and three hidden-input &quot;bridges&quot; that let an
+HTML widget send clicks back to Python (<code>ui/joystick.py</code>, <code>ui/package_tabs.py</code>, <code>ui/jog_arrows.py</code>).</li>
+<li><strong>The GUI is Viser</strong>: a Python server that streams a Three.js scene and a widget panel to the
+browser over a websocket. Every widget callback runs in Python, on viser's thread pool.</li>
+<li><code>app.py</code> builds the whole app (<code>build_app(server)</code>), <code>scripts/run_app.bat</code> starts it, the
+portable zip (<code>scripts/make_portable.py</code>) is the repo plus a conda-packed environment.</li>
+</ul>
+<h3 id="102-packages-and-what-each-one-is-for">10.2 Packages and what each one is for</h3>
+<table>
+<thead>
+<tr>
+<th>Package</th>
+<th>Used for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>viser, yourdfpy</td>
+<td>the browser GUI and 3D scene; loading URDF robots and tools for display</td>
+</tr>
+<tr>
+<td>pinocchio</td>
+<td>robot kinematics: forward kinematics, Jacobians, joint limits, the geometry model for collisions</td>
+</tr>
+<tr>
+<td>coal (ex hpp-fcl)</td>
+<td>collision and distance queries between meshes (through pinocchio, and directly for carriers)</td>
+</tr>
+<tr>
+<td>numpy, scipy</td>
+<td>everything numeric; scipy for KD-trees, rotations, sparse graphs, interpolation</td>
+</tr>
+<tr>
+<td>numba</td>
+<td>the compiled offset-wrist IK of the FANUC CRX / ABB GoFa / PoWa</td>
+</tr>
+<tr>
+<td>trimesh, rtree</td>
+<td>meshes: loading, ray casting, closest points, submeshes</td>
+</tr>
+<tr>
+<td>fast_simplification, manifold3d</td>
+<td>low-detail collision copies of large meshes (reduce / wrap)</td>
+</tr>
+<tr>
+<td>shapely</td>
+<td>2D floor footprints, standoff zones, keep-outs</td>
+</tr>
+<tr>
+<td>ortools (CP-SAT)</td>
+<td>the station set cover, the GTSP point order</td>
+</tr>
+<tr>
+<td>cma, optuna</td>
+<td>CMA-ES refinement; TPE refinement and NSGA-II Pareto fronts</td>
+</tr>
+<tr>
+<td>pydantic</td>
+<td>the project file schema (<code>core/schema*.py</code>), validated on load</td>
+</tr>
+<tr>
+<td>cadquery</td>
+<td>STEP import (tessellation) and STEP export of designed tools</td>
+</tr>
+<tr>
+<td>pillow, markdown-it-py</td>
+<td>report images; this guide's HTML</td>
+</tr>
+<tr>
+<td>pytest, ruff</td>
+<td>tests; lint and formatting</td>
+</tr>
+</tbody>
+</table>
+<h3 id="103-layers">10.3 Layers</h3>
+<pre><code>app.py      wires the panels together (one function, build_app)
+ui/         one module per panel or tab: widgets, scene drawing, jobs started from the GUI
+opt/        optimizers: reach maps, station planner, zoning, areas, tool geometry, gantry placement
+core/       math and data: schema, robot / IK, tool, collision, feasibility, paths, timing, exports
+</code></pre>
+<p><code>core/</code> and <code>opt/</code> never import viser or <code>ui/</code>, so everything below the GUI runs headless
+(<code>examples/headless_plan.py</code>) and in worker processes. The state of an open study is one
+<code>ui.session.Session</code> object (SI units); <code>Session.to_project()</code> / <code>apply_project()</code> convert it to and
+from the project file (<code>core.schema.Project</code>).</p>
+<h3 id="104-how-the-main-parts-work">10.4 How the main parts work</h3>
+<ul>
+<li><strong>Kinematics and IK</strong> (<code>core/robot.py</code>, <code>core/ik/</code>): robots come from <code>assets/robots/&lt;name&gt;/</code>
+(URDF + <code>spec.yaml</code>). IK is analytic where the arm allows it (UR, OPW, offset wrist) and numeric
+otherwise; every solver has the same interface (<code>solve</code>, <code>solve_batch</code>, <code>config_label</code>).</li>
+<li><strong>Tool</strong> (<code>core/tool.py</code>): mount + a parametric extension (straight, bent, pose) + the head URDF +
+TCPs. TCPs carry their tolerances, contact parts / faces, minimum surface radius and travel rule.</li>
+<li><strong>Collision</strong> (<code>core/collision.py</code>, <code>core/collision_mesh.py</code>): one pinocchio geometry model with
+the robot, tool pieces, part, floor, carrier bodies and stay-out zones; margins per pair; large
+meshes replaced by low-detail copies for checking only.</li>
+<li><strong>Feasibility</strong> (<code>core/feasibility.py</code>): for one target, try tool poses in preference order
+(spin, tilt, standoff), solve IK, keep in-limit branches, check collision, return the best.</li>
+<li><strong>Reach maps</strong> (<code>opt/reachability.py</code>): IK-only reachability on an (r, z) grid x tool directions,
+cached on disk; they make base placement fast. Exact checks always confirm the result.</li>
+<li><strong>Station planner</strong> (<code>opt/placement.py</code> and friends): candidate stops from the map -&gt; CP-SAT set
+cover per station count -&gt; route order -&gt; refinement (CMA-ES / TPE) -&gt; exact verification -&gt;
+zoning by joint configuration -&gt; station areas. Every step is verified by the exact checker.</li>
+<li><strong>Paths</strong> (<code>core/paths.py</code>, <code>core/path_*.py</code>, <code>core/coordinated.py</code>): order the planned points by
+a pattern, sample between them on the surface, solve IK per sample in the zone's configuration,
+plan joint moves around obstacles (RRT-connect + shortcut, then CHOMP-style smoothing), choose the
+tool spin per sample by dynamic programming, flag what fails.</li>
+<li><strong>Timing</strong> (<code>core/cycle_time.py</code>, <code>core/trajectory.py</code>): per run of samples, a time-optimal
+forward / backward pass with joint speed / acceleration limits, then a jerk filter.</li>
+<li><strong>Exports</strong> (<code>core/export.py</code>, <code>core/report.py</code>, <code>core/robot_program.py</code>, <code>core/userframe.py</code>):
+CSV, tool URDF / STEP, HTML / PDF report, URScript / TP / RAPID programs.</li>
+<li><strong>Package builder</strong> (<code>core/urdf_package*.py</code>, <code>ui/package_*.py</code>): tools, parts and carriers built
+from primitives and meshes, written as URDF packages (package.yaml keeps what URDF cannot).</li>
+<li><strong>Jobs</strong> (<code>ui/jobs.py</code>, <code>opt/parallel.py</code>): long runs go to a worker process that gets a snapshot
+of the project; exact checks are spread over a pool of check processes. The GUI only shows
+progress and results.</li>
+<li><strong>Staleness</strong> (<code>ui/staleness.py</code>, <code>ui/fingerprint.py</code>): every plan stores hashes of what it was
+planned from; Results flags plans whose inputs changed, and the setup steps use the same hashes.</li>
+</ul>
+<h3 id="105-run-test-lint-ship">10.5 Run, test, lint, ship</h3>
+<p>See section 9 for the commands. In short: <code>scripts/run_app.bat</code>, <code>scripts/test_batches.py --fast</code>
+(~30 min, tests marked <code>slow</code> skipped), <code>ruff check . &amp;&amp; ruff format --check .</code>,
+<code>scripts/build_guide.py</code> after editing this guide, <code>scripts/make_portable.py</code> for the offline zip.
+Tests never write to the user's workspace (<code>tests/conftest.py</code>). CI runs lint, the guide check and
+the fast suite on Windows for every push.</p>
+<h3 id="106-where-to-start-reading">10.6 Where to start reading</h3>
+<ol>
+<li><code>CLAUDE.md</code>, sections &quot;Architecture rules&quot; and &quot;Frames and units&quot;.</li>
+<li><code>core/schema.py</code> (what a project is), then <code>ui/session.py</code> (how it lives in memory).</li>
+<li><code>core/feasibility.py</code> (the exact check everything rests on).</li>
+<li><code>opt/placement.py</code> (the planner pipeline) and <code>core/paths.py</code> (<code>trace</code>).</li>
+<li><code>app.py</code> (how the panels are put together).</li>
+</ol>
 <p>UR robot models © 2023 Universal Robots A/S. Use hereof is subject to Universal Robots A/S' Terms and Conditions for Use of Graphical Documentation (see <code>assets/robots/ur20/meshes/LICENSE.txt</code>).</p>
 
 <p class='footer'>Generated from docs/USER_GUIDE.md by scripts/build_guide.py.</p></main>

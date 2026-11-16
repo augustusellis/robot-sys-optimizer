@@ -20,6 +20,7 @@ You load a robot, a tool and a part, mark the surfaces to work on, and the optim
 7. [Using it from Python (headless)](#7-using-it-from-python-headless)
 8. [Troubleshooting and limitations](#8-troubleshooting-and-limitations)
 9. [For developers](#9-for-developers)
+10. [For software engineers](#10-for-software-engineers)
 
 ---
 
@@ -660,5 +661,103 @@ $RUFF check . && $RUFF format --check .   # lint + format
 - `core/` and `opt/` must not import the GUI.
 - **Edit `docs/USER_GUIDE.md`, then run `$PY scripts/build_guide.py`** to regenerate the HTML. `tests/test_guide.py` fails if the HTML is out of date.
 - Each milestone's acceptance test lives in `tests/` (for example `test_kinematics.py`, `test_feasibility.py`, `test_reachability.py`, `test_placement.py`, `test_tool_geometry.py`, `test_carriers.py`, `test_export.py`). The carrier builder is covered by `test_carrier_builder.py` and `test_examples.py`, the brush / single points / tessellation by `test_point_tools.py`.
+
+## 10. For software engineers
+
+A short map of the code for someone who has to review or change it. History and the decision log
+are in `CLAUDE.md`; a critical review of the current state is in `docs/V11_REVIEW.md`.
+
+### 10.1 Languages and how it runs
+
+- **Python 3.12 only.** No compiled extension of our own (the offset-wrist IK is compiled at first
+  use by numba), no JavaScript build, no web framework. HTML / JavaScript appear only as small
+  inline strings: the guide's search box, the report, and three hidden-input "bridges" that let an
+  HTML widget send clicks back to Python (`ui/joystick.py`, `ui/package_tabs.py`, `ui/jog_arrows.py`).
+- **The GUI is Viser**: a Python server that streams a Three.js scene and a widget panel to the
+  browser over a websocket. Every widget callback runs in Python, on viser's thread pool.
+- `app.py` builds the whole app (`build_app(server)`), `scripts/run_app.bat` starts it, the
+  portable zip (`scripts/make_portable.py`) is the repo plus a conda-packed environment.
+
+### 10.2 Packages and what each one is for
+
+| Package | Used for |
+|---|---|
+| viser, yourdfpy | the browser GUI and 3D scene; loading URDF robots and tools for display |
+| pinocchio | robot kinematics: forward kinematics, Jacobians, joint limits, the geometry model for collisions |
+| coal (ex hpp-fcl) | collision and distance queries between meshes (through pinocchio, and directly for carriers) |
+| numpy, scipy | everything numeric; scipy for KD-trees, rotations, sparse graphs, interpolation |
+| numba | the compiled offset-wrist IK of the FANUC CRX / ABB GoFa / PoWa |
+| trimesh, rtree | meshes: loading, ray casting, closest points, submeshes |
+| fast_simplification, manifold3d | low-detail collision copies of large meshes (reduce / wrap) |
+| shapely | 2D floor footprints, standoff zones, keep-outs |
+| ortools (CP-SAT) | the station set cover, the GTSP point order |
+| cma, optuna | CMA-ES refinement; TPE refinement and NSGA-II Pareto fronts |
+| pydantic | the project file schema (`core/schema*.py`), validated on load |
+| cadquery | STEP import (tessellation) and STEP export of designed tools |
+| pillow, markdown-it-py | report images; this guide's HTML |
+| pytest, ruff | tests; lint and formatting |
+
+### 10.3 Layers
+
+```
+app.py      wires the panels together (one function, build_app)
+ui/         one module per panel or tab: widgets, scene drawing, jobs started from the GUI
+opt/        optimizers: reach maps, station planner, zoning, areas, tool geometry, gantry placement
+core/       math and data: schema, robot / IK, tool, collision, feasibility, paths, timing, exports
+```
+
+`core/` and `opt/` never import viser or `ui/`, so everything below the GUI runs headless
+(`examples/headless_plan.py`) and in worker processes. The state of an open study is one
+`ui.session.Session` object (SI units); `Session.to_project()` / `apply_project()` convert it to and
+from the project file (`core.schema.Project`).
+
+### 10.4 How the main parts work
+
+- **Kinematics and IK** (`core/robot.py`, `core/ik/`): robots come from `assets/robots/<name>/`
+  (URDF + `spec.yaml`). IK is analytic where the arm allows it (UR, OPW, offset wrist) and numeric
+  otherwise; every solver has the same interface (`solve`, `solve_batch`, `config_label`).
+- **Tool** (`core/tool.py`): mount + a parametric extension (straight, bent, pose) + the head URDF +
+  TCPs. TCPs carry their tolerances, contact parts / faces, minimum surface radius and travel rule.
+- **Collision** (`core/collision.py`, `core/collision_mesh.py`): one pinocchio geometry model with
+  the robot, tool pieces, part, floor, carrier bodies and stay-out zones; margins per pair; large
+  meshes replaced by low-detail copies for checking only.
+- **Feasibility** (`core/feasibility.py`): for one target, try tool poses in preference order
+  (spin, tilt, standoff), solve IK, keep in-limit branches, check collision, return the best.
+- **Reach maps** (`opt/reachability.py`): IK-only reachability on an (r, z) grid x tool directions,
+  cached on disk; they make base placement fast. Exact checks always confirm the result.
+- **Station planner** (`opt/placement.py` and friends): candidate stops from the map -> CP-SAT set
+  cover per station count -> route order -> refinement (CMA-ES / TPE) -> exact verification ->
+  zoning by joint configuration -> station areas. Every step is verified by the exact checker.
+- **Paths** (`core/paths.py`, `core/path_*.py`, `core/coordinated.py`): order the planned points by
+  a pattern, sample between them on the surface, solve IK per sample in the zone's configuration,
+  plan joint moves around obstacles (RRT-connect + shortcut, then CHOMP-style smoothing), choose the
+  tool spin per sample by dynamic programming, flag what fails.
+- **Timing** (`core/cycle_time.py`, `core/trajectory.py`): per run of samples, a time-optimal
+  forward / backward pass with joint speed / acceleration limits, then a jerk filter.
+- **Exports** (`core/export.py`, `core/report.py`, `core/robot_program.py`, `core/userframe.py`):
+  CSV, tool URDF / STEP, HTML / PDF report, URScript / TP / RAPID programs.
+- **Package builder** (`core/urdf_package*.py`, `ui/package_*.py`): tools, parts and carriers built
+  from primitives and meshes, written as URDF packages (package.yaml keeps what URDF cannot).
+- **Jobs** (`ui/jobs.py`, `opt/parallel.py`): long runs go to a worker process that gets a snapshot
+  of the project; exact checks are spread over a pool of check processes. The GUI only shows
+  progress and results.
+- **Staleness** (`ui/staleness.py`, `ui/fingerprint.py`): every plan stores hashes of what it was
+  planned from; Results flags plans whose inputs changed, and the setup steps use the same hashes.
+
+### 10.5 Run, test, lint, ship
+
+See section 9 for the commands. In short: `scripts/run_app.bat`, `scripts/test_batches.py --fast`
+(~30 min, tests marked `slow` skipped), `ruff check . && ruff format --check .`,
+`scripts/build_guide.py` after editing this guide, `scripts/make_portable.py` for the offline zip.
+Tests never write to the user's workspace (`tests/conftest.py`). CI runs lint, the guide check and
+the fast suite on Windows for every push.
+
+### 10.6 Where to start reading
+
+1. `CLAUDE.md`, sections "Architecture rules" and "Frames and units".
+2. `core/schema.py` (what a project is), then `ui/session.py` (how it lives in memory).
+3. `core/feasibility.py` (the exact check everything rests on).
+4. `opt/placement.py` (the planner pipeline) and `core/paths.py` (`trace`).
+5. `app.py` (how the panels are put together).
 
 UR robot models © 2023 Universal Robots A/S. Use hereof is subject to Universal Robots A/S' Terms and Conditions for Use of Graphical Documentation (see `assets/robots/ur20/meshes/LICENSE.txt`).
