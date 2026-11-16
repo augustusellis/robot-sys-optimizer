@@ -102,6 +102,44 @@ From the user's tests of Optimize -> Gantry placement with default settings.
       gantry_overhead still finds a frame at least as cheap as before (11.73); scoring time
       stated for both examples. Tests: tests/test_v12_gantry_frames.py (port 8986).
 
+## Phase G: Package builder feedback (2026-11-16, planned with the user, not started)
+
+27. **End effector frame when loading a mesh / STEP into a tool package.**
+    - *Found:* a tool package's frame is the robot flange (`tool0` / `fanuc_flange`: z out of the
+      flange face); the builder window puts it exactly on the drawn flange (checked for all 10
+      library robots: 0.000 mm, 0.000 deg). An imported file is placed with its own origin and
+      axes on that frame, so a CAD file whose origin is not the mounting face comes out offset /
+      turned (the user's case). Correcting it needed the part's pose fields or, after the import,
+      *Frame from STEP -> Package origin*.
+    - *User decisions (2026-11-16):* a **Load relative to** choice when adding a mesh / STEP to a
+      tool package, with **Robot flange** (the default for end effectors: the file's origin and
+      axes are the flange) and **STEP coordinate system** (a named CSYS of the STEP file is the
+      mounting face).
+    - *Plan:*
+      1. Parts folder: dropdown *Load relative to* (tool packages only; other kinds keep the
+         package frame): *Robot flange* (default) / *STEP coordinate system*.
+      2. STEP + *STEP coordinate system*: after meshing, the file's named coordinate systems
+         (already read, `Part.datums`): one -> used; several -> a dialog lists them (and *None: the
+         file origin*); none -> placed on the flange with a note. The part's pose becomes
+         inv(T_datum), so that CSYS sits on the flange (z out of the flange face). STL / OBJ / PLY
+         have no coordinate systems: the choice is hidden for them (flange).
+      3. The import status line says what was used ("STEP CSYS *mount* on the robot flange").
+         The datums stay listed under *Frame from STEP* (TCP, robot mount, package origin).
+      4. Guide: Building URDF packages section. Tests (`tests/test_v12_builder_frames.py`, port 8987):
+         STEP fixture with a named CSYS -> the CSYS is at the flange (1e-9); default -> identity;
+         several CSYS -> the dialog's choice is used; no CSYS -> flange + note.
+
+28. **Four decimal places in every mm / deg field (user: every field, not only Frames and travel).**
+    - *Found:* viser rounds a typed value to the decimals of the field's arrow step (pose fields:
+      1 mm / 0.5 deg; travels: 10 mm), so 12.3456 became 12 or 12.5. viser's `precision` can be set
+      apart from the step (checked), so the arrows keep their steps.
+    - *Plan:* one hook where the app builds its GUI (main window and builder window): every
+      number / vector / slider whose label is in mm or deg gets 4 decimals (`precision = 4`),
+      including fields made later (pose widgets, carrier sliders, TCP rows); typed values are kept
+      as typed (never rounded back). Tests: typing 12.3456 mm / 1.2345 deg into the builder's TCP and
+      robot mount, the X travel, the Tool tab's TCP and the robot base gives 0.0123456 m /
+      1.2345 deg in the model; every mm / deg field of the built app has precision 4.
+
 ## Status
 
 | Item | State | Notes |
