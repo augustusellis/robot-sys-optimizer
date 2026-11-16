@@ -122,6 +122,23 @@ SAVED: dict[str, tuple[str, ...]] = {
 }
 
 
+# v12 #11: a renamed widget attribute keeps the users' saved value: old key -> new key
+RENAMED: dict[str, str] = {}
+
+
+def missing(state: dict) -> list[str]:
+    """Saved keys whose panel or widget does not exist on this app (``SAVED`` out of date: such a
+    setting would be dropped without a word). tests/test_v12_settings.py keeps this empty."""
+    out = []
+    for panel, attrs in SAVED.items():
+        obj = _panel(state, panel)
+        for a in attrs:
+            h = getattr(obj, a, None) if obj is not None else None
+            if h is None or not hasattr(h, "value"):
+                out.append(f"{panel}.{a}")
+    return out
+
+
 def _panel(state: dict, path: str):
     obj: Any = state
     for part in path.split("."):
@@ -153,6 +170,8 @@ def collect(state: dict) -> dict[str, Any]:
 def apply(state: dict, saved: dict[str, Any]) -> list[str]:
     """Set saved values on the widgets (their callbacks run as for a user edit). Returns the
     keys that were applied."""
+    old = {RENAMED[k]: v for k, v in saved.items() if k in RENAMED}  # v12 #11: under the new key
+    saved = {**old, **{k: v for k, v in saved.items() if k not in RENAMED}}  # (a new key wins)
     done = []
     for key, h in _handles(state):
         if key not in saved:
