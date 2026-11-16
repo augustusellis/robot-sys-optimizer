@@ -1,12 +1,19 @@
-"""Small SE(3) helpers on 4x4 numpy matrices. Pure numpy, no viewer imports.
+"""Small SE(3) helpers on 4x4 numpy matrices. No viewer imports.
 
-rpy is URDF fixed-axis roll-pitch-yaw: R = Rz(yaw) @ Ry(pitch) @ Rx(roll).
+rpy is URDF fixed-axis roll-pitch-yaw: R = Rz(yaw) @ Ry(pitch) @ Rx(roll) (scipy ``"xyz"``).
 Quaternions are (w, x, y, z), as used by Viser.
+
+v12 #16: the conversions from a matrix and the quaternion ones use
+``scipy.spatial.transform.Rotation``. ``rpy_to_matrix`` stays the closed form: it is on hot paths
+(a carrier pose per planner candidate, the tool frames) where scipy is about 7x slower (6 vs 43 us
+per call, measured). ``matrix_to_rpy`` keeps its gimbal-lock convention (all rotation into yaw,
+roll 0; scipy would put it into roll): saved project poses round-trip through it.
 """
 
 from __future__ import annotations
 
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 from core.schema import Pose
 
@@ -30,11 +37,8 @@ def matrix_to_rpy(R: np.ndarray) -> tuple[float, float, float]:
         pitch = np.copysign(np.pi / 2, sp)
         yaw = np.arctan2(-R[0, 1], R[1, 1])
         return 0.0, float(pitch), float(yaw)
-    return (
-        float(np.arctan2(R[2, 1], R[2, 2])),
-        float(np.arcsin(np.clip(sp, -1, 1))),
-        float(np.arctan2(R[1, 0], R[0, 0])),
-    )
+    r, p, y = Rotation.from_matrix(R).as_euler("xyz")
+    return float(r), float(p), float(y)
 
 
 def make_T(R: np.ndarray | None = None, p=None) -> np.ndarray:
@@ -55,30 +59,12 @@ def matrix_to_pose(T: np.ndarray) -> Pose:
 
 
 def wxyz_to_matrix(q) -> np.ndarray:
-    w, x, y, z = np.asarray(q, float) / np.linalg.norm(q)
-    return np.array(
-        [
-            [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
-            [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
-            [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)],
-        ]
-    )
+    w, x, y, z = np.asarray(q, float)
+    return Rotation.from_quat([x, y, z, w]).as_matrix()  # normalises
 
 
 def matrix_to_wxyz(R: np.ndarray) -> np.ndarray:
-    R = np.asarray(R, float)
-    tr = np.trace(R)
-    if tr > 0:
-        s = 2 * np.sqrt(tr + 1)
-        q = [s / 4, (R[2, 1] - R[1, 2]) / s, (R[0, 2] - R[2, 0]) / s, (R[1, 0] - R[0, 1]) / s]
-    elif R[0, 0] > R[1, 1] and R[0, 0] > R[2, 2]:
-        s = 2 * np.sqrt(1 + R[0, 0] - R[1, 1] - R[2, 2])
-        q = [(R[2, 1] - R[1, 2]) / s, s / 4, (R[0, 1] + R[1, 0]) / s, (R[0, 2] + R[2, 0]) / s]
-    elif R[1, 1] > R[2, 2]:
-        s = 2 * np.sqrt(1 + R[1, 1] - R[0, 0] - R[2, 2])
-        q = [(R[0, 2] - R[2, 0]) / s, (R[0, 1] + R[1, 0]) / s, s / 4, (R[1, 2] + R[2, 1]) / s]
-    else:
-        s = 2 * np.sqrt(1 + R[2, 2] - R[0, 0] - R[1, 1])
-        q = [(R[1, 0] - R[0, 1]) / s, (R[0, 2] + R[2, 0]) / s, (R[1, 2] + R[2, 1]) / s, s / 4]
-    q = np.array(q)
+    """(w, x, y, z) with w >= 0."""
+    x, y, z, w = Rotation.from_matrix(np.asarray(R, float)).as_quat()
+    q = np.array([w, x, y, z])
     return q if q[0] >= 0 else -q
