@@ -123,7 +123,8 @@ ui/               session (state ↔ project file), widgets (PoseWidgets, notify
                   3D pictures for the report), view_controls (Lighting, Shadows, Fit view, Top/Front/Side/Iso), display_lod (simplified
                   display copy above 300k triangles, overlay lift, mesh cache), colour_mesh (vertex-coloured GLB overlays),
                   targets_draw (Targets scene drawing, updated in place), tool_surface_ui (Targets → Detect tool surface),
-                  app_state (Settings & help folder + project hooks), plan_assets (asset stamps for the worker), sim_status (playback status text)
+                  preflight_run (setup check of a session, CLI) + preflight_ui (Optimize -> Setup check), handover (Everything (zip)),
+                  app_state (Settings & help folder + project hooks, support bundle button), plan_assets (asset stamps for the worker), sim_status (playback status text)
 core/             schema, golden_parts, robot, ik/{ur,opw,numeric}, transforms, urdf_import,
                   tool (parametric EE + library I/O), process (presets), mesh_select (pick + region grow),
                   targets (selection, normals, generators, CSV, target-set edits), target_tools (lattice,
@@ -136,7 +137,8 @@ core/             schema, golden_parts, robot, ik/{ur,opw,numeric}, transforms, 
                   tool_surface_features (per-region features, ray visibility), tool_surface_pick (scoring, pick-and-grow, confidence,
                   DEFAULT_PARAMS), tool_surface_eval (IoU metrics, labelled-sample loader, baselines), mandrels / mandrel_cases /
                   mandrels_hard (synthetic mandrels with ground truth; EASY and HARD sets), safe_io (validate, then replace),
-                  collision_report (plain-text "collides with" notes)
+                  collision_report (plain-text "collides with" notes), preflight (setup-check findings), app_log (log file),
+                  support_bundle (zip for problem reports, no meshes)
 opt/              reachability (map, offset map, lookup, voting, coverage matrix), placement (stations),
                   sites (floor / carrier search spaces), tool_geometry (L bisection + shape CMA-ES), cost
 tools/            tool library (one YAML per EE)
@@ -183,7 +185,8 @@ $RUFF check . && $RUFF format --check .   # lint + format
 $PY scripts/make_portable.py              # dist/*-portable-<sha>.zip: last commit + conda-pack'd env (offline PCs; guide 2.6; the installer is the recommended route, guide 2.1)
 $PY scripts/build_exe.py --zip            # PyInstaller onedir + selftest + zip (--maps --installer for a release; packaging/README.md)
 $PY scripts/tool_surface_eval.py --synthetic --detector core.tool_surface_pick:detect   # IoU table of the detector
-$PY -m ui.batch_job <batch dir>           # run the pending jobs of a batch without the GUI
+$PY -m ui.batch_job <batch dir> [--pdf]   # run the pending jobs of a batch without the GUI
+$PY -m ui.preflight_run <project dir>     # setup check of a saved project (exit 1 on an error)
 $PY scripts/make_golden_parts.py          # regenerate assets/parts/*.stl
 $PY scripts/import_ur_description.py <clone> ur20   # re-import a UR model (see the script docstring)
 ```
