@@ -102,6 +102,7 @@ The v1 layout below still holds for the top level; `core/`, `opt/` and `ui/` hav
 ```
 app.py            Viser entry point (build_app(server, dark=...) is testable without blocking)
 README.md         landing page -> docs/USER_GUIDE.md (user guide)
+CHANGELOG.md      user-facing changes per development round since main (newest first); add to it with each round
 packaging/        Windows exe: rso.spec (PyInstaller onedir), launch.py (entry point + --selftest + offline guard),
                   RobotCellOptimizer.iss (Inno Setup, per-user), ci_serve_check.ps1, README.md
 .github/workflows tests.yml (lint, guide check, fast tests on Windows + ubuntu-22.04), release.yml (tag -> exe, zip, setup, draft release)
