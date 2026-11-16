@@ -17,13 +17,15 @@ UNKNOWN_SOURCE = "source (unknown)"
 
 
 def numeric_version(text: str) -> str:
-    """``v1.2.3-4-gabc`` -> ``1.2.3.4`` for Windows file version info (``0.0.0.0`` if no number)."""
+    """``v1.2.3-4-gabc`` -> ``1.2.3.4`` for Windows file version info. Only a tag-like version
+    (``1.2`` or ``v1.2.3``, optionally ``-N-g<hash>``) counts: a bare commit hash such as
+    ``98595ef`` gives ``0.0.0.0``, and each part is capped at 65535 (the Windows limit)."""
     import re
 
-    m = re.match(r"v?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-(\d+)-g)?", text.strip())
+    m = re.match(r"v?(\d+)\.(\d+)(?:\.(\d+))?(?:-(\d+)-g[0-9a-f]+)?(?:-dirty)?$", text.strip())
     if not m:
         return "0.0.0.0"
-    return ".".join(g or "0" for g in m.groups())
+    return ".".join(str(min(int(g or 0), 65535)) for g in m.groups())
 
 
 @lru_cache(maxsize=1)

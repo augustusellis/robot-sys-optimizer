@@ -95,7 +95,12 @@ def test_app_version_frozen(tmp_path, monkeypatch):
 def test_numeric_version():
     assert version.numeric_version("v1.2.3-4-gabc") == "1.2.3.4"
     assert version.numeric_version("v0.9") == "0.9.0.0"
-    assert version.numeric_version("16de6e1") == "16.0.0.0" or version.numeric_version("16de6e1")
+    # a bare commit hash is not a version: "98595ef" once became 98595.0.0.0, which Windows rejects
+    assert version.numeric_version("16de6e1") == "0.0.0.0"
+    assert version.numeric_version("98595ef") == "0.0.0.0"
+    assert version.numeric_version("98595ef-dirty") == "0.0.0.0"
+    assert version.numeric_version("v1.2.3-4-gabc123-dirty") == "1.2.3.4"
+    assert version.numeric_version("v70000.1") == "65535.1.0.0"
     assert version.numeric_version("zzz") == "0.0.0.0"
 
 
