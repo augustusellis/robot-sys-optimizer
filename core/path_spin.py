@@ -264,7 +264,51 @@ def allowed_from(groups: dict, results: dict, group_of: dict):
     return fn
 
 
-STATS = {"spin": 0, "planned": 0}  # sequences that took the optimized / planned spins (diagnostics)
+STATS = {"spin": 0, "planned": 0, "skipped": 0}  # sequences: optimized / planned spins / DP not run
+UNWIND = np.radians(90.0)  # a joint step this large between samples is an unwinding move
+
+
+def needs_spin(samples, lo, hi) -> bool:
+    """v12 #18: is the spin DP worth running on these (planned-spin) samples? Only when something
+    is wrong or tight: a problem sample (``_bad``), a joint within ``LIMIT_BAND`` of its limit on the
+    surface, or an unwinding step (``UNWIND``). That is where v10 measured its gains (an offset that
+    keeps the wrist from its limits); on clean paths the DP gave the same or a worse plan."""
+    from core.paths import _bad
+
+    if _bad(samples):
+        return True
+    lo, hi = np.asarray(lo, float), np.asarray(hi, float)
+    prev = None
+    for p in samples:
+        if p.q is None:
+            continue
+        q = np.asarray(p.q, float)
+        if not p.kind and np.min(np.minimum(q - lo, hi - q)) < LIMIT_BAND:
+            return True
+        if prev is not None and np.max(np.abs(q - prev)) > UNWIND:
+            return True
+        prev = q
+    return False
+
+
+def spin_sequence(tr, k, zone, sq, results, points, q, label, ref, spin, lift, leave):
+    """core.paths.trace (v10 #9): sequence ``sq`` with the spin chosen per sample, or None (keep
+    the planned spins). v12 #18: the DP only runs where the planned-spin samples ``needs_spin``."""
+    plain = plain_sequence(tr, k, zone, sq, results, points, q, label, lift)
+    if not needs_spin(plain, tr.ch.lo, tr.ch.hi):
+        STATS["skipped"] += 1
+        return None
+    dp = optimize_sequence(tr, k, zone, sq.pids, results, points, label, ref, spin, sq.lifts, lift, leave)
+    return (
+        None
+        if dp is None
+        else better_spin(tr, k, zone, sq, results, points, q, label, lift, dp, ref, leave, plain)
+    )
+
+
+def plan_needs_spin(plan, lo, hi) -> bool:
+    """``needs_spin`` over a whole built plan (ui.simulate: build the spin version or not)."""
+    return any(needs_spin(st.samples, lo, hi) for st in plan.stations)
 
 
 def motion(samples, ref=None, leave=None) -> float:
@@ -279,12 +323,26 @@ def motion(samples, ref=None, leave=None) -> float:
     return float((d @ _weights(d.shape[1])).sum())
 
 
-def better_spin(tr, k, zone, sq, results, points, q, label, lift, dp, ref=None, leave=None):
+def better_spin(tr, k, zone, sq, results, points, q, label, lift, dp, ref=None, leave=None, plain=None):
     """core.paths.trace: ``dp`` (optimize_sequence) unless the planned spins (from q, as the
-    tracer does) have fewer problem samples, or as many and less joint motion; None = take the
-    planned ones."""
-    from core.path_types import PathSample
+    tracer does; ``plain`` when already traced) have fewer problem samples, or as many and less
+    joint motion; None = take the planned ones."""
     from core.paths import _bad
+
+    if plain is None:
+        plain = plain_sequence(tr, k, zone, sq, results, points, q, label, lift)
+    bd, bp = _bad(dp), _bad(plain)
+    md, mp = motion(dp, ref, leave), motion(plain, ref, leave)
+    if bd < bp or (bd == bp and md <= mp * 1.001 + 1e-9):  # ties: dp keeps away from the limits
+        STATS["spin"] += 1
+        return dp
+    STATS["planned"] += 1
+    return None
+
+
+def plain_sequence(tr, k, zone, sq, results, points, q, label, lift) -> list:
+    """The samples of sequence ``sq`` with the planned spins, as the tracer makes them."""
+    from core.path_types import PathSample
 
     pids, plain = sq.pids, []
     r0 = results[pids[0]]
@@ -296,10 +354,4 @@ def better_spin(tr, k, zone, sq, results, points, q, label, lift, dp, ref=None, 
         seg = tr.around(seg, k, zone, q, results[b])
         plain += seg
         q = next((p.q for p in reversed(seg) if p.q is not None), q)
-    bd, bp = _bad(dp), _bad(plain)
-    md, mp = motion(dp, ref, leave), motion(plain, ref, leave)
-    if bd < bp or (bd == bp and md <= mp * 1.001 + 1e-9):  # ties: dp keeps away from the limits
-        STATS["spin"] += 1
-        return dp
-    STATS["planned"] += 1
-    return None
+    return plain

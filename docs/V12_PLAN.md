@@ -50,3 +50,15 @@ per task, no push, no `Co-Authored-By`, new test files take viser ports 8983+).
 
 | Item | State | Notes |
 | --- | --- | --- |
+| 1-2 | done (314003c) | `core.path_direction.Rows` keeps rows per visit; coincident points take a neighbour's travel direction; none at all = `direction` issue. tests/test_v12_rows.py (the duplicate-point test fails on v11). |
+| 3-7 | done (3626b81) | Unknown robots: Export asks for a format. Flipped normals: measured (cylinder r 50 mm: 48.5 mm either way); disagreeing normals reported. Two-sided groups: edge-check warning. >5 m in mm: unsure. Missing files: found by name in the project folder, kept in the saved file, *Locate missing files* dialog. Not tried in a browser: the Locate dialog's uploads. |
+| 8 | done (4bbb111) | `Solution.id` / `Solution.key`; plans saved before v12 keep label keys. 22 test files moved from `.label` to `.key` lookups. |
+| 9 | done (bb94a9b) | `ui.session_lock.LOCK` (one per process); guide 10.4a. Viser button callbacks are not wrapped (only drags, the frame placement and the background writers): wrapping every callback would serialise them and could deadlock a callback that waits for a planner. |
+| 10 | done (b9755bd) | `core.collision_config.CollisionConfig`; tolerance and edge jobs had used the worker's leftover settings before (no collision settings in their specs). |
+| 11 | done | `settings.missing` is empty on the built app; source check for duplicates; `RENAMED`. |
+| 12 | done (41653f3) | ruff 0.17.3 pinned; lint job on ubuntu. Not run on GitHub (no push). |
+| 13 | done (efe3999) | `ui/html_bridge.py`; tab bar / jog arrows byte-identical, joystick equivalent; e2e 12/12. |
+| 14-15 | done (e7034b1, a8b28d7) | `core/path_sample.chord_poses` (v11 samples to 1e-12); `TraceOptions`. |
+| 16 | done, partly (86fa591) | scipy for matrix -> rpy / quaternion; `rpy_to_matrix` kept closed form: scipy 43 us vs 6 us per call, on hot paths. |
+| 17 | **dropped** | CP-SAT `AddHint` from the k - 1 cover, synthetic 40 m part, k = 20..32: full-coverage scene 26.5 -> 27.5 s (limit 2 s) and 36.2 -> 39.9 s (10 s), same covers; coverage-limited scene 9.9 -> 14.5 s and at a 1 s limit a worse k = 32 cover (265 vs 298 targets). The hint steers the search, it does not help it. Reverted. |
+| 18 | done | Spin DP only where the planned-spin samples have a problem, a joint within 20 deg of its limit on the surface, or an unwinding step; Paths skips the whole spin build when the plan has none. rail_long_part (2 stops): build 7.3 -> 2.6 s, same paths (cycle 83 s, no flags). CRX-30 gantry_overhead (3 stops, `scripts/measure_paths.py`): 188.6 -> 148.2 s (-21 %), 7 of 12 sequences skip the DP, cycle 515 -> 517 s (+2 s), flags and joint margins unchanged. |

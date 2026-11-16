@@ -83,7 +83,11 @@ def main() -> None:
         if "--trapezoid" in sys.argv:  # v10 T14: the pre-v10 timing
             app["cycle"].timing.value = "Trapezoid per move (pre-v10)"
         app["results"].refresh()
+        import time
+
+        t0 = time.perf_counter()
         sim.build(block=True)
+        print(f"build: {time.perf_counter() - t0:.1f} s")  # v12 #18: the build alone
         print(sim.info.content.replace("  \n", "\n"))
         from core.path_spin import STATS
 

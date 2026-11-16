@@ -16,6 +16,7 @@ import numpy as np
 import viser
 
 from core.feasibility import CancelledError
+from core.path_spin import plan_needs_spin
 from ui import sim_build, sim_fields
 from ui.log_panel import log, took
 from ui.plan_ids import key as plan_key
@@ -189,12 +190,12 @@ class SimPanel:
 
                 spin, self.spin_used = self._spin(res), None
                 if sim_fields.coordinated(self):  # v10 T16: the carrier moves while the arm works
-                    plan, spin = (
-                        checked(sim_build.coordinated_plan(self, checker, mesh, sol, res, pts, home)),
-                        None,
-                    )
+                    plan = checked(sim_build.coordinated_plan(self, checker, mesh, sol, res, pts, home))
+                    spin = None
                 else:
                     plan = checked(trace(checker, mesh, sol, res, pts, poses, **kw))
+                if spin is not None and not plan_needs_spin(plan, checker.lo, checker.hi):
+                    spin, self.spin_used = None, False  # v12 #18: clean and clear of the limits
                 if spin is not None:  # v10 #9: also with the spin chosen along the path; keep
                     alt = checked(trace(checker, mesh, sol, res, pts, poses, **kw, spin=spin))
                     better = sim_build.score(alt, self._cycle_of(alt)) < sim_build.score(

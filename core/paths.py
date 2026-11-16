@@ -405,14 +405,10 @@ def trace(
                 dp = directional_sequence(tr, k, sq, results, points, label, ref, lift, leave, dv, rows_all)
                 q = np.asarray(dp[0].q, float) if dp is not None else q
             elif spin is not None and len(pids) > 1:  # v10 #9: the spin per sample (path_spin)
-                from core.path_spin import better_spin, optimize_sequence
+                from core.path_spin import spin_sequence
 
                 leave = home if j == len(seqs[k]) - 1 else None  # back home after the last group
-                dp = optimize_sequence(
-                    tr, k, zone, pids, results, points, label, ref, spin, sq.lifts, lift, leave
-                )
-                if dp is not None:  # keep the planned spins when they do no worse
-                    dp = better_spin(tr, k, zone, sq, results, points, q, label, lift, dp, ref, leave)
+                dp = spin_sequence(tr, k, zone, sq, results, points, q, label, ref, spin, lift, leave)
                 if dp is not None:
                     q = np.asarray(dp[0].q, float)
             if home is not None and j == 0:  # from home to the stop's first point
