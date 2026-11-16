@@ -2,10 +2,10 @@
 process so the import can be cancelled.
 
 ``guess_units(extent)``: STL / OBJ / PLY carry no units. The largest bounding-box side in file units
-tells: over ``MM_ABOVE`` it is millimetres (a 20 m end effector or cell part is not plausible), from
-``M_FROM`` to ``M_UP_TO`` it is metres; in between (5 to 20) it could be a 5-20 m frame in metres
-or a 5-20 mm piece in millimetres: unsure, the caller asks. Below ``M_FROM`` (5 mm in metres or
-0.005 mm in mm): unsure too.
+tells: over ``MM_ABOVE`` (100) it is millimetres (a 100 m end effector or cell part is not plausible,
+nor a 2.5 m one drawn in inches for this tool), from ``M_FROM`` to ``M_UP_TO`` it is metres; in
+between it is unsure and the caller asks: 5-20 could be metres or millimetres, 20-100 millimetres or
+inches. Below ``M_FROM`` (5 mm in metres or 0.005 mm in mm): unsure too.
 
 ``step_in_process``: CadQuery meshes a STEP file in seconds to minutes and cannot be interrupted in a
 thread; a spawned process can be ended. The result comes back as an STL file in metres.
@@ -18,7 +18,8 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-MM_ABOVE = 20.0
+MM_ABOVE = 100.0  # v11 #12: 20..100 could be mm or inches (a 30-unit part: 30 mm or 0.76 m)
+MM_LOW = 20.0  # 5..20 units: metres or millimetres
 M_FROM, M_UP_TO = 0.005, 5.0
 SCALE = {"m": 1.0, "mm": 1e-3, "in": 0.0254}
 
@@ -30,6 +31,8 @@ def guess_units(extent: float) -> tuple[str, bool]:
         return "mm", True
     if M_FROM <= e <= M_UP_TO:
         return "m", True
+    if e > MM_LOW:  # 20..100: millimetres more likely than inches, but ask
+        return "mm", False
     return ("m" if e > M_UP_TO else "mm"), False
 
 

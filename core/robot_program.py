@@ -84,9 +84,11 @@ def steps(plan, carrier=None, T_world_part=None) -> tuple[list[_Step], list[np.n
         for p in st.samples:
             if p.kind == "carrier":
                 continue  # the arm is parked while the carrier drives (the stop's carrier line)
-            if p.kind == "home" or p.q is None:
-                if p.q is not None:
-                    out.append(_Step("joint", fi, q=np.asarray(p.q, float), carrier=p.carrier, issue=p.issue))
+            if p.q is None:  # v11 #12: no joint solution: said in the program, not dropped silently
+                out.append(_Step("skip", fi, issue=p.issue or "unreachable", note=f"point {p.a} -> {p.b}"))
+                continue
+            if p.kind == "home":
+                out.append(_Step("joint", fi, q=np.asarray(p.q, float), carrier=p.carrier, issue=p.issue))
                 continue
             out.append(
                 _Step("lin", fi, T=p.T_part_tcp, q=np.asarray(p.q, float), carrier=p.carrier, issue=p.issue)
@@ -120,8 +122,14 @@ def program(
     cs: CycleSettings | None = None,
     name: str = "rso_path",
 ) -> str:
-    """The program text for ``fmt`` (FORMATS)."""
+    """The program text for ``fmt`` (FORMATS). One tool definition per program: a plan whose paths
+    use several TCPs is refused (v11 #12; the points would be written for the wrong TCP)."""
     cs = cs or CycleSettings()
+    used = sorted({p.tcp for p in plan.samples if p.tcp})
+    if len(used) > 1:
+        raise ValueError(
+            f"the paths use {len(used)} TCPs ({', '.join(used)}): one program per TCP is not supported yet"
+        )
     st, frames, coord = steps(plan, carrier, T_world_part)
     if fmt == "urscript":
         return _urscript(st, frames, coord, T_flange_tcp, cs, name)
@@ -159,6 +167,9 @@ def _urscript(st, frames, coord, tool, cs, name) -> str:
     ]
     vj, aj = cs.joint_speed, cs.joint_acc
     for s in st:
+        if s.kind == "skip":
+            lines.append(f"  # skipped ({s.note}): no joint solution, {s.issue}")
+            continue
         if s.issue:
             lines.append(f"  # flagged in the paths: {s.issue}")
         if s.kind == "carrier":
@@ -198,6 +209,9 @@ def _fanuc(st, frames, coord, tool, cs, name) -> str:
     n = 0
     uf = None
     for s in st:
+        if s.kind == "skip":
+            body.append(f"   ! skipped ({s.note}): no joint solution, {s.issue} ;")
+            continue
         if s.kind == "carrier":
             body.append(f"   ! {s.note}: move the carrier {_vals(s.carrier, 'mm')} ;")
             body.append("   WAIT DI[1]=ON ;")
@@ -243,7 +257,7 @@ def _fanuc(st, frames, coord, tool, cs, name) -> str:
         w, p, r = _wpr(F[:3, :3])
         head.append(f"   ! UFRAME {k + 1} = X {x:.3f} Y {y:.3f} Z {z:.3f} W {w:.3f} P {p:.3f} R {r:.3f} ;")
     lines = head + [
-        f"{i + 1:4d}:{line[3:]}" if line.startswith("   ") else line for i, line in enumerate(body)
+        f"{i + 1:4d}:  {line[3:]}" if line.startswith("   ") else line for i, line in enumerate(body)
     ]
     lines += ["/POS", *pos, "/END", ""]
     return "\n".join(lines)
@@ -273,6 +287,9 @@ def _rapid(st, frames, coord, tool, cs, name) -> str:
     n = 0
     vp = f"[{cs.process_speed * 1000:.0f},500,5000,1000]"
     for s in st:
+        if s.kind == "skip":
+            body.append(f"    ! skipped ({s.note}): no joint solution, {s.issue}")
+            continue
         if s.kind == "carrier":
             body.append(f"    ! {s.note}: carrier {_vals(s.carrier, 'mm')}")
             body.append("    rso_carrier;")

@@ -146,6 +146,9 @@ def compare_job(payload: dict, emit, cancelled) -> list[dict]:
             from ui.compare_axes import kind_of, place
 
             base, note = place(s, su["axis"], _rmap(s, cancelled), cancelled)
+            if note.startswith("not placed"):  # v11 #12: no usable frame for this part
+                rows.append({**tag, "axis": su.get("axis_name", ""), "label": f"no plan ({note})"})
+                continue
             s.base = base
             if base.mode != "movable":
                 settings = replace(settings, max_stations=1)

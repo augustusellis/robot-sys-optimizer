@@ -58,7 +58,8 @@ def joint_move_time(dq, cs: CycleSettings, v_limits=None) -> float:
     dq = np.abs(np.asarray(dq, float))
     v = np.full(len(dq), cs.joint_speed)
     if v_limits is not None:
-        v = np.minimum(v, np.asarray(v_limits, float)[: len(dq)])
+        lim = np.asarray(v_limits, float)[: len(dq)]
+        v = np.where(lim > 0, np.minimum(v, lim), v)  # v11 #12: 0 = no limit in the URDF
     return max((trapezoid(d, vi, cs.joint_acc) for d, vi in zip(dq, v, strict=True)), default=0.0)
 
 
@@ -157,7 +158,8 @@ def _run_times(kind: str, S: list, cs: CycleSettings, v_limits) -> np.ndarray:
         Q = np.asarray(qs, float)
         v = np.full(Q.shape[1], cs.joint_speed)
         if v_limits is not None:
-            v = np.minimum(v, np.asarray(v_limits, float)[: Q.shape[1]])
+            lim = np.asarray(v_limits, float)[: Q.shape[1]]
+            v = np.where(lim > 0, np.minimum(v, lim), v)  # v11 #12: 0 = no limit in the URDF
         a_max, j_max = np.full(Q.shape[1], cs.joint_acc), np.full(Q.shape[1], cs.joint_jerk or np.inf)
         C, keys = _carrier_cols(S)
         if C is not None:  # v10 T16 coordinated: the carrier axes are timed as more joints

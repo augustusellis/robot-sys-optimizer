@@ -46,12 +46,12 @@ def follow_dofs(carrier) -> list[str]:
 
 
 def _smooth(X: np.ndarray, path_s: np.ndarray, width: float) -> np.ndarray:
-    """Moving average of X over ``width`` of path length (ends kept)."""
-    out = np.empty_like(X)
-    for i, s in enumerate(path_s):
-        m = np.abs(path_s - s) <= width / 2
-        out[i] = X[m].mean(axis=0)
-    return out
+    """Moving average of X over ``width`` of path length (ends kept): window sums from prefix
+    sums, the window of each sample found by ``searchsorted`` (``path_s`` is non-decreasing)."""
+    c = np.vstack([np.zeros((1, X.shape[1])), np.cumsum(X, axis=0)])
+    lo = np.searchsorted(path_s, path_s - width / 2 - 1e-12, side="left")
+    hi = np.searchsorted(path_s, path_s + width / 2 + 1e-12, side="right")
+    return (c[hi] - c[lo]) / (hi - lo)[:, None]
 
 
 class _Ctx:

@@ -16,8 +16,6 @@ drag across surface between rows it does not cover).
 
 from __future__ import annotations
 
-import heapq
-
 import numpy as np
 
 GAP = 2 * np.pi / 3
@@ -47,21 +45,17 @@ def boundary(P: np.ndarray, N: np.ndarray, nb: list[list[int]]) -> np.ndarray:
 
 def surface_distance(P: np.ndarray, nb: list[list[int]], sources: np.ndarray) -> np.ndarray:
     """Distance along the neighbour graph (3D edge lengths) from the nearest source point."""
-    d = np.full(len(P), np.inf)
-    heap = []
-    for s in np.flatnonzero(sources):
-        d[s] = 0.0
-        heap.append((0.0, int(s)))
-    heapq.heapify(heap)
-    while heap:
-        di, i = heapq.heappop(heap)
-        if di > d[i]:
-            continue
-        for j in nb[i]:
-            nd = di + float(np.linalg.norm(P[j] - P[i]))
-            if nd < d[j]:
-                d[j] = nd
-                heapq.heappush(heap, (nd, j))
+    from scipy.sparse import csr_matrix
+    from scipy.sparse.csgraph import dijkstra
+
+    src = np.flatnonzero(sources)
+    if not len(src):
+        return np.zeros(len(P))
+    i = np.repeat(np.arange(len(nb)), [len(x) for x in nb])
+    j = np.concatenate([np.asarray(x, int) for x in nb]) if len(i) else np.zeros(0, int)
+    w = np.linalg.norm(P[j] - P[i], axis=1) if len(i) else np.zeros(0)
+    g = csr_matrix((np.maximum(w, 1e-15), (i, j)), shape=(len(P), len(P)))  # 0 would be "no edge"
+    d = dijkstra(g, directed=False, indices=src, min_only=True)
     d[~np.isfinite(d)] = 0.0  # a piece without a boundary point (cannot happen on open sets)
     return d
 

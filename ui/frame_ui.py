@@ -345,6 +345,11 @@ class FramePanel:
         """The chosen frame becomes the project's carrier frame; its plans go to Results."""
         if not self.rows:
             return False
+        if self.s.view_stash:  # v11 #12: it would land on the viewed setup and be lost on Back
+            notify(
+                event, "Viewing a compared setup", "Results → Compared robots: go back to the project's first"
+            )
+            return False
         if index is None:
             labels = list(self.choice.options)
             index = labels.index(self.choice.value) if self.choice.value in labels else 0
