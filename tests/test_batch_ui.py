@@ -150,6 +150,22 @@ def test_run_streams_and_finishes(app, panel, monkeypatch):
     assert seen == [True, True]
 
 
+def test_pdf_checkbox_is_saved_with_the_batch(app, panel, monkeypatch):
+    _queue(app, panel, 1)
+    done = threading.Thread(target=lambda: None)
+    done.start()
+    monkeypatch.setattr("ui.batch_job.run_batch", lambda *a, **k: done)
+    panel.pdf.value = True
+    panel.run(block=True)
+    assert panel.manifest().pdf is True
+    panel.pdf.value = False
+    assert panel.open_batch(panel.batch_dir.name) and panel.pdf.value is True  # reopening shows it
+    panel.pdf.value = False
+    panel.run(block=True)
+    assert panel.manifest().pdf is False
+    panel.run_btn.visible, panel.stop.visible, panel.progress.visible = True, False, False
+
+
 def test_run_nothing_pending(app, panel):
     _queue(app, panel, 1)
     j = panel.manifest().jobs[0]

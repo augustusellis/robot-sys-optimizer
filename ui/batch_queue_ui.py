@@ -19,38 +19,12 @@ import viser
 
 from core import batch as bt
 from core import data_paths
+from core.batch import job_table  # noqa: F401 (the queue table; tests import it here)
 from ui.log_panel import log
 from ui.widgets import notify
 
 MODES = {"Plan stations": False, "Quick plan": True}  # label -> planner_snapshot(quick=...)
 REDO = ("failed", "partial", "cancelled", "needs_review")  # statuses that can be reset to pending
-
-
-def _cell(text: str) -> str:
-    return str(text).replace("|", "/").replace("\n", " ")[:120]
-
-
-def job_table(m: bt.BatchManifest) -> str:
-    if not m.jobs:
-        return "_The queue is empty._"
-    lines = []
-    for j in m.jobs:
-        s = j.summary or {}
-        n = s.get("total", s.get("targets_preview", ""))
-        auto = j.selection_rule == "tool_surface"
-        conf = f" ({j.confidence:.2f})" if auto and j.confidence is not None else ""
-        faces = f"auto{conf}" if auto and not j.selection else str(len(j.selection))
-        got = f"{s.get('reached', '')}/{s.get('total', '')}, {s['cost']:.2f}" if s.get("stations") else ""
-        mode = "quick" if j.planner.get("mode") == "quick" else "plan"
-        name = f" {_cell(j.name)}" if j.name != j.id else ""
-        lines.append(
-            f"| {j.id}{name} | {_cell(Path(j.part).name)} | {faces} | {n} | {mode} | "
-            f"{j.status} | {got} | {_cell(j.error)} |"
-        )
-    return (
-        "| job | part | faces | targets | mode | status | reached, cost | error |\n"
-        "|---|---|---|---|---|---|---|---|\n" + "\n".join(lines)
-    )
 
 
 class BatchPanel:
@@ -92,6 +66,11 @@ class BatchPanel:
             self.min_conf = gui.add_number("Min confidence", 0.7, min=0.0, max=1.0, step=0.05)
             self.folder_btn = gui.add_button("Add folder…")
             self.review_page_btn = gui.add_button("Open review page", hint="write review.html")
+            self.pdf = gui.add_checkbox(
+                "PDF report per job",
+                False,
+                hint="also export/report.pdf for every job (needs Edge or Chrome)",
+            )
             self.run_btn = gui.add_button("Run batch", color="green")
             self.stop = gui.add_button("Cancel", visible=False)
             self.progress = gui.add_progress_bar(0.0, visible=False)
@@ -175,7 +154,7 @@ class BatchPanel:
         if name == "—" or not (d / bt.MANIFEST_NAME).is_file():
             notify(event, "Open batch", "Pick a batch folder from the list (workspace/batch_*)")
             return False
-        bt.load_manifest(d / bt.MANIFEST_NAME)  # a bad file raises, reported by the guard
+        self.pdf.value = bt.load_manifest(d / bt.MANIFEST_NAME).pdf  # a bad file raises (the guard)
         self.batch_dir = d
         self.status.content = ""
         self.refresh()
@@ -219,10 +198,7 @@ class BatchPanel:
         except (OSError, ValueError) as err:
             notify(event, "Cannot queue", f"save the project first ({err})")
             return False
-        if self.batch_dir is None:
-            self.batch_dir = data_paths.workspace_dir() / f"batch_{datetime.now():%Y%m%d_%H%M%S}"
-            self.batch_dir.mkdir(parents=True, exist_ok=True)
-            self._save(bt.BatchManifest(cell_project=bt.rel_cell(s.project_dir, self.batch_dir)))
+        self._new_batch()
         m = self.manifest()
         src = s.resolve(s.part.mesh_path)
         parts = self.batch_dir / "parts"
@@ -251,17 +227,20 @@ class BatchPanel:
         notify(event, "Queued", f"{job.id}: {len(sel)} faces, {len(P)} targets", ok=True)
         return True
 
-    def _ensure_batch(self) -> bool:
+    def _new_batch(self) -> None:
+        """Create the batch folder and its manifest on the first job."""
+        if self.batch_dir is None:
+            self.batch_dir = data_paths.workspace_dir() / f"batch_{datetime.now():%Y%m%d_%H%M%S}"
+            self.batch_dir.mkdir(parents=True, exist_ok=True)
+            self._save(bt.BatchManifest(cell_project=bt.rel_cell(self.s.project_dir, self.batch_dir)))
+
+    def _ensure_batch(self) -> None:
         from ui.workflow import setup_reason
 
         if reason := setup_reason(self.s):
             raise ValueError(reason)
         self.project.save_now()  # the cell project must be on disk
-        if self.batch_dir is None:
-            self.batch_dir = data_paths.workspace_dir() / f"batch_{datetime.now():%Y%m%d_%H%M%S}"
-            self.batch_dir.mkdir(parents=True, exist_ok=True)
-            self._save(bt.BatchManifest(cell_project=bt.rel_cell(self.s.project_dir, self.batch_dir)))
-        return True
+        self._new_batch()
 
     def add_folder(self, folder: str, event=None) -> tuple[list[str], list[str]]:
         """Queue every part file of ``folder`` as an auto: tool surface job (current generator and
@@ -276,9 +255,7 @@ class BatchPanel:
             notify(event, "Add folder", f"'{folder}' is not a folder on this computer")
             return [], []
         try:
-            if not self._ensure_batch():
-                notify(event, "Cannot queue", "Load a robot / part first")
-                return [], []
+            self._ensure_batch()
         except ValueError as err:
             notify(event, "Cannot queue", str(err))
             return [], []
@@ -419,6 +396,7 @@ class BatchPanel:
             return notify(event, "Cannot run", f"the cell study {m.cell_project} is missing")
         if not any(j.status in ("pending", "running") for j in m.jobs):
             return notify(event, "Nothing to run", "No pending jobs: add some or reset a failed one")
+        bt.set_pdf(self.batch_dir / bt.MANIFEST_NAME, bool(self.pdf.value))
         self._cancel.clear()
         self.run_btn.visible, self.stop.visible, self.progress.visible = False, True, True
         self.progress.value = 0.0

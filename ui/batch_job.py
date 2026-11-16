@@ -245,7 +245,7 @@ def _run(manifest, job, batch_dir: Path, emit, cancelled, box: dict, t0: float) 
     emit("progress", (f"{who}: writing the exports", 1.0))
     images = _pictures(job, batch_dir)
     keep_review = {k: v for k, v in job.summary.items() if k in ("review", "review_note")}
-    files = report_make.export_all(s, best, out / "export", images=images)
+    files = report_make.export_all(s, best, out / "export", pdf=bool(manifest.pdf), images=images)
     exports, failed = {}, []
     for name, v in files.items():
         if isinstance(v, Path):
@@ -286,11 +286,13 @@ def job_row(job: bt.BatchJob, index: int = 0, n: int = 0) -> dict:
     }
 
 
-def _scaled(emit, i: int, n: int, who: str):
+def _scaled(emit, i: int, n: int, who: str, eta: str = ""):
+    tail = f" - {eta}" if eta else ""  # time left for the batch, from the jobs finished so far
+
     def inner(kind: str, data) -> None:
         if kind == "progress":
             msg, f = data
-            emit("progress", (f"job {i + 1}/{n} ({who}): {msg}", (i + float(f)) / max(n, 1)))
+            emit("progress", (f"job {i + 1}/{n} ({who}): {msg}{tail}", (i + float(f)) / max(n, 1)))
         else:
             emit(kind, data)
 
@@ -364,6 +366,7 @@ def drive(batch_dir, on_msg, cancelled=lambda: False, in_process: bool = False) 
     m = bt.load_manifest(path)
     todo = [(j.id, j.name or j.id) for j in bt.pending_jobs(m)]
     bt.save_manifest(m, path)  # interrupted 'running' jobs are pending again
+    times = [j.run_s for j in m.jobs if j.status == "done"]  # earlier runs of this batch count too
     runner = None if in_process else jobs.Runner()  # private: the GUI's planner worker stays
     rows, status = [], "done"
     try:
@@ -372,7 +375,7 @@ def drive(batch_dir, on_msg, cancelled=lambda: False, in_process: bool = False) 
                 status = "cancelled"
                 break
             payload = {"batch_dir": str(bdir), "job_id": jid}
-            sub = _scaled(on_msg, i, len(todo), who)
+            sub = _scaled(on_msg, i, len(todo), who, bt.eta_text(times, len(todo) - i))
             try:
                 if runner is None:
                     batch_one(payload, sub, cancelled)
@@ -392,6 +395,8 @@ def drive(batch_dir, on_msg, cancelled=lambda: False, in_process: bool = False) 
             if job is not None:
                 rows.append(job_row(job, i, len(todo)))
                 on_msg("job", rows[-1])
+                if job.status == "done":
+                    times.append(job.run_s)
             if status == "cancelled":
                 break
     finally:
@@ -452,9 +457,16 @@ def main(argv=None) -> int:
     ap.add_argument("batch_dir", type=Path)
     ap.add_argument("--in-process", action="store_true", help="no worker process per job")
     ap.add_argument("--review-only", action="store_true", help="only (re)build review.html, run no jobs")
+    ap.add_argument("--pdf", action="store_true", help="also print each job's report to PDF (Edge / Chrome)")
     a = ap.parse_args(argv)
     if a.review_only:
         return _review_only(a.batch_dir)
+    if a.pdf:
+        try:
+            bt.set_pdf(Path(a.batch_dir) / bt.MANIFEST_NAME, True)
+        except ValueError as err:
+            print(f"batch failed: {one_line(err)}", flush=True)
+            return 1
     cancel = threading.Event()
     done: dict = {}
 

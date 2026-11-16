@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from core.target_gen import GenSettings
 
-VERSION = 1
+VERSION = 2  # 2: BatchManifest.pdf (version 1 files load unchanged)
 MANIFEST_NAME = "batch.json"
 Status = Literal["pending", "running", "done", "failed", "cancelled", "partial", "needs_review"]
 Rule = Literal["faces", "tool_surface"]
@@ -72,6 +72,7 @@ class BatchManifest(BaseModel):
     version: int = VERSION
     created: str = Field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
     cell_project: str = ""  # cell study folder whose robot, tool, carrier, stay-outs, optimizer are reused
+    pdf: bool = False  # also print each job's report to export/report.pdf (needs Edge or Chrome)
     jobs: list[BatchJob] = Field(default_factory=list)
 
 
@@ -129,6 +130,23 @@ def pending_jobs(manifest: BatchManifest) -> list[BatchJob]:
     skipped; failed, cancelled and partial jobs are not re-run unless the user resets them."""
     reset_interrupted(manifest)
     return [j for j in manifest.jobs if j.status == "pending"]
+
+
+def eta_text(times: list[float], remaining: int) -> str:
+    """ "about 12 min left" from the run times (s) of finished jobs and the number of jobs still
+    to finish (the running one included); "" when there is nothing to go by. The median is
+    used, so one very long or very short job does not swing the estimate."""
+    times = sorted(t for t in times if t and t > 0)
+    if not times or remaining <= 0:
+        return ""
+    mid = len(times) // 2
+    median = times[mid] if len(times) % 2 else (times[mid - 1] + times[mid]) / 2
+    left = median * remaining
+    if left < 90:
+        return "about 1 min left"
+    if left < 5400:
+        return f"about {left / 60:.0f} min left"
+    return f"about {left / 3600:.1f} h left"
 
 
 def mesh_sha1(path: Path) -> str:
@@ -212,6 +230,41 @@ def update_job(path: Path, job: BatchJob, fallback: BatchManifest | None = None)
             save_manifest(current, path)
             return True
     return False
+
+
+def _cell(text: str) -> str:
+    return str(text).replace("|", "/").replace("\n", " ")[:120]
+
+
+def job_table(m: BatchManifest) -> str:
+    if not m.jobs:
+        return "_The queue is empty._"
+    lines = []
+    for j in m.jobs:
+        s = j.summary or {}
+        n = s.get("total", s.get("targets_preview", ""))
+        auto = j.selection_rule == "tool_surface"
+        conf = f" ({j.confidence:.2f})" if auto and j.confidence is not None else ""
+        faces = f"auto{conf}" if auto and not j.selection else str(len(j.selection))
+        got = f"{s.get('reached', '')}/{s.get('total', '')}, {s['cost']:.2f}" if s.get("stations") else ""
+        mode = "quick" if j.planner.get("mode") == "quick" else "plan"
+        name = f" {_cell(j.name)}" if j.name != j.id else ""
+        lines.append(
+            f"| {j.id}{name} | {_cell(Path(j.part).name)} | {faces} | {n} | {mode} | "
+            f"{j.status} | {got} | {_cell(j.error)} |"
+        )
+    return (
+        "| job | part | faces | targets | mode | status | reached, cost | error |\n"
+        "|---|---|---|---|---|---|---|---|\n" + "\n".join(lines)
+    )
+
+
+def set_pdf(path: Path, on: bool) -> None:
+    """Switch the per-job PDF report of the batch on disk (the jobs are kept as the file has them)."""
+    m = load_manifest(path)
+    if m.pdf != bool(on):
+        m.pdf = bool(on)
+        save_manifest(m, path)
 
 
 SUMMARY_COLUMNS = (
