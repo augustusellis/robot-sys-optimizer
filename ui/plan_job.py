@@ -76,27 +76,12 @@ def build_checker(s, robot, sites, workers: int, say, emit):
 
         say(f"starting {workers} check workers", 0.0)
         try:
-            from core import collision
-
             cs = CheckerSpec(robot.spec, s.tool_model, mesh, T_base0, T_part, bb, wb, obstacles)
-            cs.dress, cs.hose = collision.DRESS_M, collision.HOSE  # v8 T18
-            cs.geom = collision.geom_state()  # 2026-11-11: collision geometry settings
+            cs.collision = scene.config  # v12 #10: the collision settings, one value
             checker.pool = pool_for(cs, workers)
         except Exception as err:  # e.g. a setup object that doesn't pickle: run serially
             emit("warn", f"parallel checks off for this run ({type(err).__name__}: {err})")
     return checker
-
-
-def use_dress(spec: dict) -> None:
-    """v8 T18: the hose pack clearance of the GUI (the worker process has its own setting)."""
-    from core import collision
-
-    if "dress_m" in spec:
-        collision.DRESS_M = float(spec["dress_m"])
-    if "hose" in spec:
-        collision.HOSE = spec["hose"]
-    if "collision_geom" in spec:
-        collision.set_geom_state(spec["collision_geom"])
 
 
 def station_job(payload: dict, emit, cancelled) -> dict:
@@ -111,7 +96,6 @@ def station_job(payload: dict, emit, cancelled) -> dict:
 
     s = session_from(payload)
     spec = payload["spec"]
-    use_dress(spec)
     settings = spec["settings"]
     from core.speed_zones import speed_zones
 
@@ -257,7 +241,6 @@ def tool_job(payload: dict, emit, cancelled):
 
     s = session_from(payload)
     spec = payload["spec"]
-    use_dress(spec)
     spec["st"].family = family_parts(spec.get("family_dirs") or [])  # v8 T16
     from core.speed_zones import speed_zones
 

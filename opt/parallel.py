@@ -55,20 +55,14 @@ class CheckerSpec:
     base_bodies: list = field(default_factory=list)
     world_bodies: list = field(default_factory=list)
     obstacles: list = field(default_factory=list)
-    dress: float = 0.0  # v8 T18: core.collision.DRESS_M of the parent
-    hose: object = None  # core.collision.HOSE of the parent (core.hose.Hose)
-    geom: object = None  # core.collision.geom_state() of the parent (collision geometry)
+    collision: object = None  # v12 #10: the parent's core.collision_config.CollisionConfig
 
     def build(self):
-        from core import collision
         from core.collision import CollisionScene
         from core.feasibility import FeasibilityChecker
         from core.ik import make_ik
         from core.robot import Robot
 
-        collision.DRESS_M = self.dress
-        collision.HOSE = self.hose
-        collision.set_geom_state(self.geom)
         robot = Robot(self.robot_spec)
         scene = CollisionScene(
             robot,
@@ -79,6 +73,7 @@ class CheckerSpec:
             base_bodies=self.base_bodies,
             world_bodies=self.world_bodies,
             obstacles=self.obstacles,
+            config=self.collision,
         )
         return FeasibilityChecker(
             robot, make_ik(robot), self.tool, scene, self.T_world_base, self.T_world_part

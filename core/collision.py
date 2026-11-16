@@ -8,7 +8,7 @@ Pair categories and the margin each must keep (``Margins``):
     floor                   >= 0                (base and shoulder excluded)
     carrier                 >= self_clearance   (arm from upper_arm on + tool vs carrier bodies)
     hose                    part / stay-outs >= clearance, floor >= 0, carrier >= self_clearance
-                            (core.hose: the hose pack as capsules on the arm, when ``HOSE`` is set)
+                            (core.hose: the hose pack as capsules on the arm, when the config has one)
 
 Contact geometry: a head link listed in a TCP's ``contact_links`` is skipped whole for
 that TCP. Picked ``contact_faces`` are skipped together with every face sharing a vertex
@@ -25,6 +25,10 @@ import numpy as np
 import pinocchio as pin
 import trimesh
 
+from core.collision_config import ROBOT_AUTO_FACES, CollisionConfig, current, link_joints  # noqa: F401
+from core.collision_config import geom_of as _geom_of
+from core.collision_config import low as _low_cfg
+from core.collision_config import part_low as _part_low_cfg
 from core.robot import Robot
 from core.schema import ExtensionValues
 from core.tool import ToolModel
@@ -34,91 +38,7 @@ from core.tool import ToolModel
 class Margins:
     clearance: float = 0.01
     self_clearance: float = 0.005
-    dress: float = field(default_factory=lambda: DRESS_M)  # v8 T18: hose pack on the arm (m)
-
-
-# v8 T18: extra clearance around the arm from the upper arm on (hose / dress pack), against the
-# part and stay-out zones; set from Optimize -> Cable & safety and by the planner jobs
-DRESS_M = 0.0
-# the hose pack as a shape on the arm (core.hose.Hose), or None; set like DRESS_M
-HOSE = None
-
-
-# 2026-11-11: low-detail collision copies of meshes (core.collision_mesh): component ("robot",
-# "tool", "part", "carrier") -> Geom; PART_KEEP = part face ids kept at full detail. Set from the
-# left panel's Collision geometry and shipped to the planner / worker processes (geom_state)
-GEOM: dict = {}
-PART_KEEP: tuple = ()
-ARM_PAD = 0.0  # m: the robot arm's collision shapes are this much larger against everything else
-# v10 T19: padding per robot link: Pinocchio joint index (the link it moves) -> m; links not listed
-# use ARM_PAD
-LINK_PAD: dict = {}
-# v9: the part's own collision mesh (absolute path, metres after ``PART_LOW_SCALE``), made in the
-# Package builder; when set it replaces the simplified copy of the part mesh
-PART_LOW: str | None = None
-PART_LOW_SCALE = 1.0
-ROBOT_AUTO_FACES = 5000  # robot links: "auto" reduces links above this (URDF CAD meshes)
-
-
-def geom_state() -> tuple:
-    return dict(GEOM), tuple(PART_KEEP), float(ARM_PAD), PART_LOW, float(PART_LOW_SCALE), dict(LINK_PAD)
-
-
-def set_geom_state(state) -> None:
-    global GEOM, PART_KEEP, ARM_PAD, PART_LOW, PART_LOW_SCALE, LINK_PAD
-    if state is not None:
-        GEOM, PART_KEEP = dict(state[0]), tuple(int(f) for f in state[1])
-        ARM_PAD = float(state[2]) if len(state) > 2 else 0.0
-        PART_LOW = state[3] if len(state) > 3 else None
-        PART_LOW_SCALE = float(state[4]) if len(state) > 4 else 1.0
-        LINK_PAD = {int(k): float(v) for k, v in (state[5] if len(state) > 5 else {}).items()}
-
-
-def link_joints(robot) -> dict[str, int]:
-    """Robot link name -> the Pinocchio joint that moves it (for LINK_PAD)."""
-    import pinocchio as pin
-
-    out = {}
-    for f in robot.model.frames:
-        if f.type == pin.FrameType.BODY and f.parentJoint > 0:
-            out.setdefault(f.name, int(f.parentJoint))
-    return out
-
-
-_PART_LOW: dict = {}  # (path, mtime, scale) -> mesh
-
-
-def _part_low(part_mesh: trimesh.Trimesh) -> trimesh.Trimesh:
-    """The part's collision mesh: its own (``PART_LOW``) when there is one, else a copy of
-    ``part_mesh`` simplified by ``GEOM["part"]`` (``PART_KEEP`` faces exact)."""
-    from pathlib import Path
-
-    if PART_LOW:
-        p = Path(PART_LOW)
-        try:
-            key = (str(p), p.stat().st_mtime, PART_LOW_SCALE)
-            if key not in _PART_LOW:
-                m = trimesh.load(str(p), force="mesh")
-                m.apply_scale(PART_LOW_SCALE)
-                _PART_LOW.clear()
-                _PART_LOW[key] = m
-            return _PART_LOW[key]
-        except (OSError, ValueError):
-            pass  # missing / broken: the simplified copy of the visual mesh
-    return _low(part_mesh, "part", keep=PART_KEEP)
-
-
-def _geom(component: str):
-    from core.collision_mesh import Geom
-
-    return GEOM.get(component) or Geom()
-
-
-def _low(mesh: trimesh.Trimesh, component: str, keep=None, auto_faces: int | None = None) -> trimesh.Trimesh:
-    """The collision copy of a mesh of this component (core.collision_mesh)."""
-    from core.collision_mesh import collision_mesh
-
-    return collision_mesh(mesh, _geom(component), keep=keep, auto_faces=auto_faces)
+    dress: float | None = None  # v8 T18: hose pack on the arm (m); None = the scene's config.dress_m
 
 
 _ROBOT_MESHES: dict = {}  # (path, scale) -> trimesh: robot collision meshes read for simplifying / showing
@@ -189,12 +109,16 @@ class CollisionScene:
         world_bodies: list | None = None,
         obstacles: list | None = None,
         hose=-1,
+        config: CollisionConfig | None = None,
     ):
         """``obstacles``: stay-out zones, (name, mesh, T_world_body): world-fixed geometry the arm
         (from the shoulder on) and the tool must keep ``margins.clearance`` from. ``hose``:
-        core.hose.Hose capsules on the arm (default: the module's ``HOSE``; None = no hose)."""
+        core.hose.Hose capsules on the arm (default: the config's; None = no hose). ``config``: the
+        collision settings (core.collision_config; None = the process's current ones, v12 #10)."""
         self.robot = robot
-        self.margins = margins or Margins()
+        self.config = cfg = config if config is not None else current()
+        m = margins or Margins()
+        self.margins = m if m.dress is not None else Margins(m.clearance, m.self_clearance, cfg.dress_m)
         model = robot.model
         urdf = str(robot.spec.folder / robot.spec.urdf)
         self.gm = pin.buildGeomFromUrdf(
@@ -246,7 +170,7 @@ class CollisionScene:
                     self.shapes[gid] = piece
 
         self.hose_ids: list[int] = []
-        hose = HOSE if hose == -1 else hose
+        hose = cfg.hose if hose == -1 else hose
         if hose is not None:
             from core.hose import segments
 
@@ -256,7 +180,7 @@ class CollisionScene:
 
         self.part_id = None
         if part_mesh is not None and T_world_part is not None:
-            low = _part_low(part_mesh)
+            low = _part_low_cfg(part_mesh, cfg)
             go = pin.GeometryObject("part", 0, _se3(self.T_univ_world @ T_world_part), _bvh(low))
             self.part_id = self.gm.addGeometryObject(go)
             self.shapes[self.part_id] = low
@@ -275,7 +199,7 @@ class CollisionScene:
         for name, mesh, T_base_body, *follow in base_bodies or []:
             if follow:
                 T_base_body = follow[0](T_world_base)
-            mesh = _low(mesh, "carrier")
+            mesh = _low_cfg(mesh, "carrier", cfg)
             go = pin.GeometryObject(f"carrier_{name}", 0, _se3(self.T_univ_base @ T_base_body), _bvh(mesh))
             gid = self.gm.addGeometryObject(go)
             self.carrier_ids.append(gid)
@@ -283,7 +207,7 @@ class CollisionScene:
             if follow:
                 self.follow[gid] = follow[0]
         for name, mesh, T_world_body in world_bodies or []:
-            mesh = _low(mesh, "carrier")
+            mesh = _low_cfg(mesh, "carrier", cfg)
             go = pin.GeometryObject(f"carrier_{name}", 0, _se3(self.T_univ_world @ T_world_body), _bvh(mesh))
             gid = self.gm.addGeometryObject(go)
             self.carrier_ids.append(gid)
@@ -341,8 +265,8 @@ class CollisionScene:
                     margin_of[k] = self.margins.clearance + self.margins.dress
         for k in P.tool_robot + P.carrier:
             margin_of[k] = self.margins.self_clearance
-        self.arm_pad = float(ARM_PAD)
-        self.link_pad = dict(LINK_PAD)  # v10 T19: per link (joint index)
+        self.arm_pad = float(cfg.arm_pad)
+        self.link_pad = dict(cfg.link_pad)  # v10 T19: per link (joint index)
         if self.arm_pad > 0 or self.link_pad:  # 2026-11-11: the arm bloated against everything but itself
             robot = set(self.robot_ids)
             for k in P.robot_part + P.obstacle + P.floor + P.carrier + P.tool_robot:
@@ -369,8 +293,8 @@ class CollisionScene:
 
     def _simplify_robot(self) -> None:
         """Robot link meshes above ``ROBOT_AUTO_FACES`` triangles (or all, for an explicit
-        mode) are replaced by their collision copy (``GEOM["robot"]``)."""
-        g = _geom("robot")
+        mode) are replaced by their collision copy (``config.geom["robot"]``)."""
+        g = _geom_of(self.config, "robot")
         if g.mode == "visual":
             return
         for gid in self.robot_ids:
@@ -381,7 +305,7 @@ class CollisionScene:
             mesh = _robot_mesh(go)
             if mesh is None:
                 continue
-            low = _low(mesh, "robot", auto_faces=ROBOT_AUTO_FACES)
+            low = _low_cfg(mesh, "robot", self.config, auto_faces=ROBOT_AUTO_FACES)
             go.geometry = _bvh(low)
             self.shapes[gid] = low
 
@@ -416,7 +340,7 @@ class CollisionScene:
         """A head link's collision pieces: (TCPs that may touch the part with it, mesh). A link
         with its own URDF collision mesh (e.g. from the Package builder) uses that, unless a
         TCP has picked contact faces on it (face ids of the visual mesh); otherwise the visual
-        mesh split by contact, the non-contact piece simplified (``GEOM["tool"]``)."""
+        mesh split by contact, the non-contact piece simplified (``config.geom["tool"]``)."""
         coll = getattr(hl, "collision", None)
         if coll is not None and not any(t.contact_faces.get(hl.name) for t in tool.ee.tcps):
             sig = frozenset(t.name for t in tool.ee.tcps if hl.name in t.contact_links)
@@ -425,7 +349,7 @@ class CollisionScene:
         for sig, faces in self._split_by_contact(tool, hl):
             piece = hl.mesh.submesh([np.array(sorted(faces))], append=True)
             if not sig:  # contact pieces stay exact: they meet the part at the contact edge
-                piece = _low(piece, "tool")
+                piece = _low_cfg(piece, "tool", self.config)
             out.append((sig, piece))
         return out
 

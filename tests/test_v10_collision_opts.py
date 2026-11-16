@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import trimesh
 
-from core import collision
+from core import collision_config as cc
 from core.collision import CollisionScene, link_joints
 from core.robot import Robot
 from core.schema import Pose, Primitive
@@ -47,18 +47,18 @@ def test_padding_one_link_only(robot):
         size=(0.05, 0.05, 0.05),
         pose=Pose(xyz=tuple(p + np.array([0.0, -free, 0.0]))),
     )
-    old = collision.geom_state()
+    old = cc.current()
     try:
         assert not _scene(robot, zone).collides(q)
-        collision.set_geom_state(({}, (), 0.0, None, 1.0, {joints["forearm_link"]: 0.05}))
+        cc.use(cc.CollisionConfig(link_pad={joints["forearm_link"]: 0.05}))
         sc = _scene(robot, zone)
         assert sc.collides(q)  # padded forearm reaches the zone
         forearm = [g for g in sc.robot_ids if sc.gm.geometryObjects[g].parentJoint == joints["forearm_link"]]
         assert forearm and sc.pad_of(forearm[0]) == pytest.approx(0.05)
-        collision.set_geom_state(({}, (), 0.0, None, 1.0, {joints["wrist_3_link"]: 0.05}))
+        cc.use(cc.CollisionConfig(link_pad={joints["wrist_3_link"]: 0.05}))
         assert not _scene(robot, zone).collides(q)  # another link padded: still clear
     finally:
-        collision.set_geom_state(old)
+        cc.use(old)
 
 
 def test_parse_link_pad(robot):

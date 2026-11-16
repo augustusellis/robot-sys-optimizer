@@ -99,13 +99,13 @@ def components(s, base_pose: bool = False, tool_nominal: bool = True, legacy: bo
         mesh = s.part.mesh_path if legacy else content(s, s.part.mesh_path)
         out["part"] = _h([mesh, s.part.units, _pose(s.part.T_world_part)])
     if not legacy:  # v10 #5: arm padding, the part's own collision mesh (content), kept faces
-        from core import collision
+        from core.collision_config import current
 
-        part = s.part
+        part, cfg = s.part, current()
         out["collision"] = _h(
             [
-                round(float(collision.ARM_PAD), 6),
-                sorted((int(k), round(float(v), 6)) for k, v in collision.LINK_PAD.items()),  # v10 T19
+                round(float(cfg.arm_pad), 6),
+                sorted((int(k), round(float(v), 6)) for k, v in cfg.link_pad.items()),  # v10 T19
                 content(s, part.collision_mesh) if part is not None else None,
                 sorted(int(f) for f in part.collision_keep) if part is not None else [],
             ]

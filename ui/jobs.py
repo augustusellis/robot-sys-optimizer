@@ -63,6 +63,10 @@ def _worker_main(inbox, outbox, cancel) -> None:  # pragma: no cover - runs in t
             outbox.put((_id, kind, data))
 
         try:
+            if isinstance(payload, dict) and "collision" in payload:  # v12 #10: the GUI's settings
+                from core import collision_config
+
+                collision_config.use(payload["collision"])
             out = _resolve(target)(payload, emit, cancel.is_set)
             outbox.put((job_id, "done", out))
         except BaseException as err:  # report, keep the worker alive
@@ -194,4 +198,8 @@ def call(target: str, payload: Any, on_msg, cancelled, in_process: bool) -> Any:
     """Run a job in the worker, or here (``in_process``: tests, scripts, worker off)."""
     if in_process or not USE_WORKER:
         return _resolve(target)(payload, on_msg, cancelled)
+    if isinstance(payload, dict) and "collision" not in payload:  # v12 #10: one value, every job
+        from core.collision_config import current
+
+        payload = {**payload, "collision": current()}
     return runner().run(target, payload, on_msg, cancelled)

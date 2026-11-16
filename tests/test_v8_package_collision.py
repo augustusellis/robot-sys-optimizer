@@ -1,16 +1,15 @@
 """Collision geometry in packages (core.urdf_package: meshes/collision + the URDF's <collision>,
 used by the tool and carrier collision checks; ui.package_collision) and the robot arm padding
-(core.collision.ARM_PAD)."""
+(core.collision_config arm_pad)."""
 
 import numpy as np
 import pytest
 import trimesh
 
 import core.collision_mesh as cm
-from core import collision
+from core import collision_config as cc
 from core.carrier import Carrier
 from core.collision import CollisionScene
-from core.collision_mesh import Geom
 from core.robot import Robot
 from core.schema import Base, EndEffector, Pose
 from core.tool import ToolModel
@@ -155,21 +154,18 @@ def test_arm_padding(monkeypatch):
     part = trimesh.creation.box((0.4, 0.4, 0.4))
     T_part = np.eye(4)
     T_part[:3, 3] = (0.9, 0.0, 0.5)
-    monkeypatch.setattr(collision, "ARM_PAD", 0.0)
-    sc = CollisionScene(r, None, part, np.eye(4), T_part)
+    sc = CollisionScene(r, None, part, np.eye(4), T_part, config=cc.CollisionConfig())
     q = np.radians([0.0, -90.0, 60.0, -60.0, -90.0, 0.0])
     if sc.collides(q):
         pytest.skip("pose collides already")
     d = sc.part_clearance(q)
-    monkeypatch.setattr(collision, "ARM_PAD", d - sc.margins.clearance + 0.01)
-    padded = CollisionScene(r, None, part, np.eye(4), T_part)
+    pad = cc.CollisionConfig(arm_pad=d - sc.margins.clearance + 0.01)
+    padded = CollisionScene(r, None, part, np.eye(4), T_part, config=pad)
     assert padded.collides(q)  # the bloated arm reaches the part
     reqs = padded.gd.collisionRequests
     assert all(reqs[k].security_margin == 0.0 for k in padded.pairs.robot_self)  # not against itself
-    state = collision.geom_state()
-    assert len(state) == 6 and state[2] == pytest.approx(collision.ARM_PAD)  # v10 T19: + LINK_PAD
-    collision.set_geom_state(({"robot": Geom("auto")}, ()))  # an older 2-part state: no padding
-    assert collision.ARM_PAD == 0.0
+    assert padded.config is pad and padded.arm_pad == pytest.approx(pad.arm_pad)  # v12 #10
+    assert CollisionScene(r, None, part, np.eye(4), T_part).config is cc.current()  # default: current
 
 
 def test_builder_collision_folder(tmp_path):

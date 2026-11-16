@@ -7,7 +7,7 @@ import pytest
 import trimesh
 import viser
 
-from core import collision
+from core import collision_config as cc
 from core.collision import CollisionScene
 from core.cycle_time import CycleSettings, path_time
 from core.paths import PathPlan, PathSample, StationPath
@@ -43,12 +43,12 @@ def test_hose_pack_clearance_makes_a_close_arm_collide():
     hits = [scene_at(d).collides(q) for d in ds]
     assert hits[0] and not hits[-1]
     d_free = ds[hits.index(False)]  # the first clear distance without a hose pack
-    old = collision.DRESS_M
+    old = cc.current()
     try:
-        collision.DRESS_M = 0.1
+        cc.update(dress_m=0.1)
         assert scene_at(d_free).collides(q)  # with 100 mm of hose pack it is too close
     finally:
-        collision.DRESS_M = old
+        cc.use(old)
     assert not scene_at(d_free).collides(q)
 
 

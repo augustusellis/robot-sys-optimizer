@@ -1,8 +1,8 @@
 """Cable dress and safety (v8 T18).
 
 - Optimize -> Cable & safety: *Hose pack* = none, a clearance margin around the arm from the
-  upper arm on (core.collision.DRESS_M) or the hose as a shape on the arm (core.hose,
-  core.collision.HOSE), and *Joint 6 turn limit* (per stop; beyond it the cost term *Cost per
+  upper arm on (core.collision_config ``dress_m``) or the hose as a shape on the arm (core.hose,
+  ``hose``), and *Joint 6 turn limit* (per stop; beyond it the cost term *Cost per
   90° of joint-6 wrap* applies).
 - Results -> Safety: the reach envelope of each stop of the selected plan (a sphere around the
   shoulder: the robot's reach plus the tool) and a suggested fence: the envelopes' floor
@@ -26,12 +26,12 @@ class CablePanel:
     """Optimize -> Cable & safety: the hose / dress pack and the joint-6 turn limit.
 
     *Hose pack*: **none**; **clearance margin** (v8 T18: extra clearance around the arm from the
-    upper arm on, core.collision.DRESS_M); **hose along the arm** (a hose of the given diameter
+    upper arm on, core.collision_config ``dress_m``); **hose along the arm** (a hose of the given diameter
     riding ``offset`` from the arm's joint line on the chosen side, core.hose: checked as a
     shape against the part, stay-out zones, floor and carrier, drawn on the robot)."""
 
     def __init__(self, server: viser.ViserServer, session, cell=None):
-        from core import collision
+        from core import collision_config
 
         self.s, self.server, self.cell = session, server, cell
         self._handles: list = []
@@ -47,12 +47,12 @@ class CablePanel:
             self.mode = gui.add_dropdown(
                 "Hose pack",
                 HOSE_MODES,
-                initial_value=HOSE_MODES[1] if collision.DRESS_M > 0 else HOSE_MODES[0],
+                initial_value=HOSE_MODES[1] if collision_config.current().dress_m > 0 else HOSE_MODES[0],
                 hint="a clearance margin around the arm, or the hose as a shape on the arm",
             )
             self.dress = gui.add_number(
                 "Hose pack clearance (mm)",
-                1000 * collision.DRESS_M,
+                1000 * collision_config.current().dress_m,
                 min=0.0,
                 max=300.0,
                 step=5.0,
@@ -96,15 +96,16 @@ class CablePanel:
         )
 
     def commit(self) -> None:
-        from core import collision
+        from core import collision_config
 
         margin = self.mode.value == HOSE_MODES[1]
         hose = self.mode.value == HOSE_MODES[2]
         self.dress.visible = margin
         for w in (self.diameter, self.offset, self.side, self.show):
             w.visible = hose
-        collision.DRESS_M = float(self.dress.value) / 1000 if margin else 0.0
-        collision.HOSE = self.hose()
+        collision_config.update(  # v12 #10
+            dress_m=float(self.dress.value) / 1000 if margin else 0.0, hose=self.hose()
+        )
         self.draw()
 
     def draw(self) -> None:

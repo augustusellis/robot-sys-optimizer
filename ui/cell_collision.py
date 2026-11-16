@@ -23,10 +23,10 @@ class CellCollision:
         s = self.s
         if s.robot is None:
             return None
-        from core import collision
+        from core.collision_config import current
 
         c = components(s, tool_nominal=True)
-        geom = str(hash(repr(collision.geom_state())))  # collision geometry settings (2026-11-11)
+        geom = str(hash(current().key()))  # collision settings (2026-11-11; v12 #10: one value)
         # v10 #5: file contents (c["collision"], the meshes in the others) rebuild it when a
         # collision file changes on disk
         return "|".join(

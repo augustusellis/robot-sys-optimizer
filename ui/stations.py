@@ -241,7 +241,6 @@ class StationsPanel:
         rules = not quick and rules_ui.rules_mode(self)
         what = "Quick station plan" if quick else ("Rules-only station plan" if rules else "Station planning")
         weights = self.costs.commit()
-        from core import collision
         from ui import jobs
 
         spec = {"settings": settings, "weights": weights, "rules": None, "workers": jobs.CHECK_WORKERS}
@@ -249,9 +248,6 @@ class StationsPanel:
 
         log_fit(s)  # v10 T12: points below the tool's minimum radius
         spec["skip"] = skip = skip_ids(s)
-        spec["dress_m"] = collision.DRESS_M  # v8 T18: the worker has its own copy
-        spec["hose"] = collision.HOSE
-        spec["collision_geom"] = collision.geom_state()
         if not quick and not rules:  # v8 T11 / T12: the Objective dropdown (Cost based mode)
             spec["objective"] = self.objective_m.key
             spec["pareto_keys"] = tuple(k for k, cb in self.pareto_keys.items() if cb.value)

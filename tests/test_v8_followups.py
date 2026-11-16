@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 import viser
 
+from core import collision_config as cc
 from core.cycle_time import CycleSettings, plan_estimate
 from core.schema import Pose, Primitive
 from core.speed_zones import share_at, speed_zones
@@ -142,25 +143,24 @@ def test_hose_is_a_shape_on_the_arm():
 
 def test_cable_panel_modes_and_drawing():
     from app import build_app
-    from core import collision
 
     server = viser.ViserServer(host="127.0.0.1", port=8885, verbose=False)
     try:
         app = build_app(server)
         cable = app["cable"]
         cable.mode.value = "hose along the arm"
-        assert collision.HOSE is not None and collision.DRESS_M == 0.0
-        assert collision.HOSE.radius == pytest.approx(0.03) and len(cable._handles) == 4
+        assert cc.current().hose is not None and cc.current().dress_m == 0.0
+        assert cc.current().hose.radius == pytest.approx(0.03) and len(cable._handles) == 4
         cable.side.value = "−"
-        assert collision.HOSE.side == -1.0
+        assert cc.current().hose.side == -1.0
         cable.show.value = False
         assert not cable._handles
         cable.mode.value = "clearance margin"
         cable.dress.value = 40.0
-        assert collision.HOSE is None and collision.DRESS_M == pytest.approx(0.04)
+        assert cc.current().hose is None and cc.current().dress_m == pytest.approx(0.04)
         assert not cable.diameter.visible and cable.dress.visible
     finally:
-        collision.HOSE, collision.DRESS_M = None, 0.0
+        cc.update(hose=None, dress_m=0.0)
         server.stop()
 
 

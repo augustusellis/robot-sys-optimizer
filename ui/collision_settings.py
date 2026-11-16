@@ -3,7 +3,7 @@ collision geometry state. Everything else about collision geometry (how parts, t
 are simplified, their padding, imported collision meshes) is set in the Package builder, which
 writes the collision meshes into the packages and the project's part (issues #1, #11).
 
-``sync`` copies the settings into ``core.collision`` (shipped to the planner workers): the arm
+``sync`` copies the settings into ``core.collision_config`` (shipped to the planner workers): the arm
 padding, the part's own collision mesh (``Part.collision_mesh``, made in the builder) and, for
 projects from before v9, the part faces kept exact (``Part.collision_keep``). Meshes without
 their own collision copy are reduced automatically when they are large (core.collision_mesh
@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import viser
 
-from core import collision
+from core import collision_config
 from ui.session import UNIT_SCALE
 
 COMPONENTS = {"Robot": "robot", "Tool": "tool", "Part": "part", "External axis": "carrier"}
@@ -50,7 +50,7 @@ class CollisionSettings:
         self.sync()
 
     def sync(self) -> None:
-        """Copy the settings and the part's collision geometry into core.collision (scenes built
+        """Copy the settings and the part's collision geometry into core.collision_config (scenes built
         from now on use them; planner jobs take a copy)."""
         part = self.s.part
         keep = tuple(int(f) for f in part.collision_keep) if part is not None else ()
@@ -65,7 +65,9 @@ class CollisionSettings:
         links, msg = parse_link_pad(self.link_pad.value, self.s.robot)
         if self.link_info.content != msg:
             self.link_info.content = msg
-        collision.set_geom_state(({}, keep, pad, low, scale, links))
+        collision_config.update(  # v12 #10
+            geom={}, part_keep=keep, arm_pad=pad, part_low=low, part_low_scale=scale, link_pad=links
+        )
         if part is None:
             text = "_No part loaded._"
         elif low:

@@ -10,7 +10,7 @@ import trimesh
 import viser
 
 import core.collision_mesh as cm
-from core import collision
+from core import collision_config as cc
 from core.urdf_package import (
     Collision,
     Package,
@@ -129,9 +129,9 @@ def test_part_simplify_status_revert_and_use(app):  # #4, #5, #11
     assert b._use(E)
     assert s.part.mesh_path == mesh_before  # same geometry: targets stay valid
     assert s.part.collision_mesh and s.part.collision_mesh.endswith("part_collision.stl")
-    assert collision.PART_LOW and collision.PART_LOW.endswith("part_collision.stl")
+    assert cc.current().part_low and cc.current().part_low.endswith("part_collision.stl")
     sc = app["cell"].jog_panel.coll.scene()
-    hull = trimesh.load(collision.PART_LOW)
+    hull = trimesh.load(cc.current().part_low)
     assert sc.gm.geometryObjects[sc.part_id].geometry.num_tris == len(hull.faces)
     assert s.to_project().part.collision_mesh == s.part.collision_mesh
     # editing it again brings the package back with its settings

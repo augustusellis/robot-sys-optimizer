@@ -10,7 +10,7 @@ import trimesh
 import viser
 
 import core.collision_mesh as cm
-from core import collision
+from core import collision_config as cc
 from core.collision import CollisionScene
 from core.collision_mesh import Geom, collision_mesh
 from core.robot import Robot
@@ -67,17 +67,16 @@ def test_keep_faces_exact_and_cache():
 def test_scene_uses_the_collision_copies(monkeypatch):
     part = _bumpy()
     T_part = np.array([[1, 0, 0, 0.6], [0, 1, 0, 0], [0, 0, 1, 0.3], [0, 0, 0, 1.0]])
-    monkeypatch.setattr(collision, "GEOM", {"part": Geom("hull")})
-    monkeypatch.setattr(collision, "PART_KEEP", ())
-    sc = CollisionScene(Robot.from_registry("ur20"), None, part, np.eye(4), T_part)
+    cfg = cc.CollisionConfig(geom={"part": Geom("hull")})  # v12 #10: one value per scene
+    sc = CollisionScene(Robot.from_registry("ur20"), None, part, np.eye(4), T_part, config=cfg)
     assert sc.gm.geometryObjects[sc.part_id].geometry.num_tris <= 4000  # the default target
-    monkeypatch.setattr(collision, "GEOM", {"part": Geom("visual")})
-    sc = CollisionScene(Robot.from_registry("ur20"), None, part, np.eye(4), T_part)
+    cfg = cfg.replace(geom={"part": Geom("visual")})
+    sc = CollisionScene(Robot.from_registry("ur20"), None, part, np.eye(4), T_part, config=cfg)
     assert sc.gm.geometryObjects[sc.part_id].geometry.num_tris == len(part.faces)
-    state = collision.geom_state()
-    collision.set_geom_state(({"robot": Geom("hull")}, [3, 4]))
-    assert collision.PART_KEEP == (3, 4) and collision.GEOM["robot"].mode == "hull"
-    collision.set_geom_state(state)
+    state = cc.current()
+    cc.update(geom={"robot": Geom("hull")}, part_keep=(3, 4))
+    assert cc.current().part_keep == (3, 4) and cc.current().geom["robot"].mode == "hull"
+    cc.use(state)
 
 
 def test_abb_robots_have_light_collision_meshes():
@@ -123,11 +122,11 @@ def test_collision_panel_shows_and_keeps(app):
     assert not hasattr(cs, "mode") and not hasattr(cs, "keep_selection")
     s.part.collision_keep = list(range(10))
     cs.sync()
-    assert collision.PART_KEEP == tuple(range(10))
+    assert cc.current().part_keep == tuple(range(10))
     assert s.to_project().part.collision_keep == list(range(10))
     s.part.collision_keep = []
     cs.pad_mm.value = 8.0  # robot arm padding (Robot & cell tab): checked and drawn bloated
-    assert collision.ARM_PAD == pytest.approx(0.008)
+    assert cc.current().arm_pad == pytest.approx(0.008)
     cv.redraw()
     sc = cv._scene()
     assert sc.arm_pad == pytest.approx(0.008)
