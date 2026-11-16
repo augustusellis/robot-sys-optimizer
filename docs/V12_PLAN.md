@@ -46,6 +46,62 @@ per task, no push, no `Co-Authored-By`, new test files take viser ports 8983+).
 23. Test: `core/` and `opt/` never import viser or `ui`.
 24. CLAUDE.md slimmed: release history to `docs/HISTORY.md`.
 
+## Phase F: Gantry placement testing feedback (2026-11-16, planned, not started)
+
+From the user's tests of Optimize -> Gantry placement with default settings.
+
+25. **"Use this frame" leaves the fixed gantry bodies behind (gantry_overhead).**
+    - *Found:* the stored carrier is right (frame, posts, beams, bridge and carriage turned and
+      moved together; plans use it), but the scene is not. `CarrierPanel.commit()` -> `refresh()`
+      only re-poses the moving bodies (`_move_bodies`) when the DOF ranges did not change, and the
+      fixed bodies (posts, beams) are drawn only by `draw()`. After using the refined frame
+      (x -150, y -300 mm, yaw 90 deg) the posts were drawn 4.5-5.0 m and the beams 2.2-2.9 m from
+      where they are; bridge / carriage / drop were right. Any frame-pose edit that keeps the travel
+      ranges has the same fault.
+    - *Fix:* `commit()` redraws all bodies (`draw()`) when the frame pose or any fixed body changed
+      (commit is not a hot path; jogging keeps `_move_bodies`).
+    - *Done when:* after *Use this frame* on gantry_overhead every drawn carrier body is where the
+      model has it (0 mm), for a turned and a shifted frame and for a typed frame-pose edit.
+
+26. **"No frame works" on floor_xy_rails although the station planner reaches every point.**
+    - *Found:* `opt.frame_place.candidate_frames` only centres gantry frames on the part (+-0.6 m,
+      0.3 m steps, both headings): the overhead layout. On floor_xy_rails 45 of 50 frames put a floor
+      X rail within the 300 mm standoff (or inside the 3 m wall) and the other 5 sweep the low bridge
+      through the wall; the user's own frame (beside the part, y = -1.4 m, 425 mm clear) is never a
+      candidate.
+    - *User decisions (2026-11-16):* try frames **beside the part and over it** (over = the current
+      centred frames, kept when the bridge clears the part); beside frames in **both headings**
+      (X rails parallel to the side and across it) on **every side**; the standoff of a beside
+      frame is measured from the part to the **nearest gantry body anywhere along its travel**
+      (fixed rails / legs and the swept area of the bridge, carriage, riser), stepped over the
+      existing standoff range (d_min..d_max, 300-1200 mm by default); the **current frame is always
+      a candidate**, listed with the others and marked as the user's.
+    - *Plan:*
+      1. `opt/frame_place.py`: `swept_outline(base)` = the gantry's floor outline in its own
+         frame: hulls of the fixed bodies plus the moving bodies at the travel corners (and both
+         lift ends). `beside_frames(base, part_fp, st)`: for each side of the part's minimum
+         rectangle (+-u, +-n) and each heading (X along the side / across it), the frame origin
+         that puts the outline's near edge at the part outline + d (d over d_min..d_max at
+         `step`), shifted along the side over +-`shift` at `shift_step`; mount / beam heights as
+         for the other frames. `candidate_frames` = over frames + beside frames (+ the current
+         frame), deduplicated.
+      2. Frames keep being rejected by the existing checks (fixed bodies vs part 3D, keep-outs,
+         stay-outs, `sweep_clear`); `sweep_clear` also sweeps the carriage bodies, not only the
+         bridge.
+      3. `FrameScore.own` marks the current frame; `frame_text` adds "(your frame)"; it is
+         scored with the others (no refinement of it), and when it is usable but outside the top
+         it is still listed so the result is never "no frame works" while it plans.
+      4. Gantry placement panel: no new fields; the guide's Gantry placement section says where
+         frames are tried (over / beside, headings, standoff measured to the nearest body).
+      5. Time: about 4 sides x 2 headings x 7 distances x 5 shifts = 280 more frames per mount /
+         beam height; with the v12 #20 caches ~0.15 s each, so ~40 s more scoring. If it is
+         much slower, fewer shifts for beside frames (measured and stated in Status).
+    - *Done when:* floor_xy_rails with default settings ranks at least two usable frames beside
+      the part, the best one plans every point (as the station planner does from the user's
+      frame) and *Use this frame* draws correctly (#25); the user's frame appears marked;
+      gantry_overhead still finds a frame at least as cheap as before (11.73); scoring time
+      stated for both examples. Tests: tests/test_v12_gantry_frames.py (port 8986).
+
 ## Status
 
 | Item | State | Notes |
