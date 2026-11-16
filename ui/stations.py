@@ -18,6 +18,7 @@ from opt.placement import PlannerSettings, Targets
 from ui.log_panel import log, plan_log
 from ui.plan_ids import give_id, key
 from ui.session import Session
+from ui.session_lock import locked
 from ui.staleness import stamp_for
 from ui.widgets import notify
 
@@ -295,6 +296,7 @@ class StationsPanel:
             status.content = f"_{msg}_"
             progress.value = 100.0 * f
 
+        @locked  # v12 #9: results go into the session one message at a time
         def on_msg(kind: str, data) -> None:  # messages from the job (thread or worker)
             if kind == "progress":
                 say(*data)

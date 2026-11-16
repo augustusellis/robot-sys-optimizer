@@ -19,6 +19,7 @@ from core.ik import make_ik
 from core.robot import Robot
 from ui.log_panel import log, unreached_report
 from ui.session import Session
+from ui.session_lock import LOCK
 from ui.staleness import stamp_for
 from ui.widgets import notify
 
@@ -160,8 +161,9 @@ class OptimizeTab:
                 else:
                     res = checker.check_all(targets, progress=progress, cancelled=self._cancel.is_set)
                     station_of = {}
-                self.s.feasibility = {r.id: r for r in res}
-                self.s.stamps["feasibility"] = stamp
+                with LOCK:  # v12 #9
+                    self.s.feasibility = {r.id: r for r in res}
+                    self.s.stamps["feasibility"] = stamp
                 self.station_of, self.checked_plan = station_of, (sol if plan_mode else None)
                 where = (
                     f"Checked each point from its stop in **{sol.label}** ({len(sol.stations)} stops)."

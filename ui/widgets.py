@@ -41,13 +41,16 @@ class Latest:
             if self._running:
                 return
             self._running = True
+        from ui.session_lock import LOCK
+
         try:
             while True:
                 with self._lock:
                     args, self._pending = self._pending, None
                     if args is None:
                         return
-                self.fn(*args)
+                with LOCK:  # v12 #9: a drag changes the session; collapsing happens before it
+                    self.fn(*args)
         finally:
             with self._lock:
                 self._running = False

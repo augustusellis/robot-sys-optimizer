@@ -33,7 +33,7 @@ mark.hit{background:#ffe066;color:#1d1f23;border-radius:2px;padding:0 1px}mark.h
 nav a.hide{display:none}
 @media print{mark.hit{background:none;color:inherit}}
 </style></head><body>
-<nav><div class='title'>Robot Cell &amp; End-Effector Optimizer: User Guide</div><input id='search' type='search' placeholder='Search the guide  ( / )' aria-label='Search the guide' autocomplete='off'><div id='hits'></div><a class="h2" href="#1-quickstart-5-minutes">1. Quickstart (5 minutes)</a><a class="h2" href="#2-set-up-on-a-new-computer">2. Set up on a new computer</a><a class="h3" href="#21-prerequisites">2.1 Prerequisites</a><a class="h3" href="#22-clone-and-create-the-environment">2.2 Clone and create the environment</a><a class="h3" href="#23-check-the-installation">2.3 Check the installation</a><a class="h3" href="#24-first-launch">2.4 First launch</a><a class="h3" href="#25-portable-copy-for-a-pc-without-conda-or-internet">2.5 Portable copy for a PC without conda or internet</a><a class="h2" href="#3-how-it-works-concepts-and-conventions">3. How it works: concepts and conventions</a><a class="h3" href="#31-frames-and-units">3.1 Frames and units</a><a class="h3" href="#32-target-tolerances-per-group">3.2 Target tolerances (per group)</a><a class="h3" href="#33-the-parametric-end-effector">3.3 The parametric end effector</a><a class="h3" href="#34-what-feasible-means">3.4 What &quot;feasible&quot; means</a><a class="h3" href="#35-the-optimizer-in-three-layers">3.5 The optimizer in three layers</a><a class="h2" href="#4-tools-and-features-tab-by-tab">4. Tools and features, tab by tab</a><a class="h3" href="#guided-steps">Guided steps</a><a class="h3" href="#top-of-the-panel">Top of the panel</a><a class="h3" href="#1-robot--cell-tab">1 Robot &amp; cell tab</a><a class="h3" href="#2-external-axis-tab">2 External axis tab</a><a class="h3" href="#3-tool-tab">3 Tool tab</a><a class="h3" href="#4-targets-tab">4 Targets tab</a><a class="h3" href="#5-optimize-tab">5 Optimize tab</a><a class="h3" href="#optimization-methods">Optimization methods</a><a class="h3" href="#joint-configuration-zones">Joint-configuration zones</a><a class="h3" href="#6-results-tab">6 Results tab</a><a class="h3" href="#collision-geometry">Collision geometry</a><a class="h3" href="#package-builder-tab">Package builder tab</a><a class="h2" href="#5-worked-examples">5. Worked examples</a><a class="h3" href="#example-a-sand-a-flat-plate-from-one-base-static">Example A: sand a flat plate from one base (static)</a><a class="h3" href="#example-b-a-long-rail-part-with-a-7th-axis-rail-carrier">Example B: a long rail part with a 7th-axis rail carrier</a><a class="h3" href="#example-b2-design-a-mobile-robot-from-simple-shapes">Example B2: design a mobile robot from simple shapes</a><a class="h3" href="#example-b3-avoid-joint-configuration-changes-on-the-rail">Example B3: avoid joint-configuration changes on the rail</a><a class="h3" href="#example-b4-tall-wall-with-a-gantry-floor-x-y-axes-or-a-mobile-lift">Example B4: tall wall with a gantry, floor X-Y axes or a mobile lift</a><a class="h3" href="#example-c-the-shortest-probe-for-a-deep-hole">Example C: the shortest probe for a deep hole</a><a class="h3" href="#example-d-your-own-robot-cell">Example D: your own robot cell</a><a class="h3" href="#adding-a-robot">Adding a robot</a><a class="h3" href="#building-urdf-packages">Building URDF packages</a><a class="h3" href="#checking-a-plan-in-ursim">Checking a plan in URSim</a><a class="h2" href="#6-files-folders-and-formats">6. Files, folders and formats</a><a class="h2" href="#7-using-it-from-python-headless">7. Using it from Python (headless)</a><a class="h2" href="#8-troubleshooting-and-limitations">8. Troubleshooting and limitations</a><a class="h2" href="#9-for-developers">9. For developers</a><a class="h2" href="#10-for-software-engineers">10. For software engineers</a><a class="h3" href="#101-languages-and-how-it-runs">10.1 Languages and how it runs</a><a class="h3" href="#102-packages-and-what-each-one-is-for">10.2 Packages and what each one is for</a><a class="h3" href="#103-layers">10.3 Layers</a><a class="h3" href="#104-how-the-main-parts-work">10.4 How the main parts work</a><a class="h3" href="#105-run-test-lint-ship">10.5 Run, test, lint, ship</a><a class="h3" href="#106-where-to-start-reading">10.6 Where to start reading</a><button id='theme' type='button'>Dark mode</button></nav>
+<nav><div class='title'>Robot Cell &amp; End-Effector Optimizer: User Guide</div><input id='search' type='search' placeholder='Search the guide  ( / )' aria-label='Search the guide' autocomplete='off'><div id='hits'></div><a class="h2" href="#1-quickstart-5-minutes">1. Quickstart (5 minutes)</a><a class="h2" href="#2-set-up-on-a-new-computer">2. Set up on a new computer</a><a class="h3" href="#21-prerequisites">2.1 Prerequisites</a><a class="h3" href="#22-clone-and-create-the-environment">2.2 Clone and create the environment</a><a class="h3" href="#23-check-the-installation">2.3 Check the installation</a><a class="h3" href="#24-first-launch">2.4 First launch</a><a class="h3" href="#25-portable-copy-for-a-pc-without-conda-or-internet">2.5 Portable copy for a PC without conda or internet</a><a class="h2" href="#3-how-it-works-concepts-and-conventions">3. How it works: concepts and conventions</a><a class="h3" href="#31-frames-and-units">3.1 Frames and units</a><a class="h3" href="#32-target-tolerances-per-group">3.2 Target tolerances (per group)</a><a class="h3" href="#33-the-parametric-end-effector">3.3 The parametric end effector</a><a class="h3" href="#34-what-feasible-means">3.4 What &quot;feasible&quot; means</a><a class="h3" href="#35-the-optimizer-in-three-layers">3.5 The optimizer in three layers</a><a class="h2" href="#4-tools-and-features-tab-by-tab">4. Tools and features, tab by tab</a><a class="h3" href="#guided-steps">Guided steps</a><a class="h3" href="#top-of-the-panel">Top of the panel</a><a class="h3" href="#1-robot--cell-tab">1 Robot &amp; cell tab</a><a class="h3" href="#2-external-axis-tab">2 External axis tab</a><a class="h3" href="#3-tool-tab">3 Tool tab</a><a class="h3" href="#4-targets-tab">4 Targets tab</a><a class="h3" href="#5-optimize-tab">5 Optimize tab</a><a class="h3" href="#optimization-methods">Optimization methods</a><a class="h3" href="#joint-configuration-zones">Joint-configuration zones</a><a class="h3" href="#6-results-tab">6 Results tab</a><a class="h3" href="#collision-geometry">Collision geometry</a><a class="h3" href="#package-builder-tab">Package builder tab</a><a class="h2" href="#5-worked-examples">5. Worked examples</a><a class="h3" href="#example-a-sand-a-flat-plate-from-one-base-static">Example A: sand a flat plate from one base (static)</a><a class="h3" href="#example-b-a-long-rail-part-with-a-7th-axis-rail-carrier">Example B: a long rail part with a 7th-axis rail carrier</a><a class="h3" href="#example-b2-design-a-mobile-robot-from-simple-shapes">Example B2: design a mobile robot from simple shapes</a><a class="h3" href="#example-b3-avoid-joint-configuration-changes-on-the-rail">Example B3: avoid joint-configuration changes on the rail</a><a class="h3" href="#example-b4-tall-wall-with-a-gantry-floor-x-y-axes-or-a-mobile-lift">Example B4: tall wall with a gantry, floor X-Y axes or a mobile lift</a><a class="h3" href="#example-c-the-shortest-probe-for-a-deep-hole">Example C: the shortest probe for a deep hole</a><a class="h3" href="#example-d-your-own-robot-cell">Example D: your own robot cell</a><a class="h3" href="#adding-a-robot">Adding a robot</a><a class="h3" href="#building-urdf-packages">Building URDF packages</a><a class="h3" href="#checking-a-plan-in-ursim">Checking a plan in URSim</a><a class="h2" href="#6-files-folders-and-formats">6. Files, folders and formats</a><a class="h2" href="#7-using-it-from-python-headless">7. Using it from Python (headless)</a><a class="h2" href="#8-troubleshooting-and-limitations">8. Troubleshooting and limitations</a><a class="h2" href="#9-for-developers">9. For developers</a><a class="h2" href="#10-for-software-engineers">10. For software engineers</a><a class="h3" href="#101-languages-and-how-it-runs">10.1 Languages and how it runs</a><a class="h3" href="#102-packages-and-what-each-one-is-for">10.2 Packages and what each one is for</a><a class="h3" href="#103-layers">10.3 Layers</a><a class="h3" href="#104-how-the-main-parts-work">10.4 How the main parts work</a><a class="h3" href="#104a-threads-and-the-session-lock">10.4a Threads and the session lock</a><a class="h3" href="#105-run-test-lint-ship">10.5 Run, test, lint, ship</a><a class="h3" href="#106-where-to-start-reading">10.6 Where to start reading</a><button id='theme' type='button'>Dark mode</button></nav>
 <main>
 <h1 id="robot-cell--end-effector-optimizer-user-guide">Robot Cell &amp; End-Effector Optimizer: User Guide</h1>
 <p>A browser-based tool that answers two questions for a robotic process (sanding, scanning, grinding, gripping, spraying):</p>
@@ -1111,7 +1111,50 @@ of the project; exact checks are spread over a pool of check processes. The GUI 
 progress and results.</li>
 <li><strong>Staleness</strong> (<code>ui/staleness.py</code>, <code>ui/fingerprint.py</code>): every plan stores hashes of what it was
 planned from; Results flags plans whose inputs changed, and the setup steps use the same hashes.</li>
+<li><strong>Plan ids</strong> (<code>ui/plan_ids.py</code>): a plan's joint solutions, stamp, paths and checks are keyed by
+<code>Solution.key</code> (its <code>id</code>, given when it enters the results; the label for plans saved before
+v12). The label is only for people.</li>
 </ul>
+<h3 id="104a-threads-and-the-session-lock">10.4a Threads and the session lock</h3>
+<p>Several threads touch the one <code>Session</code>. <code>ui/session_lock.LOCK</code> (one re-entrant lock per process)
+is held for short changes, never around a long computation or while waiting for another thread:</p>
+<table>
+<thead>
+<tr>
+<th>Thread</th>
+<th>What it does to the session</th>
+<th>Holds the lock</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>viser callback pool</td>
+<td>widget and scene callbacks (clicks, edits)</td>
+<td>drags (<code>ui.widgets.Latest</code>), placing a frame</td>
+</tr>
+<tr>
+<td>watcher (<code>ui/workflow.py</code>, 1 s)</td>
+<td>step status, banners, stale plans dropped, hooks</td>
+<td>each hook</td>
+</tr>
+<tr>
+<td>autosave (<code>ui/project_panel.py</code>, 5 s)</td>
+<td>snapshot to <code>project.json</code></td>
+<td>the snapshot</td>
+</tr>
+<tr>
+<td>planner / check threads (<code>ui/stations.py</code>, <code>tool_opt</code>, <code>compare</code>, <code>edge_ui</code>, <code>tolerance_ui</code>, <code>optimize</code>, <code>simulate</code>)</td>
+<td>work on a snapshot; then write results, stamps, paths</td>
+<td>the write of the results</td>
+</tr>
+<tr>
+<td>project load / save (<code>ui/session.py</code>)</td>
+<td>swap the whole session / bundle files and snapshot</td>
+<td>the swap / bundle + snapshot</td>
+</tr>
+</tbody>
+</table>
+<p>Playback and the joystick move the robot through the scene only; they do not take the lock.</p>
 <h3 id="105-run-test-lint-ship">10.5 Run, test, lint, ship</h3>
 <p>See section 9 for the commands. In short: <code>scripts/run_app.bat</code>, <code>scripts/test_batches.py --fast</code>
 (~30 min, tests marked <code>slow</code> skipped), <code>ruff check . &amp;&amp; ruff format --check .</code>,

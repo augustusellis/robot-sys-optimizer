@@ -743,6 +743,24 @@ from the project file (`core.schema.Project`).
   progress and results.
 - **Staleness** (`ui/staleness.py`, `ui/fingerprint.py`): every plan stores hashes of what it was
   planned from; Results flags plans whose inputs changed, and the setup steps use the same hashes.
+- **Plan ids** (`ui/plan_ids.py`): a plan's joint solutions, stamp, paths and checks are keyed by
+  `Solution.key` (its `id`, given when it enters the results; the label for plans saved before
+  v12). The label is only for people.
+
+### 10.4a Threads and the session lock
+
+Several threads touch the one `Session`. `ui/session_lock.LOCK` (one re-entrant lock per process)
+is held for short changes, never around a long computation or while waiting for another thread:
+
+| Thread | What it does to the session | Holds the lock |
+|---|---|---|
+| viser callback pool | widget and scene callbacks (clicks, edits) | drags (`ui.widgets.Latest`), placing a frame |
+| watcher (`ui/workflow.py`, 1 s) | step status, banners, stale plans dropped, hooks | each hook |
+| autosave (`ui/project_panel.py`, 5 s) | snapshot to `project.json` | the snapshot |
+| planner / check threads (`ui/stations.py`, `tool_opt`, `compare`, `edge_ui`, `tolerance_ui`, `optimize`, `simulate`) | work on a snapshot; then write results, stamps, paths | the write of the results |
+| project load / save (`ui/session.py`) | swap the whole session / bundle files and snapshot | the swap / bundle + snapshot |
+
+Playback and the joystick move the robot through the scene only; they do not take the lock.
 
 ### 10.5 Run, test, lint, ship
 

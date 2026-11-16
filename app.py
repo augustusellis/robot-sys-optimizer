@@ -388,7 +388,7 @@ def build_app(
 
     def selected_results() -> dict:
         sol = results.selected()
-        return session.result_points.get(sol.label, {}) if sol is not None else {}
+        return session.result_points.get(sol.key, {}) if sol is not None else {}  # v12 #8
 
     targets.selected_results = selected_results
     optimize.solution_points = lambda: (results.selected(), selected_results())
@@ -428,7 +428,7 @@ def build_app(
     slowzones.on_alt_click = lambda name, e: objects.start_move(f"Reduced-speed zone/{name}", e)
     objects.rebuild_tree()
 
-    fresh: set[str] = set()  # result labels seen up to date (ui.staleness)
+    fresh: set[str] = set()  # plan keys seen up to date (ui.staleness)
 
     def clear_stale() -> None:
         """v6 feedback: plans and their paths go when the part moves, the tool or the targets
@@ -444,7 +444,7 @@ def build_app(
                 f"Cleared {len(gone)} result(s): the {', '.join(what)} changed since they were planned.",
                 "warn",
             )
-        if sim.plan is not None and sim.label not in {r.label for r in session.results}:
+        if sim.plan is not None and sim.key not in {r.key for r in session.results}:
             sim.reset("the plan they belonged to was cleared")
 
     workflow.refresh(force=True)

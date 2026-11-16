@@ -352,12 +352,15 @@ class Workflow:
         """Background refresh (real app only): edits anywhere update the step status and the
         out-of-date banners within about a second."""
 
+        from ui.session_lock import LOCK
+
         def loop() -> None:
             while True:
                 time.sleep(period)
                 for fn in (self.refresh, *self.hooks):
                     try:
-                        fn()
+                        with LOCK:  # v12 #9: one hook at a time, none mid-way through a change
+                            fn()
                     except Exception:  # never let the watcher die (a mid-edit state may not hash)
                         pass
 

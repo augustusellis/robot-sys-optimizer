@@ -27,6 +27,7 @@ from core.feasibility import CancelledError
 from core.robot import list_robots
 from ui.log_panel import log
 from ui.plan_ids import give_ids, key
+from ui.session_lock import LOCK
 from ui.widgets import notify
 
 
@@ -401,7 +402,8 @@ class ComparePanel:
         def work() -> None:
             try:
                 rows = jobs.call("ui.compare:compare_job", payload, on_msg, self._cancel.is_set, in_process)
-                self.rows = keep_plans(s, rows)  # v9 #6: each robot's plans, viewable in Results
+                with LOCK:  # v12 #9
+                    self.rows = keep_plans(s, rows)  # v9 #6: each robot's plans, viewable in Results
                 if self.on_done is not None:
                     self.on_done()
                 self.status.content = table(self.rows, n)

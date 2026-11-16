@@ -282,8 +282,11 @@ class ProjectPanel:
             return False
         if not force and time.monotonic() - self._last_save < self.autosave_min.value * 60:
             return False
+        from ui.session_lock import LOCK
+
         try:
-            current = _dump(self.s.snapshot())
+            with LOCK:  # v12 #9: a consistent snapshot (not mid-way through a planner's update)
+                current = _dump(self.s.snapshot())
         except (ValidationError, ValueError):
             return False  # mid-edit state that does not validate: try again next tick
         if current == self._saved_json:

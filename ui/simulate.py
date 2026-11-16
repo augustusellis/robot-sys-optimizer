@@ -21,6 +21,7 @@ from ui.log_panel import log, took
 from ui.plan_ids import key as plan_key
 from ui.robot_view import quiet_remove
 from ui.session import Session
+from ui.session_lock import LOCK
 from ui.sim_build import carrier_path as sim_carrier_path
 from ui.sim_build import path_checker
 from ui.sim_fields import BETWEEN_LABELS, PLANNER_ORDER  # noqa: F401 (re-export)
@@ -201,9 +202,10 @@ class SimPanel:
                     )
                     plan, self.spin_used = (alt, True) if better else (plan, False)
                 blocked = blocked_stops(checker, home, plan.stations)  # the home pose itself collides
-                self.label, self._targets_key, self.home_blocked = sol.label, targets_key, blocked
-                self.key = plan_key(sol)
-                self.plan = plan  # last: key and label already match it
+                with LOCK:  # v12 #9: the paths and the plan they belong to change together
+                    self.label, self._targets_key, self.home_blocked = sol.label, targets_key, blocked
+                    self.key = plan_key(sol)
+                    self.plan = plan  # last: key and label already match it
                 self._after_build()
             except CancelledError:
                 self.info.content = "**Cancelled.**"

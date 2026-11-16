@@ -13,6 +13,7 @@ from core.feasibility import CancelledError
 from opt.tolerance import ToleranceSettings
 from ui.log_panel import log
 from ui.plan_ids import key as plan_key
+from ui.session_lock import LOCK
 from ui.widgets import notify
 
 
@@ -93,7 +94,8 @@ class TolerancePanel:
         def work() -> None:
             try:
                 r = jobs.call("ui.plan_job:tolerance_job", payload, on_msg, self._cancel.is_set, in_process)
-                s.tolerance = r
+                with LOCK:  # v12 #9
+                    s.tolerance = r
                 self.status.content = summary(r)
                 log(
                     f"Tolerance check of **{sol.label}**: every point reached in "

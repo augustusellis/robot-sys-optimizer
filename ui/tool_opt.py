@@ -15,6 +15,7 @@ from core.schema import ExtensionValues, Optimizer
 from opt.tool_geometry import GeometryResult, GeometrySettings
 from ui.log_panel import log
 from ui.session import Session
+from ui.session_lock import locked
 from ui.staleness import stamp_for
 from ui.widgets import notify
 
@@ -287,6 +288,7 @@ class ToolOptPanel:
         in_process = block or not jobs.USE_WORKER
         payload = payload_for(s, spec, live=in_process)
 
+        @locked  # v12 #9
         def on_msg(kind: str, data) -> None:
             if kind == "progress":
                 say(*data)
@@ -316,6 +318,7 @@ class ToolOptPanel:
         if block:
             self._thread.join()
 
+    @locked  # v12 #9: the designs go into the session's results
     def _show(self) -> None:
         r = self.result
         pose = self._pose

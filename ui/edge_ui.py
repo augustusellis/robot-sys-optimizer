@@ -17,6 +17,7 @@ from core import targets as tg
 from core.feasibility import CancelledError
 from ui.log_panel import log
 from ui.plan_ids import key as plan_key
+from ui.session_lock import LOCK
 from ui.widgets import notify
 
 ROOT = "/cell/part/edge_gaps"
@@ -92,7 +93,8 @@ class EdgePanel:
         def work() -> None:
             try:
                 r = jobs.call("ui.plan_job:edge_job", payload, on_msg, self._cancel.is_set, in_process)
-                s.edge_check = r
+                with LOCK:  # v12 #9
+                    s.edge_check = r
                 self.status.content = report(r)
                 log(
                     f"Edge check of **{sol.label}**: {r.summary()}{where(r)}.",

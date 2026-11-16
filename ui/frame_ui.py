@@ -22,6 +22,7 @@ from core.feasibility import CancelledError
 from opt.frame_place import FrameSettings, frame_text
 from ui.log_panel import log
 from ui.plan_ids import give_ids, key
+from ui.session_lock import locked
 from ui.widgets import notify
 
 
@@ -343,6 +344,7 @@ class FramePanel:
 
         stop.on_click(lambda _ev: modal.close())
 
+    @locked  # v12 #9: the carrier, steps and results change together
     def use_frame(self, event=None, index: int | None = None) -> bool:
         """The chosen frame becomes the project's carrier frame; its plans go to Results."""
         if not self.rows:

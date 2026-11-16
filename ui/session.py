@@ -395,10 +395,12 @@ def save_project(session: Session, project_dir: Path | None = None) -> Path:
         session.project_dir = project_dir
     session.project_dir.mkdir(parents=True, exist_ok=True)
     from ui.project_assets import bundle
+    from ui.session_lock import LOCK
 
-    session.bundled = bundle(session)  # v9 #12: outside files are copied into the project
+    with LOCK:  # v12 #9: bundling rewrites session paths; the snapshot must match them
+        session.bundled = bundle(session)  # v9 #12: outside files are copied into the project
+        project = session.snapshot()
     path = session.project_dir / "project.json"
-    project = session.snapshot()
     tmp = path.with_suffix(".json.tmp")  # write-then-rename: a crash never leaves half a file
     schema.save_project(project, tmp)
     tmp.replace(path)
@@ -410,9 +412,12 @@ def load_project(session: Session, project_dir: Path) -> None:
     project = schema.load_project(project_dir / "project.json")
     fresh = Session()
     fresh.apply_project(project, project_dir)
-    hooks = session.before_save
-    session.__dict__.update(fresh.__dict__)
-    session.before_save = hooks  # GUI hooks belong to the app, not to the loaded project
+    from ui.session_lock import LOCK
+
+    with LOCK:  # v12 #9: the watcher / autosave never see a half-swapped session
+        hooks = session.before_save
+        session.__dict__.update(fresh.__dict__)
+        session.before_save = hooks  # GUI hooks belong to the app, not to the loaded project
 
 
 LAST_PROJECT = WORKSPACE / "last_project.txt"
