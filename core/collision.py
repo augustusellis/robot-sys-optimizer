@@ -420,3 +420,36 @@ class CollisionScene:
                 d = pin.computeDistance(self.gm, self.gd, k).min_distance
                 best = min(best, d)
         return best
+
+    def part_clearance_grad(self, q: np.ndarray, tcp: str | None = None) -> tuple[float, np.ndarray]:
+        """v12 #21: (``part_clearance``, its gradient in q) from one distance pass: the closest
+        pair's nearest points and the Jacobian of the robot-side point p (fixed to its link),
+        dd/dq = -n^T J_p with n the unit normal from the robot towards the part. Exact where the
+        closest pair and its nearest features do not change (almost everywhere)."""
+        nv = self.robot.model.nv
+        if self.part_id is None:
+            return float("inf"), np.zeros(nv)
+        self._set_tcp(tcp)
+        model, data, q = self.robot.model, self.robot.data, np.asarray(q, float)
+        pin.updateGeometryPlacements(model, data, self.gm, self.gd, q)
+        best, res, k_best = float("inf"), None, None
+        for k in self.pairs.robot_part + self.pairs.tool_part:
+            if self.gd.activeCollisionPairs[k]:
+                r = pin.computeDistance(self.gm, self.gd, k)
+                if r.min_distance < best:
+                    best, res, k_best = float(r.min_distance), r, k
+        if res is None:
+            return best, np.zeros(nv)
+        p1 = np.asarray(res.getNearestPoint1(), float)  # on the robot / tool shape (first in the pair)
+        n = np.asarray(res.getNearestPoint2(), float) - p1  # towards the part (Coal leaves normal
+        if best <= 0 or np.linalg.norm(n) < 1e-9:  # unset for mesh pairs); touching: its normal
+            n = np.asarray(res.normal, float)
+            if not np.all(np.isfinite(n)):
+                return best, np.zeros(nv)
+        n = n / max(np.linalg.norm(n), 1e-12)
+        j = self.gm.geometryObjects[self.gm.collisionPairs[k_best].first].parentJoint
+        pin.computeJointJacobians(model, data, q)
+        J = pin.getJointJacobian(model, data, j, pin.ReferenceFrame.LOCAL_WORLD_ALIGNED)
+        r = p1 - np.asarray(data.oMi[j].translation, float)
+        skew = np.array([[0, -r[2], r[1]], [r[2], 0, -r[0]], [-r[1], r[0], 0]])
+        return best, -(n @ (J[:3] - skew @ J[3:]))

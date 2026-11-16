@@ -11,7 +11,9 @@ path as the seed, resamples it to ``n`` waypoints and lowers
 
 by covariant gradient steps (the CHOMP update: the smoothness metric A^-1 spreads each waypoint's
 obstacle gradient along the path), the ends fixed and every waypoint inside the joint limits. The
-clearance gradient is a forward difference per joint, only at waypoints closer than ``d_safe``.
+clearance gradient (only at waypoints closer than ``d_safe``) is analytic when ``clearance_grad`` is
+given (v12 #21: core.collision.part_clearance_grad, the nearest points and the link Jacobian, one
+distance pass instead of seven), else a forward difference per joint.
 The result is kept only if it is collision-free when checked densely (``step``) and better than
 the seed (lower cost); otherwise the seed is returned: RRT-connect + shortcut stay the fallback.
 """
@@ -82,6 +84,7 @@ def smooth_path(
     iters: int = 40,
     eta: float = 0.08,
     eps: float = 1e-3,
+    clearance_grad: Callable[[np.ndarray], tuple[float, np.ndarray]] | None = None,
 ) -> tuple[list[np.ndarray], SmoothStats]:
     """(waypoints, stats): the optimised path, or ``path`` when that does no better."""
     from core.joint_plan import _edge_ok
@@ -96,11 +99,16 @@ def smooth_path(
     A = _metric(n)
     Ainv = np.linalg.inv(A)
     cache: dict[bytes, float] = {}
+    grads: dict[bytes, np.ndarray] = {}
 
     def dist(q: np.ndarray) -> float:
         k = np.round(q, 6).tobytes()
         if k not in cache:
-            cache[k] = float(clearance(q))
+            if clearance_grad is not None:
+                d, g = clearance_grad(q)
+                cache[k], grads[k] = float(d), np.asarray(g, float)
+            else:
+                cache[k] = float(clearance(q))
         return cache[k]
 
     def cost(Q: np.ndarray) -> tuple[float, np.ndarray]:
@@ -125,6 +133,10 @@ def smooth_path(
         g_o = np.zeros_like(X)
         for i in np.flatnonzero(d < d_safe):
             base = d[i]
+            gk = grads.get(np.round(X[i], 6).tobytes())
+            if gk is not None:  # v12 #21: analytic
+                g_o[i] = -2 * w_clear * (d_safe - base) * gk[: X.shape[1]]
+                continue
             for j in range(X.shape[1]):
                 qe = X[i].copy()
                 qe[j] += eps
@@ -172,6 +184,14 @@ def smooth_move(tracer, hit, way: list[np.ndarray], tcp: str, step: float) -> li
     """core.paths._Tracer.joint_move: ``way`` optimised with the part clearance of ``tcp``'s
     tool; the stats go to ``tracer.smooth_stats``."""
     ch = tracer.ch
-    out, st = smooth_path(hit, lambda q: ch.scene.part_clearance(q, tcp), way, ch.lo, ch.hi, step)
+    out, st = smooth_path(
+        hit,
+        lambda q: ch.scene.part_clearance(q, tcp),
+        way,
+        ch.lo,
+        ch.hi,
+        step,
+        clearance_grad=lambda q: ch.scene.part_clearance_grad(q, tcp),  # v12 #21
+    )
     tracer.smooth_stats.append(st)
     return out
