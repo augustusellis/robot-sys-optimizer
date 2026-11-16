@@ -77,6 +77,9 @@ def build_app(
         session.part = PartState("assets/parts/flat_plate.stl", "m", make_T(p=(1.0, 0.0, 0.5)))
         session.load_robot_from_registry("ur20")
         session.load_tool_from_library("orbital_sander")
+    from ui.precision import precise
+
+    precise(server)  # v12 #28: four decimals in every mm / deg field
     server.scene.set_up_direction("+z")
     server.initial_camera.position = (3.0, -3.0, 2.2)
     server.initial_camera.look_at = (0.5, 0.0, 0.6)

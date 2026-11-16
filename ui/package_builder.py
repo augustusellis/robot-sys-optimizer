@@ -111,6 +111,9 @@ class PackageBuilder:
 
             self.presets = MobilePresets(gui, self)  # v11 #9: chassis + vertical stage
             self.units = gui.add_dropdown("Mesh units", UNITS, hint="STL / OBJ / PLY (STEP carries its own)")
+            from ui.package_load import dropdown
+
+            self.load_from = dropdown(gui)  # v12 #27: which file frame goes on the flange
             self.upload = gui.add_upload_button("Add mesh (STL/OBJ/PLY/STEP)")
             self.import_bar = gui.add_progress_bar(0.0, animated=True, visible=False)
             self.import_cancel = gui.add_button("Cancel import", visible=False)  # v10 T20: STEP
@@ -261,6 +264,7 @@ class PackageBuilder:
                     self.cyl.value = (x.radius * 1000, x.height * 1000)
                 self.part_pose.set(pose_to_matrix(x.pose))
             tool = p.kind == "tool"
+            self.load_from.visible = tool  # v12 #27: end effectors only
             carrier = p.kind in ("rail", "gantry", "mobile")
             self.tcp.options = tuple(t.name for t in p.tcps) or (NONE,)
             if p.tcps:

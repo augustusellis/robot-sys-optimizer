@@ -93,8 +93,14 @@ def import_mesh(self, e) -> None:
             self.import_errors.pop(f.name, None)
             n_d = len(part.datums)
             frames = f"; {n_d} STEP frame(s): *Frames and travel → Frame from STEP*" if n_d else ""
-            self.import_info.content = f"✔ Added **{name}** ({len(m.faces)} triangles){guess_note}{frames}."
             self._add(part)
+            from ui.package_load import after_import
+
+            where = after_import(self, e, part, ext in (".step", ".stp"))  # v12 #27
+            where = f"; {where}" if where else ""
+            self.import_info.content = (
+                f"✔ Added **{name}** ({len(m.faces)} triangles){guess_note}{where}{frames}."
+            )
             if not sure:  # v10 T20: ask which units it is in
                 ask_units(self, e, part.name)
         finally:

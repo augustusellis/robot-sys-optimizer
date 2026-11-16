@@ -43,6 +43,9 @@ class BuilderWindow:
         want = port if port is not None else server.get_port() + 1
         self.server = viser.ViserServer(host=host, port=want, verbose=False)  # viser: next free port
         self.server.gui.configure_theme(control_width="large")
+        from ui.precision import precise
+
+        precise(self.server)  # v12 #28
         self.server.scene.set_up_direction("+z")
         self.server.scene.add_grid("/grid", width=6.0, height=6.0, cell_size=0.25, plane="xy")
         self.port = self.server.get_port()

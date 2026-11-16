@@ -410,3 +410,6 @@ Launch with `scripts/run_app.bat` (Windows, uses the rso env) or `$PY app.py [--
   `commit` (the fixed bodies were left at the old frame after *Use this frame*);
   `opt.frame_place.swept_outline` / `beside_frames` (gantries beside the part, both headings,
   standoff to the swept outline), `FrameScore.own` (the user's frame always scored and listed).
+- **Items 27-28 (package builder feedback, 2026-11-16):** `ui/package_load.py` (*Load relative to*:
+  robot flange or a STEP coordinate system on the flange, `place`, `after_import`, the dialog);
+  `ui/precision.py` (4 decimals in every mm / deg field, hooked in `build_app` and the builder window).

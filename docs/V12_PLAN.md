@@ -102,7 +102,7 @@ From the user's tests of Optimize -> Gantry placement with default settings.
       gantry_overhead still finds a frame at least as cheap as before (11.73); scoring time
       stated for both examples. Tests: tests/test_v12_gantry_frames.py (port 8986).
 
-## Phase G: Package builder feedback (2026-11-16, planned with the user, not started)
+## Phase G: Package builder feedback (2026-11-16)
 
 27. **End effector frame when loading a mesh / STEP into a tool package.**
     - *Found:* a tool package's frame is the robot flange (`tool0` / `fanuc_flange`: z out of the
@@ -163,4 +163,6 @@ From the user's tests of Optimize -> Gantry placement with default settings.
 | 24 | done (07e5c58) | CLAUDE.md 536 -> 205 lines; docs/HISTORY.md. |
 | 25 | done | `CarrierPanel.commit` redraws all bodies when the frame pose or a fixed body changed (`_fixed_moved`). After *Use this frame* (turned + shifted frame) and after a typed frame-pose edit every drawn body is where the model has it (0 mm); both tests fail on v11's code. |
 | 26 | done | `swept_outline`, `beside_frames` (4 sides x 2 headings x standoffs x shifts), the user's frame always scored (`FrameScore.own`, "(your frame)", appended to the planned list when usable). floor_xy_rails (defaults): 281 of 331 frames usable (was 0 of 50); best frame beside the part, rails across the side (x 300, y -3500 mm, yaw -90): **1 station, 77/77, cost 7.32**; the user's frame 2 stations, 77/77, 8.94; whole Gantry placement 65 s. gantry_overhead: same best frame (11.73), the user's frame listed (12.74); scoring 7.1 -> 25.5 s (the beside frames), total 233 s with 3 frames planned. Not done from the plan: sweeping the carriage bodies in `sweep_clear` (each stop's check already rejects stops whose carriage is too close; moves between stops are checked when the paths are built). Not tried in a browser. |
+| 27 | done | `ui/package_load.py` (*Load relative to*: Robot flange / STEP coordinate system; one CSYS used, several -> dialog, none -> note; tool packages only). Tests with STEP files holding two, one and no named CSYS: the chosen CSYS lands on the flange to 1e-9. The several-CSYS dialog itself is not tried in a browser (headless tests call what its buttons do). |
+| 28 | done | `ui/precision.precise` wraps the main and builder windows' `add_number` / `add_vector2` / `add_vector3` / `add_slider`: mm / deg fields get 4 decimals, arrow steps unchanged, counts stay whole. Browser test (tests/e2e/test_v12_decimals.py): typing -1234.5678 into X travel reaches the server unrounded; without the hook it arrived as -1234. Dialog fields made on a client (modals) are not covered. |
 | 18 | done | Spin DP only where the planned-spin samples have a problem, a joint within 20 deg of its limit on the surface, or an unwinding step; Paths skips the whole spin build when the plan has none. rail_long_part (2 stops): build 7.3 -> 2.6 s, same paths (cycle 83 s, no flags). CRX-30 gantry_overhead (3 stops, `scripts/measure_paths.py`): 188.6 -> 148.2 s (-21 %), 7 of 12 sequences skip the DP, cycle 515 -> 517 s (+2 s), flags and joint margins unchanged. |
