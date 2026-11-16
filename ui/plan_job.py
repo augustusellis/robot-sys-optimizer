@@ -379,6 +379,8 @@ def edge_job(payload: dict, emit, cancelled):
     stop_of, zone_of, low = ec.plan_maps(sol, res)
     h = ec.spacing_of(P)
     pts = ec.edge_points(s.part_mesh(), ids, P, N, stop_of, zone_of, low, spacing=h)
+    for g in ec.two_sided(ids, P, N, {int(p.id): p.group for p in s.targets.points}, h):  # v12 #5
+        emit("warn", f"group **{g}** has targets on opposite sides of the part; no edge points between them")
     checker = build_checker(s, robot, s.sites(), int(spec.get("workers", 1)), say, emit)
     t = world_targets(s)
     group = {int(pid): g for pid, g in zip(t.ids, t.groups, strict=True)}

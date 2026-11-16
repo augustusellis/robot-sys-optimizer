@@ -155,6 +155,24 @@ def edge_points(
     return _thin(out, 0.25 * h)[:MAX_POINTS]
 
 
+def two_sided(
+    ids: np.ndarray, P: np.ndarray, N: np.ndarray, group_of: dict[int, str], spacing: float | None = None
+) -> list[str]:
+    """Target groups with neighbouring targets on opposite sides of a sheet (v12 #5): pairs within
+    the edge check's 1.6 x spacing whose normals differ by more than ``SAME_SIDE`` allows. The edge
+    check puts no points between those (by design), so it says so instead of passing silently."""
+    if len(P) < 2:
+        return []
+    P, N = np.asarray(P, float), _unit(np.asarray(N, float))
+    h = spacing or spacing_of(P)
+    out: set[str] = set()
+    for i, j in cKDTree(P).query_pairs(1.6 * h, output_type="ndarray"):
+        ga, gb = group_of.get(int(ids[i])), group_of.get(int(ids[j]))
+        if ga is not None and ga == gb and float(N[i] @ N[j]) < SAME_SIDE:
+            out.add(ga)
+    return sorted(out)
+
+
 def _thin(pts: list[EdgePoint], tol: float) -> list[EdgePoint]:
     """Drop near-duplicates (same place, same normal) - crease ends, pairs sharing a midpoint."""
     if not pts:

@@ -329,6 +329,9 @@ class ProjectPanel:
             for w in self.s.load_warnings:
                 log(f"Missing file: {w}", "warn")
             _notify(e, "Opened with missing files", "; ".join(self.s.load_warnings)[:500])
+            from ui.project_missing import ask
+
+            ask(self, e)  # v12 #7: locate the part / carrier / stay-out meshes
         with self._lock:
             self._saved_json = None  # compare against the next snapshot, not the old project
             self._last_save = time.monotonic()

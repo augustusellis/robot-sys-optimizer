@@ -30,12 +30,14 @@ from core.userframe import base_to_part
 FORMATS = {"urscript": ".script", "fanuc": ".ls", "rapid": ".mod"}
 
 
-def default_format(robot_name: str, convention: str) -> str:
+def default_format(robot_name: str, convention: str) -> str | None:
+    """The robot's own program language, or None when it is not known (an uploaded URDF, a made-up
+    arm): v12 #3, URScript was guessed for those and is wrong for anything that is not a UR."""
     if convention == "ur":
         return "urscript"
     if convention == "fanuc":
         return "fanuc"
-    return "rapid" if robot_name.lower().startswith(("gofa", "powa", "irb")) else "urscript"
+    return "rapid" if robot_name.lower().startswith(("gofa", "powa", "irb")) else None
 
 
 def _wpr(R: np.ndarray) -> tuple[float, float, float]:

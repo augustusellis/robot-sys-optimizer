@@ -175,6 +175,11 @@ class ExportPanel:
         fmt = PROGRAM_FORMATS[self.prog_format.value] or default_format(
             s.robot_name or "", s.robot.spec.frame_convention
         )
+        if fmt is None:  # v12 #3: no guess for a robot of unknown language
+            raise ValueError(
+                f"the program language of {s.robot_name or 'this robot'} is not known: "
+                "choose a Program format (URScript, TP or RAPID)"
+            )
         tcp = next((p.tcp for p in sim.plan.samples if p.tcp), s.tool.tcps[0].name)
         carrier = s.carrier() if s.base.mode == "movable" else None
         text = program(fmt, sim.plan, s.tool_model.T_flange_tcp(tcp), s.part.T_world_part, carrier, s.cycle)

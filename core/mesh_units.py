@@ -2,8 +2,9 @@
 process so the import can be cancelled.
 
 ``guess_units(extent)``: STL / OBJ / PLY carry no units. The largest bounding-box side in file units
-tells: over ``MM_ABOVE`` (100) it is millimetres (a 100 m end effector or cell part is not plausible,
-nor a 2.5 m one drawn in inches for this tool), from ``M_FROM`` to ``M_UP_TO`` it is metres; in
+tells: from ``MM_ABOVE`` (100) to ``MM_SURE_UP_TO`` (5000) it is millimetres (a 100 m end effector
+or cell part is not plausible, nor a 2.5 m one drawn in inches for this tool), above that millimetres
+but unsure (v12: a part over 5 m), from ``M_FROM`` to ``M_UP_TO`` it is metres; in
 between it is unsure and the caller asks: 5-20 could be metres or millimetres, 20-100 millimetres or
 inches. Below ``M_FROM`` (5 mm in metres or 0.005 mm in mm): unsure too.
 
@@ -19,14 +20,19 @@ from collections.abc import Callable
 from pathlib import Path
 
 MM_ABOVE = 100.0  # v11 #12: 20..100 could be mm or inches (a 30-unit part: 30 mm or 0.76 m)
+MM_SURE_UP_TO = 5000.0  # v12 #6: over 5 m in millimetres is unusual for a cell part: ask
 MM_LOW = 20.0  # 5..20 units: metres or millimetres
 M_FROM, M_UP_TO = 0.005, 5.0
 SCALE = {"m": 1.0, "mm": 1e-3, "in": 0.0254}
 
 
 def guess_units(extent: float) -> tuple[str, bool]:
-    """(units, sure) for a mesh whose largest side is ``extent`` in file units."""
+    """(units, sure) for a mesh whose largest side is ``extent`` in file units. Size alone cannot
+    tell a 150 mm part from a 150 inch one: from 100 to 5000 units millimetres are taken as sure,
+    and the import shows the resulting length (``describe``) so a wrong guess is visible."""
     e = float(extent)
+    if e > MM_SURE_UP_TO:  # v12 #6: a part over 5 m long (or an inch file of a 127 m one): ask
+        return "mm", False
     if e > MM_ABOVE:
         return "mm", True
     if M_FROM <= e <= M_UP_TO:

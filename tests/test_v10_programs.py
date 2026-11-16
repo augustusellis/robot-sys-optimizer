@@ -14,6 +14,7 @@ def test_default_format_by_robot():
     assert default_format("ur20", "ur") == "urscript"
     assert default_format("crx10ia", "fanuc") == "fanuc"
     assert default_format("gofa10", "matrix") == "rapid"
+    assert default_format("my_uploaded_arm", "matrix") is None  # v12 #3: no URScript guess
 
 
 def _ur_T(s: str) -> np.ndarray:

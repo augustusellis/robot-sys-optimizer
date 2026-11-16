@@ -37,6 +37,7 @@ FLAT = 0.2  # 1/m: below this curvature (radius above 5 m, e.g. facet noise) the
 class Radius:
     concave: float  # m (inf = flat or convex only)
     convex: float
+    unsure: bool = False  # v12 #4: face normals around the point disagree: not measured
 
 
 @dataclass
@@ -45,12 +46,24 @@ class Fit:
 
     radii: dict[int, Radius] = field(default_factory=dict)
     bad: dict[int, tuple[str, float, float, str]] = field(default_factory=dict)  # pid -> (tcp, r, min, kind)
+    unsure: list[int] = field(default_factory=list)  # v12 #4: inconsistent face normals there
 
     def lines(self, limit: int = 12) -> str:
         """'2 points not compatible with the tool's minimum radius 25 mm: surface radius 10 mm at
         points 7, 8' (one clause per TCP / minimum), or ''."""
+        out = []
+        if self.unsure:
+            ids = ", ".join(str(p) for p in self.unsure[:limit])
+            more = f" and {len(self.unsure) - limit} more" if len(self.unsure) > limit else ""
+            out.append(
+                f"{len(self.unsure)} point(s) where the part's face normals disagree (flipped faces?): "
+                f"surface radius not measured at points {ids}{more}"
+            )
+        return "; ".join(out + self._bad_lines(limit))
+
+    def _bad_lines(self, limit: int) -> list[str]:
         if not self.bad:
-            return ""
+            return []
         by: dict[tuple[str, float], list[tuple[int, float, str]]] = {}
         for pid, (tcp, r, rmin, kind) in sorted(self.bad.items()):
             by.setdefault((tcp, rmin), []).append((pid, r, kind))
@@ -62,7 +75,7 @@ class Fit:
                 f"{len(pts)} point(s) not compatible with the tool's minimum radius {1000 * rmin:.0f} mm "
                 f"(TCP {tcp}): surface radius at points {where}{more}"
             )
-        return "; ".join(out)
+        return out
 
 
 def disc(radius: float) -> np.ndarray:
@@ -95,10 +108,15 @@ def surface_radii(mesh: trimesh.Trimesh, P: np.ndarray, N: np.ndarray, footprint
     out = []
     for i in range(len(P)):
         d = on[i] - P[i]
-        keep = (np.einsum("kj,j->k", fn[i], N[i]) > 0.2) & (np.linalg.norm(d, axis=1) <= 1.5 * F)
+        # v12 #4: front faces relative to the face under the point, so a mesh whose normals are
+        # flipped (all of them, or locally) is measured like any other
+        c = np.einsum("kj,j->k", fn[i], N[i])
+        c = -c if c[0] < 0 else c
+        near = np.linalg.norm(d, axis=1) <= 1.5 * F
+        keep = (c > 0.2) & near
         u, v, h = d[keep] @ U[i], d[keep] @ V[i], d[keep] @ N[i]
-        if len(h) < 8:
-            out.append(Radius(np.inf, np.inf))
+        if len(h) < 8:  # too few front samples: inconsistent normals when the back ones are many
+            out.append(Radius(np.inf, np.inf, unsure=int(np.sum((c < -0.2) & near)) >= 8))
             continue
         A = np.c_[u * u, u * v, v * v, u, v, np.ones_like(u)]
         a, b, c = np.linalg.lstsq(A, h, rcond=None)[0][:3]
@@ -174,6 +192,8 @@ def check(mesh, ids, P, N, groups, tool_model) -> Fit:
         first = per_tcp.get(allowed[0]) if allowed else None
         if first is not None:
             fit.radii[int(pid)] = first[1][i]
+        if any(per_tcp[n][1][i].unsure for n in allowed if n in per_tcp):
+            fit.unsure.append(int(pid))
         if worst is not None:
             fit.bad[int(pid)] = worst
     return fit

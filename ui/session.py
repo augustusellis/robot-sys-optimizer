@@ -62,6 +62,7 @@ class Session:
     extra: dict = field(default_factory=dict)  # untouched project sections (optimizer)
     selection: tuple[str, list[int]] | None = None  # (part mesh path, face ids): saved selection
     load_warnings: list = field(default_factory=list)  # v9 #12: files a loaded project is missing
+    missing: list = field(default_factory=list)  # v12 #7: items left out for a missing file (kept on save)
     # v9 #6: Compare robots: robot -> {"results", "points" {label: {pid: PointResult}}, "stamps", "metrics"}
     compared: dict = field(default_factory=dict)
     # v9 #6: while Results shows a compared robot, the project's own robot and plans (ui.compare_view)
@@ -272,17 +273,22 @@ class Session:
                 collision_keep=[int(f) for f in self.part.collision_keep],
                 collision_mesh=self.part.collision_mesh,
             )
-        return schema.Project(
-            robot=robot,
-            part=part,
-            end_effector=o.get("tool", self.tool),  # v10 T17: the project's tool while viewing a setup
-            targets=self.targets,
-            results=g("results"),
-            base=o.get("base", self.base),  # v11 #8: the project's axis while viewing a setup
-            stayouts=list(self.stayouts),
-            work=self.work_state(o),
-            compared=self.compared_data(),
-            **self.extra,
+        from ui.project_assets import keep_missing
+
+        return keep_missing(  # v12 #7: items whose file is missing stay in the file
+            self,
+            schema.Project(
+                robot=robot,
+                part=part,
+                end_effector=o.get("tool", self.tool),  # v10 T17: the project's tool while viewing a setup
+                targets=self.targets,
+                results=g("results"),
+                base=o.get("base", self.base),  # v11 #8: the project's axis while viewing a setup
+                stayouts=list(self.stayouts),
+                work=self.work_state(o),
+                compared=self.compared_data(),
+                **self.extra,
+            ),
         )
 
     def apply_project(self, project: schema.Project, project_dir: Path) -> None:

@@ -61,16 +61,16 @@ def skip_ids(s) -> list[int]:
 def report_md(s) -> str:
     fit = fit_of(s)
     if not fit.bad:
-        return ""
+        return f"{fit.lines()}." if fit.unsure else ""
     how = "left out of planning" if getattr(s, "skip_unfit", False) else "planned anyway (only reported)"
-    return f"{fit.lines()}. They are {how}."
+    return f"{fit.lines()}. The incompatible points are {how}."
 
 
 def log_fit(s) -> None:
-    """Log the incompatible points once per targets / tool state."""
+    """Log the incompatible points (and v12 #4: unmeasured ones) once per targets / tool state."""
     fit = fit_of(s)
     key = getattr(s, "_radius_fit", (None,))[0]
-    if fit.bad and getattr(s, "_radius_logged", None) != key:
+    if (fit.bad or fit.unsure) and getattr(s, "_radius_logged", None) != key:
         from ui.log_panel import log
 
         s._radius_logged = key
