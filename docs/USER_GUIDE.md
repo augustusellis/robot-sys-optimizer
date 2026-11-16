@@ -777,5 +777,7 @@ the fast suite on Windows for every push.
 3. `core/feasibility.py` (the exact check everything rests on).
 4. `opt/placement.py` (the planner pipeline) and `core/paths.py` (`trace`).
 5. `app.py` (how the panels are put together).
+6. `docs/HISTORY.md`: how each part was built and why, by release (the section of the area you
+   change).
 
 UR robot models © 2023 Universal Robots A/S. Use hereof is subject to Universal Robots A/S' Terms and Conditions for Use of Graphical Documentation (see `assets/robots/ur20/meshes/LICENSE.txt`).
