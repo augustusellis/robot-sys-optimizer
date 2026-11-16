@@ -78,6 +78,10 @@ class ExportPanel:
             self.flange = gui.add_dropdown(
                 "Flange", tuple(FLANGES), hint="ISO 9409-1 pattern of the STEP plate"
             )
+            self.package = gui.add_button(
+                "Everything (zip)",
+                hint="handover package: CSVs, report, tool URDF, built paths and project.json with a README",
+            )
             self.gate_md = gui.add_markdown("", visible=False)  # why the exports are disabled (T16)
             self.info = gui.add_markdown("_Files are saved to the project folder's export/ directory._")
         self.csv.on_click(lambda e: self._run(e, self.export_csv))
@@ -90,6 +94,7 @@ class ExportPanel:
             )
         )
         self.step.on_click(lambda e: self._run(e, self.export_step))
+        self.package.on_click(lambda e: self._run(e, self.export_package))
         self.tube_od = lambda: None  # app.py: Tool geometry -> Tube OD
 
     # --- helpers ---------------------------------------------------------------------------------
@@ -239,6 +244,31 @@ class ExportPanel:
         except PdfError as err:
             raise ValueError(str(err)) from err
         return pdf, pdf.read_bytes()
+
+    def export_package(self, sol, client=None) -> tuple[Path, bytes]:
+        """Every export of the selected plan in one zip with a README (ui.handover)."""
+        from ui import handover as ho
+
+        steps = [
+            ("TCP poses (CSV)", lambda: self.export_csv(sol, client)),
+            ("Userframes (CSV)", lambda: self.export_userframes(sol, client)),
+            ("HTML report", lambda: self.export_report(sol, client)),
+            ("Tool URDF", lambda: self.export_urdf(sol, client)),
+        ]
+        sim = getattr(self, "sim", None)
+        if sim is not None and sim.plan is not None and sim.key == plan_key(sol) and self.s.part is not None:
+            from core.paths import path_csv
+
+            text = path_csv(sim.plan, self.s.part.T_world_part)
+            steps.append(("Path CSV", lambda: rm.write_text(self.out_dir, "paths.csv", text)))
+            steps.append(("Robot program", lambda: self.export_program(sol, client)))  # v10 T21
+        steps.append(("project.json", lambda: ho.project_step(self.s, self.out_dir)))
+        path, data, failed = ho.build(
+            self.out_dir, self.s.project_dir.name, steps, ho.plan_lines(self.s, sol, self.stale)
+        )
+        if failed:
+            log.warning("handover package without: %s", "; ".join(f"{w} ({why})" for w, why in failed))
+        return path, data
 
     def margins_clearance(self) -> float:
         return rm.margins_clearance(self.s)

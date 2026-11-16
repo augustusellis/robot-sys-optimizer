@@ -354,7 +354,9 @@ def build_app(
     ex.sim = sim  # v8 T19: the report shows the built paths' cycle time
     ex.frame = frame  # v10 T22: Gantry placement in the report
     workflow.gate(
-        (ex.csv, ex.uframes, ex.urdf, ex.report, ex.step), ex.gate_md, result_reason(results.selected)
+        (ex.csv, ex.uframes, ex.urdf, ex.report, ex.step, ex.package),
+        ex.gate_md,
+        result_reason(results.selected),
     )
     workflow.gate(sim.build_btn, sim.gate_md, plan_reason(sim.selected))
     workflow.gate(tool_opt.run, tool_opt.gate_md)
