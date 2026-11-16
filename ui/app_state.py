@@ -43,6 +43,9 @@ def build_settings(server: viser.ViserServer, dark: bool, guide_port: int | None
 
         workers_num.on_update(set_workers)
         guide = add_guide_panel(server, guide_port)
+        from core.version import app_version
+
+        server.gui.add_markdown(f"Version: {app_version()}")
     return dark_toggle, worker_box, guide
 
 

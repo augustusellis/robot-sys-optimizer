@@ -163,10 +163,14 @@ def make_installer(version: str) -> Path | None:
         print("installer: skipped, Inno Setup (iscc) not found (jrsoftware.org; CI: choco install innosetup)")
         return None
     clean = re.sub(r"[^0-9A-Za-z._-]", "_", version)
+    sys.path.insert(0, str(ROOT))
+    from core.version import numeric_version
+
     subprocess.run(
         [
             iscc,
             f"/DAppVersion={clean}",
+            f"/DNumericVersion={numeric_version(version)}",
             f"/DSourceDir={DIST / APP}",
             f"/O{DIST}",
             str(ROOT / "packaging" / f"{APP}.iss"),

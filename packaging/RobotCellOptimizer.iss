@@ -1,8 +1,11 @@
 ; Inno Setup script: per-user installer (no admin rights) for the PyInstaller folder.
 ;   iscc /DAppVersion=1.0 /DSourceDir=dist\RobotCellOptimizer packaging\RobotCellOptimizer.iss
-; scripts/build_exe.py --installer passes both defines. Nothing is downloaded at install time.
+; scripts/build_exe.py --installer passes the defines (AppVersion from git describe, NumericVersion for the file version). Nothing is downloaded at install time.
 #ifndef AppVersion
   #define AppVersion "0.0.0"
+#endif
+#ifndef NumericVersion
+  #define NumericVersion "0.0.0.0"
 #endif
 #ifndef SourceDir
   #define SourceDir "..\dist\RobotCellOptimizer"
@@ -12,6 +15,7 @@
 AppId={{6F2C9B1E-4B7A-4E36-9D0A-5B3F1C7A2E10}
 AppName=Robot Cell Optimizer
 AppVersion={#AppVersion}
+VersionInfoVersion={#NumericVersion}
 AppPublisher=Robot Cell Optimizer
 PrivilegesRequired=lowest
 DefaultDirName={localappdata}\Programs\RobotCellOptimizer

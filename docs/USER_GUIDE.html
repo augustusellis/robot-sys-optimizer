@@ -90,6 +90,7 @@ nav a.hide{display:none}
 <li><strong>Your data</strong> (projects, the tool library, caches) lives in <code>%LOCALAPPDATA%\RobotCellOptimizer</code> (<code>workspace\</code>, <code>tools\</code>, <code>cache\</code>), separate from the program. Set the environment variable <code>RSO_DATA</code> to use another folder. Uninstalling does <strong>not</strong> delete this folder.</li>
 <li><strong>Updates.</strong> There is no automatic update and no update check. Run the new version's setup exe (or unzip the new zip into a new folder): the program is replaced and your data is kept.</li>
 <li><strong>SmartScreen.</strong> The program is not code-signed, so Windows may show <strong>Windows protected your PC</strong> on first run: click <strong>More info</strong>, then <strong>Run anyway</strong>. On a managed PC that blocks unsigned programs, IT has to allow the file (by path or by the SHA-256 in <code>SHA256SUMS.txt</code>).</li>
+<li><strong>Version.</strong> The version is shown under <strong>Settings &amp; help</strong> (line &quot;Version: ...&quot;), at the top of the side panel, and by <code>RobotCellOptimizer.exe --version</code>. The release page explains which file to download and the first-run warnings step by step.</li>
 </ul>
 <p>Sections <a href="#22-prerequisites">2.2</a> to <a href="#25-first-launch">2.5</a> set up from source with conda (for developers, or PCs that can use Miniforge); <a href="#26-portable-copy-for-a-pc-without-conda-or-internet">2.6</a> is the older conda-pack zip.</p>
 <h3 id="22-prerequisites">2.2 Prerequisites</h3>

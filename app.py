@@ -10,6 +10,7 @@ from pathlib import Path
 import viser
 
 from core.transforms import make_T
+from core.version import app_version
 from ui import display_lod
 from ui.app_state import build_settings, collect_work, restore_work
 from ui.carrier_ui import CarrierPanel
@@ -478,6 +479,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Robot cell & end-effector optimizer")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument("--version", action="version", version=f"Robot Cell Optimizer {app_version()}")
     parser.add_argument("--dark", action="store_true", help="start in dark mode (also a checkbox in the GUI)")
     parser.add_argument("--guide-port", type=int, default=None, help="user guide port (default: --port + 1)")
     # v7 round 2 (T9): the app always opens empty with a project popup; --fresh is kept so old
@@ -492,7 +494,7 @@ def main() -> None:
     from opt.parallel import default_workers
 
     jobs.CHECK_WORKERS = default_workers()  # v8 T2
-    server = viser.ViserServer(host=args.host, port=args.port, label="Robot Cell Optimizer")
+    server = viser.ViserServer(host=args.host, port=args.port, label=f"Robot Cell Optimizer {app_version()}")
     guide = None
     try:
         guide = GuideServer(args.host, args.guide_port or server.get_port() + 1)
@@ -509,7 +511,8 @@ def main() -> None:
     )
     project = state["project"]
     print(
-        f"Robot Cell Optimizer ready: http://localhost:{server.get_port()}/", flush=True
+        f"Robot Cell Optimizer ready: http://localhost:{server.get_port()}/ (version {app_version()})",
+        flush=True,
     )  # CI start-up check
     project.untitled = True  # the empty start-up cell has no folder: no autosave until one opens
     opened = False

@@ -99,6 +99,24 @@ def test_release_job_makes_a_draft_and_checks_sizes():
     assert not any("action-gh-release" in s.get("uses", "") for s in steps("release"))
 
 
+def test_release_job_writes_notes_from_template_and_appends_generated_ones():
+    job = WF["jobs"]["release"]
+    checkout = [s for s in steps("release") if "actions/checkout" in s.get("uses", "")]
+    assert checkout and "release_notes.py" in checkout[0]["with"]["sparse-checkout"]
+    assert "RELEASE_NOTES.md.in" in checkout[0]["with"]["sparse-checkout"]
+    assert job["permissions"] == {"contents": "write"}
+    notes = step("release", "Write the release notes")["run"]
+    assert "scripts/release_notes.py release" in notes and "--out notes.md" in notes
+    names = [s.get("name", "") for s in steps("release")]
+    assert names.index(step("release", "Write the release notes")["name"]) < names.index(
+        step("release", "Create the release")["name"]
+    )
+    create = step("release", "Create the release")["run"]
+    assert "--notes-file notes.md" in create and "--generate-notes" in create
+    assert (ROOT / "scripts" / "release_notes.py").is_file()
+    assert (ROOT / "packaging" / "RELEASE_NOTES.md.in").is_file()
+
+
 def test_linux_job_is_only_a_comment():
     assert set(WF["jobs"]) == {"windows", "release"}
     assert "# linux:" in TEXT and "AppImage" in TEXT

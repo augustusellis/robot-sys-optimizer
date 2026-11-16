@@ -72,6 +72,7 @@ Tested on **Windows 10/11**. Linux and macOS should work with the same conda env
 - **Your data** (projects, the tool library, caches) lives in `%LOCALAPPDATA%\RobotCellOptimizer` (`workspace\`, `tools\`, `cache\`), separate from the program. Set the environment variable `RSO_DATA` to use another folder. Uninstalling does **not** delete this folder.
 - **Updates.** There is no automatic update and no update check. Run the new version's setup exe (or unzip the new zip into a new folder): the program is replaced and your data is kept.
 - **SmartScreen.** The program is not code-signed, so Windows may show **Windows protected your PC** on first run: click **More info**, then **Run anyway**. On a managed PC that blocks unsigned programs, IT has to allow the file (by path or by the SHA-256 in `SHA256SUMS.txt`).
+- **Version.** The version is shown under **Settings & help** (line "Version: ..."), at the top of the side panel, and by `RobotCellOptimizer.exe --version`. The release page explains which file to download and the first-run warnings step by step.
 
 Sections [2.2](#22-prerequisites) to [2.5](#25-first-launch) set up from source with conda (for developers, or PCs that can use Miniforge); [2.6](#26-portable-copy-for-a-pc-without-conda-or-internet) is the older conda-pack zip.
 

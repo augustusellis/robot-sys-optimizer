@@ -1,6 +1,7 @@
 """Entry point of the frozen Robot Cell Optimizer (PyInstaller; built by scripts/build_exe.py).
 
     RobotCellOptimizer.exe [--dark] [--port 8080] [--host ...] [--open FOLDER] [--no-browser]
+    RobotCellOptimizer.exe --version        (print the version, exit 0; no server)
     RobotCellOptimizer.exe --selftest       (headless: plan one small job in the worker, export, exit 0/1)
 
 Order matters:
@@ -71,6 +72,10 @@ def selftest() -> int:
 
     t0 = time.monotonic()
     import viser
+
+    from core.version import app_version
+
+    print(f"[selftest] Robot Cell Optimizer {app_version()}")
 
     import app
     from ui import jobs
@@ -182,7 +187,9 @@ def selftest() -> int:
 
 
 def parse_args(argv: list[str]) -> tuple[str, bool, str, list[str]]:
-    """(mode, open the browser?, port, the arguments left for app.main). Mode: "selftest" or "app"."""
+    """(mode, open the browser?, port, args left for app.main). Mode: "version", "selftest" or "app"."""
+    if "--version" in argv:
+        return "version", False, "", []
     if "--selftest" in argv:
         return "selftest", False, "", []
     rest = [a for a in argv if a != "--no-browser"]
@@ -197,6 +204,11 @@ def parse_args(argv: list[str]) -> tuple[str, bool, str, list[str]]:
 
 def main() -> None:
     mode, browser, port, rest = parse_args(sys.argv[1:])
+    if mode == "version":
+        from core.version import app_version
+
+        print(f"Robot Cell Optimizer {app_version()}")
+        sys.exit(0)
     if mode == "selftest":
         sys.exit(selftest())
     sys.argv = [sys.argv[0], *rest]

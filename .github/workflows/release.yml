@@ -140,6 +140,13 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
+      - uses: actions/checkout@v4 # only the notes template and its script (sparse)
+        with:
+          sparse-checkout: |
+            packaging/RELEASE_NOTES.md.in
+            scripts/release_notes.py
+          sparse-checkout-cone-mode: false
+
       - uses: actions/download-artifact@v4
         with:
           name: windows-release
@@ -157,6 +164,11 @@ jobs:
             fi
           done
 
+      - name: Write the release notes (download steps, SmartScreen, checksums)
+        env:
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || format('manual-{0}', github.run_number) }}
+        run: python3 scripts/release_notes.py release --version "$TAG" --out notes.md
+
       - name: Create the release (draft)
         env:
           # tag pushes always make a draft; a manual run follows the `draft` input
@@ -168,8 +180,10 @@ jobs:
           if [ "${{ github.ref_type }}" != "tag" ]; then
             flags="$flags --target ${{ github.sha }} --prerelease"
           fi
+          # notes.md first, then GitHub's generated change list: gh sends the file as the body with
+          # generate_release_notes set, and the API puts the given body before the generated text
           gh release create "$TAG" release/* --repo "${{ github.repository }}" \
-            --title "Robot Cell Optimizer $TAG" --generate-notes $flags
+            --title "Robot Cell Optimizer $TAG" --notes-file notes.md --generate-notes $flags
 
   # Linux AppImage: NOT yet (user decision: after the first Windows release). Placeholder only.
   # linux:
