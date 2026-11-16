@@ -24,9 +24,9 @@ from __future__ import annotations
 
 import numpy as np
 import trimesh
-from scipy.spatial.transform import Rotation, Slerp
 
 from core.configs import config_label
+from core.path_sample import chord_poses
 from core.path_types import PathPlan, PathSample, StationPath
 
 SMOOTH_M = 0.15  # carrier set points averaged over this much path
@@ -182,20 +182,10 @@ def _pass(c: _Ctx, pids: list[int], label: str) -> list[PathSample]:
     rows = [(order[0], order[0], 0.0, c.tool[order[0]])]
     for a, b in zip(order[:-1], order[1:], strict=True):
         (Pa, Na), (Pb, Nb) = c.points[a], c.points[b]
-        n = max(1, int(np.ceil(np.linalg.norm(np.asarray(Pb) - Pa) / c.step)))
-        s = np.arange(1, n + 1) / n
-        chord = np.asarray(Pa) + s[:, None] * (np.asarray(Pb) - Pa)
-        on, _, _ = trimesh.proximity.closest_point(c.mesh, chord)
-        on[-1] = Pb
-        nrm = np.asarray(Na) + s[:, None] * (np.asarray(Nb) - Na)
-        nrm /= np.linalg.norm(nrm, axis=1, keepdims=True)
         ra, rb = c.results[a], c.results[b]
-        so = ra.standoff + s * (rb.standoff - ra.standoff)
-        rot = Slerp([0.0, 1.0], Rotation.from_matrix([c.tool[a][:3, :3], c.tool[b][:3, :3]]))(s).as_matrix()
-        for i in range(n):
-            T = np.eye(4)
-            T[:3, :3], T[:3, 3] = rot[i], on[i] + so[i] * nrm[i]
-            rows.append((a, b, float(s[i]), T))
+        s, Ts = chord_poses(c.mesh, c.tool[a], c.tool[b], Pa, Pb, Na, Nb, ra.standoff, rb.standoff, c.step)
+        for si, T in zip(s, Ts, strict=True):  # v12 #14: the tracer's sampling
+            rows.append((a, b, float(si), T))
     Pw = np.array([(c.Tp @ T)[:3, 3] for *_, T in rows])
     path_s = np.r_[0.0, np.cumsum(np.linalg.norm(np.diff(Pw, axis=0), axis=1))]
     target = _smooth(axis_coords(c.carrier, Pw)[:, cols] - d0, path_s, SMOOTH_M)

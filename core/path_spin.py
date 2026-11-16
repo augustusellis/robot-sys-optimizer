@@ -27,8 +27,6 @@ from __future__ import annotations
 from itertools import product
 
 import numpy as np
-import trimesh
-from scipy.spatial.transform import Rotation, Slerp
 
 from core.configs import config_label
 from core.path_types import PathSample
@@ -70,25 +68,12 @@ def _rz(a: float) -> np.ndarray:
 
 
 def segment_poses(tr, ra, rb, Pa, Pb, Na, Nb, lift: float = 0.0):
-    """(s, TCP poses in the part frame) of the samples a -> b, exactly as ``_Tracer.segment``."""
+    """(s, TCP poses in the part frame) of the samples a -> b, as ``_Tracer.segment`` (v12 #14:
+    the same core.path_sample.chord_poses)."""
+    from core.path_sample import chord_poses
+
     Ta, Tb = tr.tcp_pose(ra), tr.tcp_pose(rb)
-    n = max(1, int(np.ceil(np.linalg.norm(Pb - Pa) / tr.step)))
-    s = np.arange(1, n + 1) / n
-    chord = Pa + s[:, None] * (Pb - Pa)
-    on, _, _ = trimesh.proximity.closest_point(tr.mesh, chord)
-    on[-1] = Pb
-    normal = Na + s[:, None] * (Nb - Na)
-    normal /= np.linalg.norm(normal, axis=1, keepdims=True)
-    so = ra.standoff + s * (rb.standoff - ra.standoff)
-    if lift > 0:
-        so = so + lift * np.minimum(1.0, 8 * s * (1 - s))
-    rot = Slerp([0.0, 1.0], Rotation.from_matrix([Ta[:3, :3], Tb[:3, :3]]))(s).as_matrix()
-    out = []
-    for i in range(n):
-        T = np.eye(4)
-        T[:3, :3], T[:3, 3] = rot[i], on[i] + so[i] * normal[i]
-        out.append(T)
-    return s, out
+    return chord_poses(tr.mesh, Ta, Tb, Pa, Pb, Na, Nb, ra.standoff, rb.standoff, tr.step, lift)
 
 
 class _Sample:

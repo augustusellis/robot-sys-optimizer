@@ -39,7 +39,6 @@ from collections.abc import Callable
 
 import numpy as np
 import trimesh
-from scipy.spatial.transform import Rotation, Slerp
 
 from core.configs import config_label
 from core.feasibility import CancelledError, FeasibilityChecker, PointResult
@@ -235,22 +234,14 @@ class _Tracer:
     def segment(
         self, k, zone, ra: PointResult, rb: PointResult, Pa, Pb, Na, Nb, prev, label, lift: float = 0.0
     ) -> list[PathSample]:
-        Ta, Tb = self.tcp_pose(ra), self.tcp_pose(rb)
-        n = max(1, int(np.ceil(np.linalg.norm(Pb - Pa) / self.step)))
-        s = np.arange(1, n + 1) / n
-        chord = Pa + s[:, None] * (Pb - Pa)
-        on, _, _ = trimesh.proximity.closest_point(self.mesh, chord)
-        on[-1] = Pb  # land exactly on the planned point
-        normal = Na + s[:, None] * (Nb - Na)
-        normal /= np.linalg.norm(normal, axis=1, keepdims=True)
-        so = ra.standoff + s * (rb.standoff - ra.standoff)
-        if lift > 0:  # off the surface: up, across, down (full height from 15 % to 85 %)
-            so = so + lift * np.minimum(1.0, 8 * s * (1 - s))
-        rot = Slerp([0.0, 1.0], Rotation.from_matrix([Ta[:3, :3], Tb[:3, :3]]))(s).as_matrix()
+        from core.path_sample import chord_poses  # v12 #14: shared with path_spin / coordinated
+
+        s, Ts = chord_poses(
+            self.mesh, self.tcp_pose(ra), self.tcp_pose(rb), Pa, Pb, Na, Nb, ra.standoff, rb.standoff,
+            self.step, lift,
+        )  # fmt: skip
         out = []
-        for i in range(n):
-            T = np.eye(4)
-            T[:3, :3], T[:3, 3] = rot[i], on[i] + so[i] * normal[i]
+        for i, T in enumerate(Ts):
             q, issue = self.solve(T, rb.tcp, prev, label)
             out.append(
                 PathSample(
