@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 
 from core import batch as bt
+from core import preflight as pf
 from core import targets as tg
 from core.schema import TargetGroup, Tolerances
 from core.target_gen import generate_targets
@@ -102,6 +103,10 @@ def materialize(manifest: bt.BatchManifest, job: bt.BatchJob, batch_dir: Path) -
     s.targets = s.targets.model_copy(update={"points": []})
     s.results, s.result_points, s.feasibility, s.stamps, s.steps = [], {}, {}, {}, {}
     mesh = load_mesh(out / rel, job.units)
+    # a wrong unit usually ends in "no targets generated": say why, next to that error
+    job.warnings = [w for w in job.warnings if not w.startswith(pf.BATCH_PREFIX)] + [
+        f"{pf.BATCH_PREFIX}{f.text}" for f in pf.check_part(mesh, np.array(job.pose, float))
+    ]
     try:
         P, N, _ = generate_targets(mesh, job.selection, job.gen)
     except (ValueError, IndexError) as err:

@@ -222,6 +222,9 @@ def _run(manifest, job, batch_dir: Path, emit, cancelled, box: dict, t0: float) 
     out = materialize(cell, job, batch_dir)
     s = Session()
     load_project(s, out)
+    from ui.preflight_run import batch_warnings
+
+    job.warnings = batch_warnings(s, job.warnings)  # e.g. a part 1000 times too small: on the review page
     spec = spec_for(job.planner, s)
     cfg = spec.pop("collision", None)  # v12 #10: the job's collision settings, one value
     if cfg is not None:

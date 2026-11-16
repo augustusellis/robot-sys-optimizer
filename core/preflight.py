@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 LEVELS = ("error", "warn", "info")
+BATCH_PREFIX = "setup: "  # prefix of setup-check lines among a batch job's warnings
 NOUNS = ("error(s)", "warning(s)", "note(s)")
 ICONS = {"error": "✘", "warn": "⚠", "info": "•"}
 SMALL_PART_M = 0.01  # a part under 10 mm across: metres loaded as mm?

@@ -69,6 +69,20 @@ def findings_for(session) -> list[pf.Finding]:
     return pf.run_checks(checks)
 
 
+SETUP = pf.BATCH_PREFIX
+
+
+def batch_warnings(session, old: list[str]) -> list[str]:
+    """A batch job's warnings with this session's setup findings (errors and warnings, one line
+    each, prefixed ``setup: ``) replacing those of an earlier run. Never raises."""
+    keep = [w for w in old if not w.startswith(SETUP)]
+    try:
+        found = [f for f in findings_for(session) if f.level in ("error", "warn")]
+    except Exception:  # noqa: BLE001 - advice must not fail a job
+        return keep
+    return keep + [f"{SETUP}{f.text}" for f in found]
+
+
 def check_folder(project_dir) -> list[pf.Finding]:
     """The findings of ``<project_dir>/project.json`` (raises when it cannot be loaded)."""
     from ui.session import Session, load_project

@@ -102,6 +102,28 @@ def test_cli_pdf_flag_sets_the_manifest(tmp_path, fake, capsys):
     assert "batch failed" in capsys.readouterr().out
 
 
+def test_setup_findings_become_job_warnings(tmp_path, fake):
+    """A plate queued with the wrong units (read as mm: 1 mm across) is planned, but the job says so."""
+    from ui.session import empty_cell
+
+    cell = empty_cell()
+    cell.load_tool_from_library("orbital_sander")
+    m, bdir = _make_batch(tmp_path, n=2, cell=cell)
+    m.jobs[1].units = "mm"
+    m.jobs[1].warnings = ["setup: an old line", "a detector warning"]
+    bt.save_manifest(m, bdir / bt.MANIFEST_NAME)
+    bj.drive(bdir, lambda *a: None, in_process=True)
+    good, small = bt.load_manifest(bdir / bt.MANIFEST_NAME).jobs
+    assert good.warnings == [] and good.status == "done"
+    assert small.status == "failed" and "smaller than one grid cell" in small.error  # a 1 mm plate
+    assert small.warnings[0] == "a detector warning"  # kept; the old setup line is replaced
+    assert any(w.startswith("setup: The part is only") for w in small.warnings)
+    assert "setup: an old line" not in small.warnings
+    from core.batch_review import review_html
+
+    assert "The part is only" in review_html(bt.load_manifest(bdir / bt.MANIFEST_NAME), bdir)
+
+
 def test_queue_table_still_importable_from_the_panel_module():
     from ui.batch_queue_ui import job_table
 
