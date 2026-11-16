@@ -101,6 +101,7 @@ class _Sample:
         self.Q = np.zeros((0, 6))
         self.which = np.zeros(0, int)  # offset index of each state
         self.cost = np.zeros(0)
+        self.undirected = False  # v12 #1: a directional tool's travel had no direction here
 
 
 def _copies(tr, q: np.ndarray, ref: np.ndarray) -> list[np.ndarray]:
@@ -190,14 +191,19 @@ def optimize_sequence(
     r0 = results[pids[0]]
     tcp = r0.tcp
     dv = direction if direction is not None and direction.directional else None
-    rows = dv.rows if dv is not None else {}
+    rows = dv.rows if dv is not None else pd.Rows()
 
-    def off(T, m):
-        return None if dv is None else pd.offsets_for(T, pd.travel(pids, points, rows, m), dv.mode)
+    def sample(a, b, s, T, allow, q_ref, kind, m):
+        if dv is None:
+            return _Sample(a, b, s, T, allow, q_ref, kind)
+        o = pd.offsets_for(T, pd.travel(pids, points, rows, m), dv.mode)
+        smp = _Sample(a, b, s, T, allow, q_ref, kind, off=np.array([0.0]) if o is None else o)
+        smp.undirected = o is None  # v12 #1: no direction anywhere: the planned spin, flagged
+        return smp
 
     q_plan = {p: tr.nearest_copy(results[p].q, r0.q if ref is None else ref) for p in pids[:1]}
     T0 = tr.tcp_pose(r0)
-    samples = [_Sample(pids[0], pids[0], 0.0, T0, allowed(pids[0]), q_plan[pids[0]], off=off(T0, 0))]
+    samples = [sample(pids[0], pids[0], 0.0, T0, allowed(pids[0]), q_plan[pids[0]], "", 0)]
     for m, (a, b) in enumerate(zip(pids[:-1], pids[1:], strict=True)):
         ra, rb = results[a], results[b]
         if rb.tcp != tcp or config_label(tr.ch.ik, np.asarray(rb.q, float)) != label:
@@ -207,9 +213,9 @@ def optimize_sequence(
         (Pa, Na), (Pb, Nb) = points[a], points[b]
         h = lift if lifts[m] else 0.0
         kind = "lift" if h > 0 else ""
-        if dv is not None and dv.overrun > 0 and pd.row_change(rows, a, b):  # v11 #7: off the part
-            da = pd.row_direction(pids, rows, points, a)
-            db = pd.row_direction(pids, rows, points, b)
+        if dv is not None and dv.overrun > 0 and rows.change_at(m):  # v11 #7: off the part
+            ra_, rb_ = rows.ends_at(m)
+            da, db = rows.direction(ra_, points), rows.direction(rb_, points)
             if da is not None and db is not None:
                 s, Ts = pd.overrun_poses(tr.tcp_pose(ra), tr.tcp_pose(rb), da, db, dv.overrun, tr.step)
                 kind = "overrun"
@@ -219,7 +225,7 @@ def optimize_sequence(
             s, Ts = segment_poses(tr, ra, rb, Pa, Pb, Na, Nb, h)
         both = meet(allowed(a), allowed(b))
         for si, T in zip(s, Ts, strict=True):
-            samples.append(_Sample(a, b, si, T, both, qa + si * (qb - qa), kind, off=off(T, m)))
+            samples.append(sample(a, b, si, T, both, qa + si * (qb - qa), kind, m))
     if dv is not None and dv.overrun > 0 and len(pids) > 1:  # v11 #7: lead in / out past the part
         samples = pd.lead_in_out(samples, pids, points, rows, dv, tr.step, _Sample, q_plan)
     for smp in samples:
@@ -250,6 +256,8 @@ def optimize_sequence(
         issue = "collision" if hit.get((i, j)) else ""
         if not issue and prev is not None and np.max(np.abs(q - prev)) > tr.jump:
             issue = "jump"
+        if not issue and smp.undirected:
+            issue = "direction"
         out.append(PathSample(k, zone, smp.a, smp.b, smp.s, T, tcp, q, issue, kind=smp.kind))
         prev = q
     return out

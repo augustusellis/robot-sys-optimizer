@@ -37,13 +37,78 @@ TRAVEL = ("free", "along_x", "along_y", "perpendicular_x")
 TOL_DEG = 2.0
 
 
+MIN_TRAVEL = 1e-6  # m: shorter moves (coincident points) have no direction of their own
+
+
+class Rows:
+    """Pattern rows by visit (v12 #2). Cross-hatch visits every point twice, once per pass and on
+    a different row each time, so a point id alone does not name its row (a dict by point id let
+    the second pass overwrite the first). ``keys[i]`` = the row of visit i of one sequence;
+    ``members[row]`` = that row's point ids in order; ``seg[(a, b)]`` = (row of a, row of b) for
+    every visit of the move a -> b (the same move can be a row move in one pass and a row change
+    in the other). Row keys are (sequence tag, row number), so several sequences merge."""
+
+    def __init__(self) -> None:
+        self.keys: list[tuple] = []  # one sequence only (``of``); empty after merging
+        self.seg: dict[tuple[int, int], list[tuple]] = {}
+        self.members: dict[tuple, list[int]] = {}
+        self.n = 0  # sequences merged in (the next tag)
+
+    @classmethod
+    def of(cls, pids: list[int], rows: list[int] | None, tag: int = 0) -> Rows:
+        r = cls()
+        if not rows:
+            return r
+        r.keys = [(tag, int(x)) for x in rows]
+        for p, key in zip(pids, r.keys, strict=True):
+            r.members.setdefault(key, []).append(p)
+        for i in range(len(pids) - 1):
+            r.seg.setdefault((pids[i], pids[i + 1]), []).append((r.keys[i], r.keys[i + 1]))
+        r.n = tag + 1
+        return r
+
+    def merge(self, other: Rows) -> None:
+        for k, v in other.seg.items():
+            self.seg.setdefault(k, []).extend(v)
+        self.members.update(other.members)
+        self.n = max(self.n, other.n)
+
+    def __bool__(self) -> bool:
+        return bool(self.members)
+
+    def ends_at(self, m: int):
+        """(row of visit m, row of visit m + 1) of a single sequence, or None (no rows)."""
+        return (self.keys[m], self.keys[m + 1]) if m + 1 < len(self.keys) else None
+
+    def change_at(self, m: int) -> bool:
+        e = self.ends_at(m)
+        return e is not None and e[0] != e[1]
+
+    def visits(self, a: int, b: int) -> list[tuple]:
+        """(row of a, row of b) of every visit of the move a -> b."""
+        return self.seg.get((a, b), [])
+
+    def change(self, a: int, b: int) -> bool:
+        """Every visit of a -> b is a row change."""
+        v = self.visits(a, b)
+        return bool(v) and all(e[0] != e[1] for e in v)
+
+    def direction(self, row, points: dict) -> np.ndarray | None:
+        """First to last point of ``row``; None for a row of one point (or of coincident points)."""
+        same = self.members.get(row, [])
+        if len(same) < 2:
+            return None
+        d = np.asarray(points[same[-1]][0], float) - np.asarray(points[same[0]][0], float)
+        return d if np.linalg.norm(d) > MIN_TRAVEL else None
+
+
 @dataclass
 class Direction:
     """What one sequence's TCP needs: ``mode`` (TRAVEL), ``overrun`` (m) and the pattern rows."""
 
     mode: str
     overrun: float = 0.0
-    rows: dict[int, int] = field(default_factory=dict)  # point id -> row number (row patterns)
+    rows: Rows = field(default_factory=Rows)  # row patterns (by visit)
 
     @property
     def directional(self) -> bool:
@@ -55,21 +120,25 @@ def row_pitch(scan_width_mm: float, overlap_pct: float) -> float:
     return float(scan_width_mm) * (1.0 - float(overlap_pct) / 100.0)
 
 
-def spin_for(T: np.ndarray, d: np.ndarray, mode: str) -> float:
-    """The spin (rad, about the tool z axis) that puts ``mode``'s axis of pose ``T`` along ``d``."""
+def spin_for(T: np.ndarray, d: np.ndarray, mode: str) -> float | None:
+    """The spin (rad, about the tool z axis) that puts ``mode``'s axis of pose ``T`` along ``d``;
+    None when ``d`` has no part in the tangent plane (v12 #1: no silent spin 0)."""
     R = T[:3, :3]
     z = R[:, 2]
     dt = np.asarray(d, float) - float(np.dot(d, z)) * z
     if np.linalg.norm(dt) < 1e-12:
-        return 0.0
+        return None
     dl = R.T @ dt
     a = float(np.arctan2(dl[1], dl[0]))
     return a if mode == "along_x" else a - np.pi / 2
 
 
-def offsets_for(T: np.ndarray, d: np.ndarray, mode: str) -> np.ndarray:
-    """The two allowed spin offsets (the axis along ``d``, either way), wrapped to (-pi, pi]."""
-    o = spin_for(T, d, mode)
+def offsets_for(T: np.ndarray, d: np.ndarray | None, mode: str) -> np.ndarray | None:
+    """The two allowed spin offsets (the axis along ``d``, either way), wrapped to (-pi, pi]; None
+    when the direction is undefined."""
+    o = None if d is None else spin_for(T, d, mode)
+    if o is None:
+        return None
     return np.array([(o + np.pi) % (2 * np.pi) - np.pi, (o + 2 * np.pi) % (2 * np.pi) - np.pi])
 
 
@@ -88,28 +157,35 @@ def deviation_deg(T: np.ndarray, d: np.ndarray, mode: str) -> float:
     return float(np.degrees(np.arccos(np.clip(c, -1.0, 1.0))))
 
 
-def row_direction(pids: list[int], rows: dict[int, int], points: dict, pid: int) -> np.ndarray | None:
-    """Direction of the row that ``pid`` is on (first to last of its row's points in ``pids``)."""
-    r = rows.get(pid)
-    same = [p for p in pids if rows.get(p) == r] if r is not None else []
-    if len(same) < 2:
-        return None
-    d = np.asarray(points[same[-1]][0], float) - np.asarray(points[same[0]][0], float)
-    return d if np.linalg.norm(d) > 1e-12 else None
+def _chord(pids: list[int], points: dict, m: int) -> np.ndarray:
+    return np.asarray(points[pids[m + 1]][0], float) - np.asarray(points[pids[m]][0], float)
 
 
-def travel(pids: list[int], points: dict, rows: dict[int, int], m: int) -> np.ndarray:
+def travel(pids: list[int], points: dict, rows: Rows, m: int) -> np.ndarray | None:
     """Travel direction of segment m (pids[m] -> pids[m + 1]): along it on a row, the direction of
-    the row being left on a row change (the tool steps sideways without turning)."""
-    a, b = pids[m], pids[m + 1]
-    if rows and rows.get(a) is not None and rows.get(a) != rows.get(b):
-        d = row_direction(pids, rows, points, a)
+    the row being left on a row change (the tool steps sideways without turning). A move between
+    coincident points (duplicate targets, v12 #1) takes the nearest segment's direction, before
+    or after it; None when no segment of the sequence has one (the caller flags it)."""
+    if rows and rows.change_at(m):
+        d = rows.direction(rows.ends_at(m)[0], points)
         if d is not None:
             return d
-    return np.asarray(points[b][0], float) - np.asarray(points[a][0], float)
+    d = _chord(pids, points, m)
+    if np.linalg.norm(d) > MIN_TRAVEL:
+        return d
+    for k in range(1, len(pids)):
+        for j in (m - k, m + k):
+            if 0 <= j < len(pids) - 1:
+                d = _chord(pids, points, j)
+                if np.linalg.norm(d) > MIN_TRAVEL:
+                    return d
+    return None
 
 
-def row_change(rows: dict[int, int], a: int, b: int) -> bool:
+def row_change(rows, a: int, b: int) -> bool:
+    """A row change on the move a -> b (``rows``: Rows, or point id -> row for a single pass)."""
+    if isinstance(rows, Rows):
+        return rows.change(a, b)
     return bool(rows) and rows.get(a) is not None and rows.get(a) != rows.get(b)
 
 
@@ -147,15 +223,22 @@ def flag(samples: list, points: dict, d: Direction, tol_deg: float = TOL_DEG) ->
             continue
         if row_change(d.rows, p.a, p.b):  # sideways by design (the row being left sets the axis)
             continue
-        pids = [p.a, p.b]
-        dirv = travel(pids, points, d.rows, 0) if d.rows else np.asarray(points[p.b][0]) - points[p.a][0]
-        if deviation_deg(p.T_part_tcp, dirv, d.mode) > tol_deg:
+        chord = np.asarray(points[p.b][0], float) - np.asarray(points[p.a][0], float)
+        if np.linalg.norm(chord) <= MIN_TRAVEL:  # coincident points: optimize_sequence used its
+            continue  # neighbours' direction, or flagged the sample itself (v12 #1)
+        # the same move may be a row change on another visit (cross-hatch): either way is right
+        dirs = [chord] + [
+            r
+            for e in (d.rows.visits(p.a, p.b) if isinstance(d.rows, Rows) else [])
+            if e[0] != e[1] and (r := d.rows.direction(e[0], points)) is not None
+        ]
+        if min(deviation_deg(p.T_part_tcp, v, d.mode) for v in dirs) > tol_deg:
             p.issue = "direction"
             n += 1
     return n
 
 
-def flag_plan(plan, points: dict, direction, rows: dict[int, int]) -> int:
+def flag_plan(plan, points: dict, direction, rows: Rows) -> int:
     """``flag`` every station's surface samples with their TCP's Direction (``direction(tcp)``)."""
     n = 0
     for st in plan.stations:
@@ -169,21 +252,21 @@ def flag_plan(plan, points: dict, direction, rows: dict[int, int]) -> int:
     return n
 
 
-def directional_sequence(tr, k, sq, results, points, label, ref, lift, leave, d: Direction, rows_all: dict):
+def directional_sequence(tr, k, sq, results, points, label, ref, lift, leave, d: Direction, rows_all: Rows):
     """core.paths.trace: one sequence of a directional TCP (core.path_spin.optimize_sequence with
     the spin fixed by the travel), or None (no IK at the required spins: the tracer's planned spins,
     flagged by ``flag_plan``). ``rows_all`` collects the pattern rows for the flags."""
     from core.path_spin import optimize_sequence
 
-    d.rows = dict(zip(sq.pids, sq.rows, strict=True)) if sq.rows else {}
-    rows_all.update(d.rows)
+    d.rows = Rows.of(sq.pids, sq.rows, tag=rows_all.n)
+    rows_all.merge(d.rows)
     return optimize_sequence(
         tr, k, sq.zone, sq.pids, results, points, label, ref, lambda p: None, sq.lifts, lift, leave, d
     )
 
 
 def lead_in_out(
-    samples: list, pids: list[int], points: dict, rows: dict, d: Direction, step: float, make, q_plan
+    samples: list, pids: list[int], points: dict, rows: Rows, d: Direction, step: float, make, q_plan
 ):
     """core.path_spin.optimize_sequence: the first row starts ``d.overrun`` before its first point
     and the last row ends that far past its last point (``overrun`` samples, straight, off the
@@ -192,12 +275,15 @@ def lead_in_out(
     def unit(v):
         return np.asarray(v, float) / max(np.linalg.norm(v), 1e-12)
 
-    first = row_direction(pids, rows, points, pids[0]) if rows else None
-    last = row_direction(pids, rows, points, pids[-1]) if rows else None
+    e0, e1 = rows.ends_at(0), rows.ends_at(len(pids) - 2)
+    first = rows.direction(e0[0], points) if e0 else None
+    last = rows.direction(e1[1], points) if e1 else None
     if first is None:
-        first = np.asarray(points[pids[1]][0], float) - np.asarray(points[pids[0]][0], float)
+        first = travel(pids, points, Rows(), 0)
     if last is None:
-        last = np.asarray(points[pids[-1]][0], float) - np.asarray(points[pids[-2]][0], float)
+        last = travel(pids, points, Rows(), len(pids) - 2)
+    if first is None or last is None:  # every point coincides: no lead-in direction
+        return samples
     s0, sN = samples[0], samples[-1]
     n = max(1, int(np.ceil(d.overrun / step)))
     lead, tail = [], []

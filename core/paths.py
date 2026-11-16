@@ -370,7 +370,9 @@ def trace(
     done = 0
     stops = sorted(seqs)
     carry = None  # (arm joints while the carrier drives, tcp, last point id) after a stop
-    rows_all: dict[int, int] = {}  # v11 #7: pattern rows of the directional sequences
+    from core.path_direction import Rows
+
+    rows_all = Rows()  # v11 #7: pattern rows of the directional sequences (by visit, v12 #2)
     for idx, k in enumerate(stops):
         checker.set_base(base_poses[k])
         sp = StationPath(k, base_poses[k], dict(sol.stations[k].carrier))
