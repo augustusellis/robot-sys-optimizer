@@ -114,3 +114,43 @@ def test_build_script_helpers(tmp_path):
     assert env["PYTHONNOUSERSITE"] == "1" and env["PATH"].split(";" if sys.platform == "win32" else ":")[
         0
     ].endswith("bin")
+
+
+def _portable():
+    path = ROOT / "scripts" / "make_portable.py"
+    spec = importlib.util.spec_from_file_location("make_portable_under_test", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+# environment.yml name -> import name; build / dev-only entries map to None
+_ENV_IMPORT = {"pyyaml": "yaml", "pillow": "PIL", "python-dateutil": "dateutil", "fonttools": "fontTools"}
+_NOT_RUNTIME = {
+    "python", "libblas", "pyinstaller", "pyinstaller-hooks-contrib", "pytest", "ruff", "markdown-it-py",
+    "pip", "xacro",
+}  # fmt: skip
+
+
+def test_portable_check_covers_environment_yml():
+    import re
+
+    import yaml
+
+    deps = yaml.safe_load((ROOT / "environment.yml").read_text(encoding="utf-8"))["dependencies"]
+    pip = [d for e in deps if isinstance(e, dict) for d in e["pip"]]
+    names = [d for d in deps if isinstance(d, str)] + pip
+    wanted = set()
+    for d in names:
+        n = re.split(r"[=<>! ]", d, maxsplit=1)[0]
+        if n not in _NOT_RUNTIME:
+            wanted.add(_ENV_IMPORT.get(n, n))
+    missing = wanted - set(_portable().RUNTIME_MODULES)
+    assert not missing, f"add to make_portable.RUNTIME_MODULES (or _NOT_RUNTIME here): {sorted(missing)}"
+
+
+def test_portable_check_env_passes_and_names_missing():
+    mod = _portable()
+    mod.check_env(sys.prefix, modules=("json",))
+    with pytest.raises(SystemExit, match="no_such_module_rso"):
+        mod.check_env(sys.prefix, modules=("json", "no_such_module_rso"))
