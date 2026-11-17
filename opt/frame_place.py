@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from core.schema import Base, Pose
-from core.transforms import pose_to_matrix
+from core.transforms import make_T, pose_to_matrix
 
 
 @dataclass
@@ -215,21 +215,52 @@ def fixed_clear(c, obstacles=None) -> str:
     return "" if ok else f"fixed bodies too close to the {what}"
 
 
+def _span(c, dof: str, step: float) -> np.ndarray:
+    lo, hi = c.bounds[c.dofs.index(dof)]
+    return np.linspace(lo, hi, max(2, int(np.ceil((hi - lo) / step)) + 1))
+
+
 def sweep_clear(c, part_mesh, T_part, step: float = 0.2) -> str:
     """v11 #2: why a gantry's bridge (bodies on the X axis) cannot travel: somewhere along the X
     travel it comes closer to the part than the carrier's minimum standoff (a floor gantry whose
-    rails straddle the part); "" = fine (e.g. an overhead bridge above the part)."""
+    rails straddle the part); "" = fine (e.g. an overhead bridge above the part).
+    v13 #1: the carriage (and lift stage) rides along with the bridge, so at every X it needs some
+    Y (and lift end) where it is clear of the part too; stops it cannot reach there are rejected
+    one by one by the stop checks, but a carriage blocked across the whole Y travel stops the X
+    travel."""
     from core.standoff import distance_3d
 
     if c.kind != "gantry" or "x" not in c.dofs:
         return ""
-    lo, hi = c.bounds[c.dofs.index("x")]
+    lim = c.base.standoff_m.carrier_part_min - 1e-6
     mid = c.clip({})
-    for x in np.linspace(lo, hi, max(2, int(np.ceil((hi - lo) / step)) + 1)):
+    xs = _span(c, "x", step)
+    for x in xs:
         bodies = c._bodies("x_axis", c.T_world_axis({**mid, "x": float(x)}))
-        if bodies and distance_3d(bodies, part_mesh, T_part) < c.base.standoff_m.carrier_part_min - 1e-6:
+        if bodies and distance_3d(bodies, part_mesh, T_part) < lim:
             return "the bridge would travel through the part"
+    if not any(p.attach in ("carriage", "lift") for p in c.specs):
+        return ""
+    ys = _span(c, "y", step) if "y" in c.dofs else np.array([0.0])
+    lifts = list(c.bounds[c.dofs.index("lift")]) if "lift" in c.dofs else [0.0]
+    combos = [(float(y), float(h)) for y in ys for h in lifts]
+    good = 0  # start where the last X was clear: usually the first try is
+    for x in xs:
+        for k in range(len(combos)):
+            y, h = combos[(good + k) % len(combos)]
+            v = {**mid, "x": float(x), "y": y, "lift": h}
+            if distance_3d(_rider(c, v), part_mesh, T_part) >= lim:
+                good = (good + k) % len(combos)
+                break
+        else:
+            return f"the carriage cannot pass the part at x {x * 1000:.0f} mm"
     return ""
+
+
+def _rider(c, v: dict) -> list:
+    """The carriage and lift-stage bodies (not the bridge) for DOF values ``v``."""
+    Tc = c.T_world_carriage(v)
+    return c._bodies("carriage", Tc) + c._bodies("lift", Tc @ make_T(p=(0, 0, v.get("lift", 0.0))))
 
 
 def lattice_anchor(c, step: float) -> dict[str, float]:
