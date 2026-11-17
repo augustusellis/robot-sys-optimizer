@@ -156,6 +156,9 @@ class PackageBuilder:
         from ui.package_collision import PackageCollision
 
         self.collision = PackageCollision(server, self)  # how mesh parts are simplified for collision
+        from ui.package_part import PartPackagePanel
+
+        self.part_pkg = PartPackagePanel(server, self)  # v13 #4: world pose + targets -> parts folder
         self.check_btn = gui.add_button("Check")
         self.export = gui.add_button("Export package (.zip)", color="green")
         self.use = gui.add_button("Use in this project", color="green")
@@ -307,6 +310,7 @@ class PackageBuilder:
         self.contacts.refresh()
         self.presets.refresh()
         self.step_frames.refresh()
+        self.part_pkg.refresh()
         self.draw()
 
     @staticmethod

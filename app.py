@@ -360,6 +360,9 @@ def build_app(
         builder_window = BuilderWindow(server, session, tool_tab=tool, carrier_panel=carrier)
         builder = builder_window.builder
     builder.on_part = cell.refresh_part  # v9: a part package used in the project
+    builder.part_pkg.on_loaded = targets.refresh  # v13 #4: a part package opened for editing
+    with tab_handles["Targets"]:
+        builder.part_pkg.attach_targets_tab(server.gui)
     builder.collision.get_selection = lambda: targets.selection  # surfaces kept exact
     from ui.builder_window import open_html
 
