@@ -422,3 +422,18 @@ Launch with `scripts/run_app.bat` (Windows, uses the rso env) or `$PY app.py [--
 - **Item 2:** app start was ~10 s of PNG encoding (viser re-encodes each URDF mesh's texture; the
   UR meshes carry 2048 px atlases). `ui.robot_view.light_urdf` downscales textures to
   `TEXTURE_PX` (1024, env `RSO_TEXTURE_PX`; tests 128) once per file. Fast suite 2102 -> 805 s.
+- **Items 3-9 (batch runs over part packages, the user's request 2026-11-17):**
+  `core.part_package` (a folder per part: `part.json` = part with its world pose + targets, the
+  mesh beside it; `apply_to_project` swaps them into a project and clears plans / work state but
+  keeps the saved panel settings). The builder's Part tab (`ui.package_part`) places the part at a
+  world pose in the project and saves / reopens packages; targets are made with the normal Targets
+  tab (user's choice: no second set of target tools). The batch (`ui.batch_run`) runs each part in a
+  fresh spawned process (`max_tasks_per_child=1`) where `ui.batch_part` builds the app with no
+  browser and drives the real panels (plan, build paths, save, report): batches cannot drift from
+  the GUI, at ~3 s of app start per part. That is why the runner lives in `ui/` (the plan said
+  `opt/batch.py`; `opt` must not import `ui`). Parts at once = min(parts, cores / 2, 80 % of free
+  memory / 1.5 GB), 1 when that is below 2; parallel parts check serially. The open batch is
+  remembered in `<workspace>/batch_settings.json` (`ui.batch_prefs`), not in the work state:
+  opening a part's project replaces the project. `scripts/batch_run.py` is the same code without
+  the GUI; `scripts/make_batch_example.py` writes `examples/batch_parts/`.
+

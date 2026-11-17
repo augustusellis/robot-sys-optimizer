@@ -284,7 +284,7 @@ Points are stored **in the part frame**, so moving the part moves them with it.
 
 **The optimizers need a confirmed setup.** *Plan stations*, *Quick plan* and *Optimize tool* stay greyed out until steps 1 to 4 are confirmed; a line under each button says what is missing, e.g. "Confirm **2 External axis** first" or "**3 Tool** changed since you confirmed it — confirm it again". The feasibility check and the base heatmap work at any time.
 
-**Layout (v9).** The **Optimizer** dropdown at the top picks one optimizer: *Station planner*, *Quick station plan*, *Feasibility check*, *Base placement map*, *Tool geometry*, *Compare setups* or *Gantry placement*. A line under it says what that optimizer does, and only its section is shown, with one **Run** button (labelled for the optimizer), its **Cancel** and its progress bar. The settings they share are in one **Settings** folder at the bottom of the tab: **Max stations** (every optimizer that plans stations uses it), **Leave out points the tool cannot fit** (v10: points below the tool's minimum surface radius, Tool tab), **Costs & requirements** (station planner, quick plan, compare), **Costs & requirements (tool optimizer)**, **Cycle time** and **Cable & safety**. In the Station planner, *Candidate grid*, *Refinement* and *Objective* (with the fields that depend on them) are under **Advanced**. The rows below describe each optimizer and those settings. v11: **Confirm all setup steps** (top of the tab) confirms steps 1-4 at once after a dialog that lists the tabs not confirmed yet (and why: not confirmed, or changed since); and the Optimizer list only offers what fits the workspace's external axis (*Gantry placement* only with a rail or a gantry). Gantry placement also refuses a frame whose bridge would travel through the part (a floor gantry whose rails straddle it). v13: and one whose carriage (with its drop or lift stage) cannot get past the part anywhere along the bridge (it hits the part at every Y), since the bridge could not carry it across.
+**Layout (v9).** The **Optimizer** dropdown at the top picks one optimizer: *Station planner*, *Quick station plan*, *Feasibility check*, *Base placement map*, *Tool geometry*, *Compare setups*, *Gantry placement* or *Several parts (batch)* (v13). A line under it says what that optimizer does, and only its section is shown, with one **Run** button (labelled for the optimizer), its **Cancel** and its progress bar. The settings they share are in one **Settings** folder at the bottom of the tab: **Max stations** (every optimizer that plans stations uses it), **Leave out points the tool cannot fit** (v10: points below the tool's minimum surface radius, Tool tab), **Costs & requirements** (station planner, quick plan, compare), **Costs & requirements (tool optimizer)**, **Cycle time** and **Cable & safety**. In the Station planner, *Candidate grid*, *Refinement* and *Objective* (with the fields that depend on them) are under **Advanced**. The rows below describe each optimizer and those settings. v11: **Confirm all setup steps** (top of the tab) confirms steps 1-4 at once after a dialog that lists the tabs not confirmed yet (and why: not confirmed, or changed since); and the Optimizer list only offers what fits the workspace's external axis (*Gantry placement* only with a rail or a gantry). Gantry placement also refuses a frame whose bridge would travel through the part (a floor gantry whose rails straddle it). v13: and one whose carriage (with its drop or lift stage) cannot get past the part anywhere along the bridge (it hits the part at every Y), since the bridge could not carry it across.
 
 | Section | What it does |
 | --- | --- |
@@ -300,6 +300,37 @@ Points are stored **in the part frame**, so moving the part moves them with it.
 **Cycle time** (folder in the Optimize tab, closed): the speeds of the robot program, used to estimate how long one part takes. *Joint speed* / *Joint acceleration* (joint moves; each joint is also capped by the robot's own speed limit, so the UR20's base and shoulder never go faster than 120°/s), *Process speed* (along the surface), *Approach speed* (lifts, approach and retract), *Linear acceleration*, *Carrier speed* / *Carrier acceleration* (rail, gantry axes, mobile base), *Lift speed*, and *Settle time per stop* (the carrier settles or localizes before the arm starts). Every move is a trapezoid (accelerate, cruise, brake; a triangle when it is too short to reach full speed); a joint move lasts as long as its slowest joint. Each plan gets an **estimated cycle time** (Results → summary card): the joint moves between neighbouring points of every stop, the carrier moves between stops and the settle time per stop. **Build paths** gives the cycle time of the actual paths, split into process, approach, joint, carrier and settle time. **Path timing** (v10) decides how the built paths are timed: **Time-optimal (speed, acceleration, jerk limits)** (default) times each run of samples along its actual joint path, as fast as the joint speed, acceleration and **Joint jerk (°/s³)** allow (0 = no jerk limit) and, on the surface and on approach moves, at most the process / approach speed of the TCP; a joint path that bends must slow down at each bend. **Trapezoid per move (pre-v10)** treats each run as one move at the slowest joint's trapezoid, as before (faster but optimistic: the CRX-30 overhead-gantry example takes 459 s that way and 522 s time-optimal, mostly its joint moves, 84 s → 133 s). The plans' estimated cycle time is always per move. *Costs & requirements → Cost per minute of cycle time* (default 0, so plans cost what they did before) makes the planners prefer faster plans.
 
 **Cable & safety** (folder in the Optimize tab, closed, v8): *Hose pack* models a hose or dress pack strapped to the arm. **none** (default); **clearance margin**: *Hose pack clearance (mm)* adds clearance around the arm from the upper arm on (upper arm, forearm, wrist) against the part and the stay-out zones; **hose along the arm**: the hose as a **shape** — a chain of round segments (*Hose diameter (mm)*, default 60) running from the upper arm to the wrist, *Hose offset from the arm (mm)* (default 150) from the line through the joints, on the *Hose side* (**+** or **−**) you choose. Each segment moves with its arm link; the hose must keep the part clearance from the part and the stay-out zones, stay above the floor and clear of the carrier (it is not checked against the arm or the tool it rides on). With *Show hose on the robot* it is drawn dark grey on the robot, so you can check its side and offset against your real dress pack. Unlike the margin, it only blocks poses where the hose itself would hit something, on its side of the arm. It is a layout model (straight hose per arm segment); the slack loop at the wrist is not modelled. **Joint 6 turn limit (deg)** (default 360°): at each stop, how far joint 6 may turn across the stop's points before the cables / hoses through the wrist wind up; beyond it the cost term *Cost per 90° of joint-6 wrap* (Costs & requirements, default 1) applies per 90°. **Reduced-speed zones** are under Robot & cell → *Reduced-speed zones* (see there).
+
+**Several parts (batch), v13.** Optimizer -> *Several parts (batch)* runs the station planner on a
+folder of **part packages** (made in the package builder's Part tab, see *Package builder tab*) with
+this project's robot, end effector, external axis, stay-outs and settings. Each part gets its own
+plan; the tool is not changed.
+
+1. Type the **Parts folder** and press **Scan**: every package in it is listed with a checkbox (all
+   ticked). Folders whose `part.json` cannot be used are listed with the reason (unreadable file,
+   missing mesh, ...). Untick the parts to leave out.
+2. **Output folder** (default `<parts folder>/batch_results`): one folder per part is written here.
+3. **Search the axis frame per part** (rail / gantry, off by default): first run *Gantry placement*
+   for each part and plan the stops of its best frame. Off: the project's frame is kept (one real
+   cell, many parts) and only the stops are planned per part.
+4. **Run batch.** The open project is used as it is now (it does not need saving: a copy goes to
+   `<output>/_setup`). Several parts run at once when the PC has room: half the logical cores and
+   80 % of the free memory (about 1.5 GB per part) decide, and the line above the button says how
+   many and why; otherwise one at a time. Each part shows its stage (loading, planning, paths,
+   saving, report, then done or failed with the reason); **Cancel** stops the parts not started and
+   ends the running ones.
+
+For each part the batch plans the stations (the Station planner's settings and costs), builds the
+paths of the best plan (cycle time), saves the part's project and prints its report. A part that
+fails (no plan, targets for a TCP the tool does not have, ...) is listed with the reason and the
+others go on. When it ends, **Results -> Batch results** opens the output folder.
+
+Output folder: `<part>/project.json` (+ `assets/`: opens with Project -> Open, plans included),
+`<part>/report.pdf` (`<part>/export/report.html` when no Edge / Chrome is found to print it),
+`summary.pdf`, `summary.html`, `summary.csv` and `summary.json` (written after every part, so a
+cancelled run still lists what finished). Without the GUI: `python scripts/batch_run.py <project
+folder> <parts folder> <output folder> [--parts a,b] [--frame-search] [--workers N]` (exit code 1
+when a part failed).
 
 ### Optimization methods
 
@@ -387,6 +418,14 @@ It also re-runs the localization checks for the chosen solutions. It used to be 
 
   Files go to `<project folder>/export/` and also download in the browser.
 
+**Batch results (v13).** *Batch results* reads the output folder of a batch run (Optimize ->
+Several parts; it opens by itself when a batch ends, and the last one comes back at the next start).
+It shows the summary table (reached points, stops, cycle time, cost per part; failed parts with the
+reason). Pick a **Part** and press **Open this part**: its solved project replaces the open one
+(asks first when the open project has unsaved changes), so its plans are in the list above to view,
+inspect, check and simulate; with **Build paths when opened** its paths are built straight away
+(paths are not saved in a project). **Download report** sends the part's PDF report.
+
 ### Collision geometry
 
 Every collision check (planner, tool optimizer, paths, jog) uses a **collision copy** of each mesh; the 3D view always shows the full visual meshes. Large CAD meshes (a detailed end effector, a part with many small features, a rail with bolts and cable chains) make every check slower, so they are simplified for collision. **Since v9 all of it is made in the [Package builder](#package-builder-tab)**: for the end effector, the part, a rail, a gantry or a mobile robot, choose how its meshes are simplified, its padding, or import your own collision mesh, press **Simplify**, check the result, and **Use in this project**. A mesh that has no collision copy of its own is reduced automatically when it is large (*Auto*). The simplification modes:
@@ -425,6 +464,26 @@ Builds a **URDF package** (a zip: URDF + meshes + `package.yaml`) for an **end e
 | **Use in this project** | Asks first (it replaces the project's tool, part or external axis), then writes `<project>/assets/packages/<name>/` and loads it, and the builder window closes (if the browser does not allow that, close it yourself). A tool becomes the current tool (Tool tab: set the process and extension ranges, then **Save to library**); a part package becomes the part, keeping the part's mesh file when its geometry did not change (so targets and the surface selection stay valid) and giving it the collision mesh made here; a rail, gantry or mobile robot becomes the external axis (External axis tab: its bodies, travel ranges and robot mount are set; the standoffs, keep-outs, carrier frame and the mobile base's floor area stay as they were). |
 | **Open package (.zip)** | Reads a package made here, by hand or exported from CAD (see the conventions below) back into the builder to edit or use. |
 | **New package** | Starts an empty package of the current type. |
+
+**Part packages for batch runs (v13).** In the **Part** tab, the folder *Part package: world
+position and targets* makes the packages that Optimize -> *Several parts (batch)* runs on. A part
+package is a folder `<parts folder>/<name>/` with `part.json` (the part's units, its pose in the
+world frame and its target groups and points) and the mesh (and the collision mesh made here).
+
+1. Add the part's mesh in **Parts** (or leave the builder empty to use the project's part as it is),
+   and give the package a **Name**.
+2. Set **Position in world (mm)** and **Rotation in world (deg)** (*Take the project part's
+   position* copies the current one) and press **Place in the project**: the part goes into the
+   project at that pose.
+3. In the main window's **Targets** tab, make its targets as usual (groups, tolerances, patterns).
+   A note there says which package is being edited.
+4. Type the **Parts folder** and press **Save part package** (here, or the same button in the
+   Targets tab). It asks first when the part has no targets or the name is already in the folder.
+
+**List the folder** and **Open part package** bring a saved package back into the project (part,
+pose and targets) to change it; save it again under the same name to replace it. The robot, tool,
+external axis, stay-outs and planner settings are not in a package: a batch takes them from the
+project it runs in.
 
 ---
 
@@ -477,6 +536,19 @@ The 3 m tall wall (`tall_wall`, 2 × 0.3 m) is out of reach from one fixed robot
 * `mobile_lift`: the mobile robot of `mobile_amr` with a 1 m lift (a *mast* on the chassis and a *lift_stage* that rises with the robot). Targets: the front face from 0.5 m to the top; every stop gets its own lift height, so the robot works the bottom low and the top raised.
 
 Open one, then Optimize → **Plan stations**; Results lists each stop's carrier values (with the lift height for `mobile_lift`).
+
+### Example B5: many parts in one batch
+
+1. **Project -> Examples -> rail_long_part** (UR20 on a rail, orbital sander).
+2. Optimize -> Optimizer **Several parts (batch)**. Parts folder: `examples/batch_parts` (three
+   packages made by `scripts/make_batch_example.py`: a flat plate, a curved panel and an open box,
+   each beside the rail with targets on its upward faces). **Scan**: three parts, all ticked.
+3. Output folder: any folder outside `examples/` (e.g. `workspace/batch_demo`). **Run batch**: the
+   three parts run at once on a PC with 6+ cores (about 45 s). The plate and the panel are reached
+   everywhere; the box's pocket floor (0.45 m deep) is out of reach of the sander, so 8 of its 16
+   points stay unreached (the report says why).
+4. **Results -> Batch results**: pick *open_box*, **Open this part**; the plan and its paths are in
+   the Cell. **Download report** for its PDF; `summary.pdf` in the output folder lists all three.
 
 ### Example C: the shortest probe for a deep hole
 
@@ -746,6 +818,11 @@ from the project file (`core.schema.Project`).
 - **Plan ids** (`ui/plan_ids.py`): a plan's joint solutions, stamp, paths and checks are keyed by
   `Solution.key` (its `id`, given when it enters the results; the label for plans saved before
   v12). The label is only for people.
+- **Batch runs** (`core/part_package.py`, `ui/batch_*.py`, `ui/package_part.py`): part packages
+  (part + world pose + targets) in a folder each. A batch runs every part in a fresh spawned process
+  (`ui.batch_run`, a process pool with one task per process); there `ui.batch_part` builds the app
+  without a browser, opens the part's project and drives the same panels a user would (plan, build
+  paths, save, report), so batches and the GUI cannot drift apart.
 
 ### 10.4a Threads and the session lock
 

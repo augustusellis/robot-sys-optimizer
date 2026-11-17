@@ -79,6 +79,15 @@ def peak_memory() -> int | None:
     return int(c.PeakWorkingSetSize) if ok else None
 
 
+def _last_problem(since: float) -> str:
+    """The newest error / warning the app logged since ``since`` (the planner's reason), as
+    ": <message>"; "" when there is none."""
+    from ui.log_panel import entries
+
+    msgs = [m for t, level, m in entries() if t >= since and level in ("error", "warn")]
+    return f": {msgs[-1].replace('**', '')}" if msgs else ""
+
+
 def row_for(name: str, s, sol, cycle: float | None) -> dict:
     n = len(s.targets.points)
     reached = n - len(sol.unreached) - len(sol.unfit)
@@ -125,6 +134,7 @@ def run_part(job: dict, emit=None, cancelled=lambda: False) -> dict:
         for step in STEP_COMPONENTS:  # running the batch confirms the setup it plans with
             confirm_step(s, step)
         carrier = s.base.carrier if s.base.mode == "movable" else None
+        t_plan = time.time()
         if cancelled():
             raise InterruptedError("cancelled")
         if job.get("frame_search") and carrier in ("rail", "gantry"):
@@ -142,7 +152,7 @@ def run_part(job: dict, emit=None, cancelled=lambda: False) -> dict:
         results.refresh()
         sol = results.selected()
         if sol is None:
-            raise ValueError("the planner found no plan")
+            raise ValueError("the planner found no plan" + _last_problem(t_plan))
         _stage(emit, name, "paths")
         sim = app["sim"]
         sim.build(block=True)

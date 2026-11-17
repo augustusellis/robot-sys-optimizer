@@ -75,3 +75,11 @@ def test_unknown_tcp_is_a_clear_reason(tmp_path):
     d = pp.save_part_package("x", part, targets.model_copy(update={"groups": groups}), _resolve, tmp_path)
     with pytest.raises(ValueError, match="unknown TCPs"):
         pp.apply_to_project(proj, pp.load_part_package(d), d)
+
+
+def test_shipped_example_folder():
+    ok, bad = pp.scan_folder(REPO / "examples" / "batch_parts")
+    assert [d.name for d, _ in ok] == ["curved_panel", "flat_plate", "open_box"] and not bad
+    proj = schema.load_project(RAIL)
+    for d, pkg in ok:
+        assert pkg.targets.points and pp.apply_to_project(proj, pkg, d).part.mesh.endswith(".stl")

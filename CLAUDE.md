@@ -26,6 +26,9 @@ per-task notes to `docs/HISTORY.md`.**
   (`core/feasibility.py`) is the cost of planning (collision checks); reach maps are cached on disk
   (`cache/reachability/`); robot textures are downscaled before viser sends them
   (`ui.robot_view.light_urdf`, v13: PNG encoding of the 2048 px UR atlases was most of the app start).
+- **Batch runs (v13):** part packages (`core/part_package.py`) are planned by `ui/batch_run.py`, one
+  spawned process per part that drives a browserless app (`ui/batch_part.py`); GUI: Optimize ->
+  Several parts, Results -> Batch results; CLI: `scripts/batch_run.py`.
 
 ## Working notes for this repo
 

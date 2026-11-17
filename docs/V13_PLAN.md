@@ -153,10 +153,10 @@ optimizer in batches, and robot programs per part.
 |---|--------|---------------------------|
 | 1 | done | Over the 331 candidate frames of each gantry example: bridge-only sweep 0.8 s, with the carriage 2.7-2.8 s (+2 s of a scoring run of 25-65 s); same verdicts as before (gantry_overhead 331 ok; floor_xy_rails 281 ok, 50 bridge through the part). Not tried in a browser. |
 | 2 | done, partly | App start 13.3 -> 5.4 s (1024 px textures), 2.3 s in the tests (128 px); loading an example 6.3 -> 2.0 s (0.6 s in the tests). Full fast suite (4 files per process): **596 passed, 0 failed, 805 s** (v12: 2102 s; 1171 s with 1024 px textures). The < 10 min target is still not reached: the slowest batches are now the GUI tests that plan (`test_app.py`, `test_work_state.py`, ...). Textures at 1024 px not yet looked at in a browser. |
-| 3 | planned | |
-| 4 | planned | |
-| 5 | planned | |
-| 6 | planned | |
-| 7 | planned | |
-| 8 | planned | |
-| 9 | planned | |
+| 3 | done | `core/part_package.py`; tests/test_v13_part_package.py (round trip, overwrite rules, broken packages with reasons, unknown TCPs, the shipped example folder). |
+| 4 | done | `ui/package_part.py` (folder in the Part tab) + a note / *Save part package* in the main Targets tab while a package is edited. The parts folder is remembered in `<workspace>/batch_settings.json` (`ui/batch_prefs.py`), not per project. Plain text fields for the folders (viser has no folder picker). Not tried in a browser. |
+| 5 | done | **Deviation:** the runner is in `ui/` (`batch_run.py`, `batch_part.py`, `batch_summary.py`), not `opt/batch.py`: each part runs in a fresh spawned process that builds the app without a browser and drives the real panels (same settings, paths and report as the GUI; `opt` may not import `ui`). Rail example, 2 parts: 22 s at once vs 38 s one after the other, the same plans (cost 8.4 each); peak memory per part 500-700 MB (`MEM_PER_PART` set to 1.5 GB). No per-part timeout (Cancel ends running parts after 5 s). A plan that fails reports the planner's own logged reason. |
+| 6 | done | Optimize -> *Several parts (batch)*; the open project is copied to `<out>/_setup` (no need to save first). Not tried in a browser. |
+| 7 | done | Results -> *Batch results*; **deviation:** the last batch is remembered in `batch_settings.json`, not in the work state (opening a part replaces the project). *Download report* sends the file (a browser cannot open a local PDF from the app). *Build paths when opened* (on by default) because paths are not saved. Not tried in a browser. |
+| 8 | done | `scripts/batch_run.py`; exit 1 when a part failed, 2 for bad arguments. |
+| 9 | done | Guide: Optimize (batch), Results (Batch results), Package builder (part packages), Example B5, 10.4; HISTORY v13; `examples/batch_parts/` from `scripts/make_batch_example.py` (flat plate 35/35, curved panel 24/24, open box 8/16: the 0.45 m pocket floor is out of the sander's reach; 3 parts at once in 47 s). Full fast suite: **608 passed, 0 failed, 797 s**; the slow v13 batch tests pass on their own (batch 53 s, panel 25 s, viewer 35 s, CLI 21 s). |
