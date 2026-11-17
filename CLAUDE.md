@@ -6,24 +6,26 @@ Browser-based cell-layout tool for a robotic process (scanning, sanding, grippin
 
 Full spec: `docs/PROJECT_PLAN.md` (scope and the v1 milestones). This file holds the conventions
 every session must follow and the current state. **How each part works and why it was built that
-way is in `docs/HISTORY.md`, by release (M0-M10, v2 ... v12): read the section of the area you change
+way is in `docs/HISTORY.md`, by release (M0-M10, v2 ... v13): read the section of the area you change
 before changing it.** The user guide's chapter 10 (*For software engineers*) is the architecture
 overview. **Update this file when a convention, command or the current state changes; add the
 per-task notes to `docs/HISTORY.md`.**
 
 ## Current state
 
-- **Branches:** v1 is on `main`; every later round has its own branch (`v2` ... `v12`, each from the
+- **Branches:** v1 is on `main`; every later round has its own branch (`v2` ... `v13`, each from the
   previous one), pushed only when the user says so and not merged into `main` (the user's choice).
   The plan and status of a round are in `docs/V<n>_PLAN.md`; v12 (`docs/V12_PLAN.md`) is the
-  follow-up of the code review `docs/V11_REVIEW.md`.
+  follow-up of the code review `docs/V11_REVIEW.md`; v13 (`docs/V13_PLAN.md`) its leftovers and the
+  next feedback round.
 - **Releases:** portable zips (`scripts/make_portable.py`) go to GitHub **draft** releases, only at
   the user's request.
 - **Still open with the user:** their own part mesh in the browser (Viser picking vs PyVista);
   features not tried in a real browser (each round's plan lists them in its Status table).
 - **Speed facts:** IK in bulk = `solve_batch` (all branches, a few us per pose); the exact checker
   (`core/feasibility.py`) is the cost of planning (collision checks); reach maps are cached on disk
-  (`cache/reachability/`).
+  (`cache/reachability/`); robot textures are downscaled before viser sends them
+  (`ui.robot_view.light_urdf`, v13: PNG encoding of the 2048 px UR atlases was most of the app start).
 
 ## Working notes for this repo
 
@@ -153,7 +155,7 @@ RUFF=/c/Users/Ben/miniforge3/envs/rso/Library/bin/ruff.exe
 $PY app.py [--port 8080]                  # serve the GUI → http://localhost:8080
 $PY -m pytest -q                          # all tests in one process (~13 min; can run out of memory)
 $PY scripts/test_batches.py               # same tests, 4 files per process (low memory, ~60 min)
-$PY scripts/test_batches.py --fast        # skip the tests marked slow (plans, tool optimizer, paths)
+$PY scripts/test_batches.py --fast        # skip the tests marked slow (plans, tool optimizer, paths; ~14 min, v13)
 # tests/conftest.py points RSO_WORKSPACE at a temporary folder: tests never write the user's workspace/
 $RUFF check . && $RUFF format --check .   # lint + format
 $PY scripts/make_portable.py              # dist/*-portable-<sha>.zip: last commit + conda-pack'd env (offline PCs; guide 2.5)

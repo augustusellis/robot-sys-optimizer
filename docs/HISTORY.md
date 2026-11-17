@@ -413,3 +413,12 @@ Launch with `scripts/run_app.bat` (Windows, uses the rso env) or `$PY app.py [--
 - **Items 27-28 (package builder feedback, 2026-11-16):** `ui/package_load.py` (*Load relative to*:
   robot flange or a STEP coordinate system on the flange, `place`, `after_import`, the dialog);
   `ui/precision.py` (4 decimals in every mm / deg field, hooked in `build_app` and the builder window).
+
+## v13 (branch `v13`, docs/V13_PLAN.md)
+
+- **Item 1:** `opt.frame_place.sweep_clear` also sweeps the carriage and lift stage: at every X some
+  (Y, lift end) must leave them clear of the part (`_rider`, `_span`); a carriage blocked across
+  the whole Y travel refuses the frame.
+- **Item 2:** app start was ~10 s of PNG encoding (viser re-encodes each URDF mesh's texture; the
+  UR meshes carry 2048 px atlases). `ui.robot_view.light_urdf` downscales textures to
+  `TEXTURE_PX` (1024, env `RSO_TEXTURE_PX`; tests 128) once per file. Fast suite 2102 -> 805 s.

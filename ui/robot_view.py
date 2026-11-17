@@ -7,12 +7,16 @@ Scene tree:  <parent> (base_link pose in world)
 
 from __future__ import annotations
 
+import os
 import warnings
+from functools import partial
 from pathlib import Path
 
 import numpy as np
 import pinocchio as pin
 import viser
+import yourdfpy
+from PIL import Image
 from viser.extras import ViserUrdf
 
 from core.robot import Robot
@@ -21,6 +25,42 @@ from core.transforms import make_T, matrix_to_wxyz, wxyz_to_matrix
 
 def _handle_T(h) -> np.ndarray:
     return make_T(wxyz_to_matrix(h.wxyz), h.position)
+
+
+# v13 #2: largest texture side sent to the browser (the tests set 128: they never look at it)
+TEXTURE_PX = int(os.environ.get("RSO_TEXTURE_PX", "1024"))
+_SMALL: dict[tuple, Image.Image] = {}  # (URDF file, mtime, mesh, slot) -> downscaled texture
+
+
+def light_urdf(path: Path) -> yourdfpy.URDF:
+    """The URDF with its visual meshes, textures above ``TEXTURE_PX`` downscaled. Viser sends each
+    mesh as a GLB and PNG-encodes its texture every time: the UR meshes each carry a 2048 x 2048
+    baked atlas (logo, shading), which made an app start ~10 s of PNG encoding (v13 #2). At
+    1024 px it is a quarter of that and still sharp at cell scale; the small copies are made once
+    per file. Vertex colours were tried and dropped: the atlas has detail that vertices lose."""
+    path = Path(path)
+    urdf = yourdfpy.URDF.load(
+        path,
+        build_scene_graph=True,
+        load_meshes=True,
+        filename_handler=partial(yourdfpy.filename_handler_magic, dir=path.parent),
+    )
+    if urdf.scene is None:
+        return urdf
+    key = (str(path.resolve()), path.stat().st_mtime)
+    for name, g in urdf.scene.geometry.items():
+        mat = getattr(g.visual, "material", None) if getattr(g.visual, "kind", None) == "texture" else None
+        for slot in ("baseColorTexture", "image"):
+            im = getattr(mat, slot, None)
+            if not isinstance(im, Image.Image) or max(im.size) <= TEXTURE_PX:
+                continue
+            k = (*key, name, slot)
+            if k not in _SMALL:
+                f = TEXTURE_PX / max(im.size)
+                size = (max(1, round(im.width * f)), max(1, round(im.height * f)))
+                _SMALL[k] = im.resize(size, Image.LANCZOS)
+            setattr(mat, slot, _SMALL[k])
+    return urdf
 
 
 class RobotView:
@@ -37,7 +77,7 @@ class RobotView:
             wxyz=matrix_to_wxyz(T_base_root[:3, :3]),
             position=T_base_root[:3, 3],
         )
-        self.urdf = ViserUrdf(server, Path(urdf_path), root_node_name=f"{parent}/urdf_root")
+        self.urdf = ViserUrdf(server, light_urdf(urdf_path), root_node_name=f"{parent}/urdf_root")
         names = list(self.urdf.get_actuated_joint_names())
         missing = set(robot.joint_names) - set(names)
         if missing:

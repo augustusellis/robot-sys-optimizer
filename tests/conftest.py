@@ -13,4 +13,5 @@ import tempfile
 
 _TMP = tempfile.mkdtemp(prefix="rso_test_workspace_")
 os.environ["RSO_WORKSPACE"] = _TMP
+os.environ.setdefault("RSO_TEXTURE_PX", "128")  # v13 #2: robot textures nobody looks at
 atexit.register(shutil.rmtree, _TMP, ignore_errors=True)
