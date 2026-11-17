@@ -309,6 +309,9 @@ def build_app(
         from ui.compare_view import CompareView
 
         compare_view = CompareView(server, session)  # v9 #6: Results -> Robot (compared robots)
+        from ui.batch_view import BatchView
+
+        batch_view = BatchView(server, session, project)  # v13 #7: the parts of a batch run
         # v7 round 2 (T18): Inspect result lives in Results; v11 #4: right under the solutions
         results = ResultsTab(server, session, set_base=cell.set_base, after_solutions=optimize.build_inspect)
         sim = SimPanel(  # paths along the selected solution + playback (v2 phase 5)
@@ -322,6 +325,9 @@ def build_app(
             order=results.export.folder.order - 0.5,  # above Export
         )
         sim.on_home = cell.home_panel.refresh  # v10 #8: the paths' clear home is offered there
+        batch_view.build_paths = sim.build
+        batch.on_done = batch_view.open_batch
+        state["batch_view"] = batch_view
         from ui.tolerance_ui import TolerancePanel
 
         tolerance = TolerancePanel(server, session, results.selected)  # v8 T5
