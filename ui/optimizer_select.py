@@ -23,6 +23,8 @@ OPTIMIZERS = {
     "reach, cycle time and cost side by side.",
     "Gantry placement": "Places the whole rail or gantry frame relative to the part (standoff, shift, "
     "robot mount height), then plans the stops of the best frames.",
+    "Several parts (batch)": "Runs the station planner on a folder of part packages with this cell and "
+    "end effector: stations, paths, a saved project and a PDF report per part (Results -> Batch results).",
 }
 
 

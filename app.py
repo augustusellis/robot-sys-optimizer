@@ -287,6 +287,11 @@ def build_app(
 
         frame = FramePanel(server, session, stations, carrier, on_results=new_results)  # v9 #9
         picker.on_show["Gantry placement"] = frame.refresh
+        from ui.batch_ui import BatchPanel
+
+        batch = BatchPanel(server, session)  # v13 #6: several parts
+        picker.on_show["Several parts (batch)"] = batch.refresh
+        state["batch"] = batch
         picker.bind(
             {
                 "Station planner": [stations.folder],
@@ -296,6 +301,7 @@ def build_app(
                 "Tool geometry": [tool_opt.folder],
                 "Compare setups": [compare.folder],
                 "Gantry placement": [frame.folder],
+                "Several parts (batch)": [batch.folder],
             }
         )
     with tab_handles["Results"]:
