@@ -1,13 +1,11 @@
-"""Batch: PDF report per job (BatchManifest.pdf, --pdf) and the time-left estimate."""
+"""Batch: the manifest's old pdf flag, the time-left estimate and the setup warnings."""
 
 import json
-from pathlib import Path
 
 import pytest
 
 from core import batch as bt
-from core.schema import Solution, Station
-from tests.test_batch_job import _make_batch
+from tests.test_batch_job import _make_batch, fake  # noqa: F401 (fixture)
 from ui import batch_job as bj
 
 
@@ -38,71 +36,19 @@ def test_manifest_pdf_flag_and_old_files(tmp_path):
         bt.load_manifest(path)
 
 
-@pytest.fixture
-def fake(monkeypatch):
-    """A planner that returns one plan at once and an export_all that records its pdf flag."""
-    from ui import plan_job, report_make
-
-    seen = {"pdf": []}
-
-    def station_job(payload, emit, cancelled):
-        emit("progress", ("planning", 0.5))
-        sol = Solution(label="1 station", stations=[Station(xyz=(0, 0, 0))], cost=1.0)
-        emit("solution", (sol, {}))
-        return {"best": sol, "rules_status": None}
-
-    def export_all(session, sol, out_dir, pdf=False, **kw):
-        seen["pdf"].append(pdf)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "report.html").write_text("<html></html>", encoding="utf-8")
-        out = {"report.html": out_dir / "report.html"}
-        if pdf:
-            out["report.pdf"] = "PdfError: no browser found (Edge or Chrome)"
-        return out
-
-    monkeypatch.setattr(plan_job, "station_job", station_job)
-    monkeypatch.setattr(report_make, "export_all", export_all)
-    return seen
-
-
-def test_pdf_flag_reaches_the_export_and_a_failure_is_reported(tmp_path, fake):
-    m, bdir = _make_batch(tmp_path, n=1)
-    assert bj.drive(bdir, lambda *a: None, in_process=True)["status"] == "done"
-    assert fake["pdf"] == [False]
-    job = bt.load_manifest(bdir / bt.MANIFEST_NAME).jobs[0]
-    job.status = "pending"
-    bt.update_job(bdir / bt.MANIFEST_NAME, job)
-    bt.set_pdf(bdir / bt.MANIFEST_NAME, True)
-    assert bj.drive(bdir, lambda *a: None, in_process=True)["status"] == "done"
-    assert fake["pdf"] == [False, True]
-    job = bt.load_manifest(bdir / bt.MANIFEST_NAME).jobs[0]
-    assert job.status == "done"  # the plan is done; the missing PDF is said in the error column
-    assert job.error.startswith("export failed: report.pdf (PdfError: no browser found")
-    assert job.summary["exports"]["report.pdf"].startswith("error:")
-
-
-def test_progress_carries_the_time_left_after_the_first_job(tmp_path, fake, monkeypatch):
+def test_progress_carries_the_time_left_after_the_first_job(tmp_path, fake, monkeypatch):  # noqa: F811
     _m, bdir = _make_batch(tmp_path, n=3)
     ticks = iter(range(0, 100000, 150))  # every clock read is 150 s later: jobs "take" minutes
     monkeypatch.setattr(bj.time, "monotonic", lambda: float(next(ticks)))
     prog = []
-    bj.drive(bdir, lambda k, d: prog.append(d[0]) if k == "progress" else None, in_process=True)
-    first = [p for p in prog if p.startswith("job 1/3")]
-    later = [p for p in prog if p.startswith("job 2/3") or p.startswith("job 3/3")]
+    bj.drive(bdir, lambda k, d: prog.append(d[0]) if k == "progress" else None, workers=1)
+    first = [p for p in prog if p.startswith("0/3 planned")]
+    later = [p for p in prog if p.startswith("1/3 planned") or p.startswith("2/3 planned")]
     assert first and not any("left" in p for p in first)  # nothing to go by yet
     assert later and all(" - about " in p and p.endswith(" left") for p in later)
 
 
-def test_cli_pdf_flag_sets_the_manifest(tmp_path, fake, capsys):
-    _m, bdir = _make_batch(tmp_path, n=1)
-    assert bj.main([str(bdir), "--in-process", "--pdf"]) == 0
-    assert bt.load_manifest(bdir / bt.MANIFEST_NAME).pdf is True and fake["pdf"] == [True]
-    assert "1/1 job(s) done" in capsys.readouterr().out
-    assert bj.main([str(Path(tmp_path) / "nowhere"), "--pdf"]) == 1
-    assert "batch failed" in capsys.readouterr().out
-
-
-def test_setup_findings_become_job_warnings(tmp_path, fake):
+def test_setup_findings_become_job_warnings(tmp_path, fake):  # noqa: F811
     """A plate queued with the wrong units (read as mm: 1 mm across) is planned, but the job says so."""
     from ui.session import empty_cell
 
@@ -112,7 +58,7 @@ def test_setup_findings_become_job_warnings(tmp_path, fake):
     m.jobs[1].units = "mm"
     m.jobs[1].warnings = ["setup: an old line", "a detector warning"]
     bt.save_manifest(m, bdir / bt.MANIFEST_NAME)
-    bj.drive(bdir, lambda *a: None, in_process=True)
+    bj.drive(bdir, lambda *a: None)
     good, small = bt.load_manifest(bdir / bt.MANIFEST_NAME).jobs
     assert good.warnings == [] and good.status == "done"
     assert small.status == "failed" and "smaller than one grid cell" in small.error  # a 1 mm plate

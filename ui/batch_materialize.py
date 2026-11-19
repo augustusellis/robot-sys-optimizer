@@ -1,9 +1,9 @@
-"""Turn a batch job into a study folder (cell + the job's part and generated targets)."""
+"""Turn a batch job into a part package (the job's part, pose and generated targets) for v13's
+batch runner, and render the review pictures."""
 
 from __future__ import annotations
 
 import json
-import shutil
 from pathlib import Path
 
 import numpy as np
@@ -13,8 +13,7 @@ from core import preflight as pf
 from core import targets as tg
 from core.schema import TargetGroup, Tolerances
 from core.target_gen import generate_targets
-from ui.session import PartState, Session, load_mesh, load_project, save_project
-from ui.staleness import STEP_COMPONENTS, confirm_step
+from ui.session import Session, load_mesh, load_project
 
 
 def ensure_group(session: Session, name: str) -> None:
@@ -77,32 +76,39 @@ def apply_rule(job: bt.BatchJob, mesh, who: str, pad_radius_m: float | None = No
     job.selection = [int(f) for f in g.faces]
 
 
-def materialize(manifest: bt.BatchManifest, job: bt.BatchJob, batch_dir: Path) -> Path:
-    """Create ``batch_dir/<job.id>/`` as a study folder and return it. ValueError (one line)
-    if the job cannot run or generates no targets. Sets ``job.auto_confirmed`` / ``out_dir``."""
+def setup_dir(manifest: bt.BatchManifest, batch_dir: Path) -> Path:
+    """The cell the jobs run with: ``<batch>/_setup`` (the open project, written at Run batch),
+    else the ``cell_project`` folder (a batch from before v13's runner, or the CLI)."""
+    setup = Path(batch_dir) / bt.SETUP
+    return setup if (setup / "project.json").is_file() else bt.cell_path(manifest, batch_dir)
+
+
+def make_package(manifest: bt.BatchManifest, job: bt.BatchJob, batch_dir: Path) -> Path:
+    """The job as a part package (v13 ``core.part_package``) for the batch runner, and return its
+    folder. A package job is already one (checked); a mesh job gets its targets generated on its
+    selection (or on the detected tool surface) into ``<batch>/packages/<job id>/``. ValueError
+    (one line) if the job cannot run or generates no targets; ``bt.NeedsReview`` for a doubtful
+    detection."""
+    from core import part_package as pp
+    from core.schema import Part
+    from core.transforms import matrix_to_pose
+
     batch_dir = Path(batch_dir)
     who = job.name or job.id
     reason = bt.check_job(job, batch_dir)
     if reason:
         raise ValueError(reason)
-    if job.selection_rule == "tool_surface":  # before anything is copied: a doubtful job stays cheap
+    if job.source == "package":
+        return batch_dir / job.package
+    if job.selection_rule == "tool_surface":  # before the cell is loaded: a doubtful job stays cheap
         apply_rule(job, load_mesh(batch_dir / job.part, job.units), who, cell_pad_radius(manifest, batch_dir))
-    cell = bt.cell_path(manifest, batch_dir)
-    if not manifest.cell_project or not (cell / "project.json").is_file():
-        raise ValueError(f"{who}: the cell project '{manifest.cell_project}' has no project.json")
-    out = batch_dir / job.id
+    cell = setup_dir(manifest, batch_dir)
+    if not (cell / "project.json").is_file():
+        raise ValueError(f"{who}: the cell project '{cell}' has no project.json")
     s = Session()
-    load_project(s, cell)
-    src = batch_dir / job.part
-    rel = f"assets/parts/{src.name}"
-    (out / "assets" / "parts").mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, out / rel)
-    s.project_dir = out
-    s.part = PartState(rel, job.units, np.array(job.pose, float))
-    s.selection = (rel, [int(f) for f in job.selection])
-    s.targets = s.targets.model_copy(update={"points": []})
-    s.results, s.result_points, s.feasibility, s.stamps, s.steps = [], {}, {}, {}, {}
-    mesh = load_mesh(out / rel, job.units)
+    load_project(s, cell)  # the tool's tolerances for the new target group
+    src = (batch_dir / job.part).resolve()
+    mesh = load_mesh(src, job.units)
     # a wrong unit usually ends in "no targets generated": say why, next to that error
     job.warnings = [w for w in job.warnings if not w.startswith(pf.BATCH_PREFIX)] + [
         f"{pf.BATCH_PREFIX}{f.text}" for f in pf.check_part(mesh, np.array(job.pose, float))
@@ -113,18 +119,12 @@ def materialize(manifest: bt.BatchManifest, job: bt.BatchJob, batch_dir: Path) -
         raise ValueError(f"{who}: target generation failed: {err}") from err
     if len(P) == 0:
         raise ValueError(f"{who}: no targets generated; check the selection and spacing")
+    s.targets = s.targets.model_copy(update={"points": []})
     ensure_group(s, job.gen.group)
     s.targets = tg.append_points(s.targets, P, N, job.gen.group)
-    save_project(s, out)
-    # confirm on the reloaded session: the step hashes are taken from what a later load sees
-    # (a pose of -0.0 saved as 0.0 would otherwise make the Cell step read "changed")
-    load_project(s, out)
-    for step in STEP_COMPONENTS:
-        confirm_step(s, step)
-    job.auto_confirmed = list(STEP_COMPONENTS)
-    job.out_dir = job.id
-    save_project(s, out)
-    return out
+    part = Part(mesh=src.as_posix(), units=job.units, pose=matrix_to_pose(np.array(job.pose, float)))
+    folder = batch_dir / bt.PACKAGES  # one folder per job id (the name may repeat)
+    return pp.save_part_package(job.id, part, s.targets, Path, folder, overwrite=True, description=who)
 
 
 # --- review pictures ------------------------------------------------------------------------

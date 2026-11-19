@@ -1,8 +1,11 @@
 """Batch queue manifest ("select now, optimize later"): pure data, no viser, no ui.
 
-``batch.json`` lists jobs (part + face selection + generator and planner settings) that start
-from one cell study. ``ui.batch_materialize`` turns a job into a study folder; the runner
-(``ui.batch_job``) plans it. Writes are atomic (tmp file, then replace).
+``batch.json`` lists jobs that start from one cell (the project's robot, tool, external axis,
+stay-outs and settings, copied to ``_setup/``): a part mesh with a face selection or the
+tool-surface rule (``source="mesh"``), or a part package made in the package builder
+(``source="package"``, v13). ``ui.batch_package`` turns each job into a part package and
+``ui.batch_job`` plans the packages with v13's runner (``ui.batch_run``). Writes are atomic
+(tmp file, then replace).
 """
 
 from __future__ import annotations
@@ -19,10 +22,14 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from core.target_gen import GenSettings
 
-VERSION = 2  # 2: BatchManifest.pdf (version 1 files load unchanged)
+VERSION = 3  # 2: BatchManifest.pdf; 3: job source / package, frame_search (older files load unchanged)
 MANIFEST_NAME = "batch.json"
 Status = Literal["pending", "running", "done", "failed", "cancelled", "partial", "needs_review"]
 Rule = Literal["faces", "tool_surface"]
+Source = Literal["mesh", "package"]
+SETUP = "_setup"  # the cell project the jobs run with (a copy of the project, ui.batch_run)
+RESULTS = "results"  # the runner's output: a project folder per job + summary.json (v13)
+PACKAGES = "packages"  # a part package per job (ui.batch_package)
 UNIT_SCALE = {"m": 1.0, "mm": 1e-3, "in": 0.0254}
 from core.step_import import STEP_EXTS, StepImportError, read_step  # noqa: E402
 
@@ -43,6 +50,8 @@ class BatchJob(BaseModel):
 
     id: str
     name: str = ""
+    source: Source = "mesh"  # "package": a v13 part package (part, pose and targets) in ``package``
+    package: str = ""  # package folder relative to the batch folder (source="package")
     part: str  # mesh path relative to the batch folder (copied there at queue time)
     units: str = "m"
     pose: list[list[float]] = Field(default_factory=_identity)  # 4x4 T_world_part
@@ -72,7 +81,8 @@ class BatchManifest(BaseModel):
     version: int = VERSION
     created: str = Field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
     cell_project: str = ""  # cell study folder whose robot, tool, carrier, stay-outs, optimizer are reused
-    pdf: bool = False  # also print each job's report to export/report.pdf (needs Edge or Chrome)
+    pdf: bool = False  # unused since v13's runner (it prints report.pdf when Edge / Chrome is found)
+    frame_search: bool = False  # rail / gantry: search the axis frame per job first (Gantry placement)
     jobs: list[BatchJob] = Field(default_factory=list)
 
 
@@ -169,6 +179,14 @@ def check_job(job: BatchJob, batch_dir: Path) -> str | None:
         return f"{who}: mesh {job.part} changed since it was queued, so the selected faces no longer match"
     if job.units not in UNIT_SCALE:
         return f"{who}: unknown units '{job.units}'"
+    if job.source == "package":  # part, pose and targets are in the package
+        from core.part_package import load_part_package
+
+        try:
+            pkg = load_part_package(Path(batch_dir) / job.package)
+        except ValueError as err:
+            return f"{who}: part package {job.package}: {err}"
+        return None if pkg.targets.points else f"{who}: part package {job.package} has no targets"
     if p.suffix.lower() not in PART_EXTS:
         return f"{who}: unsupported mesh type {p.suffix}"
     try:
@@ -246,7 +264,11 @@ def job_table(m: BatchManifest) -> str:
         auto = j.selection_rule == "tool_surface"
         conf = f" ({j.confidence:.2f})" if auto and j.confidence is not None else ""
         faces = f"auto{conf}" if auto and not j.selection else str(len(j.selection))
+        if j.source == "package":
+            faces = "package"
         got = f"{s.get('reached', '')}/{s.get('total', '')}, {s['cost']:.2f}" if s.get("stations") else ""
+        if s.get("cycle_s"):
+            got += f", {s['cycle_s']:.0f} s"
         mode = "quick" if j.planner.get("mode") == "quick" else "plan"
         name = f" {_cell(j.name)}" if j.name != j.id else ""
         lines.append(
@@ -254,7 +276,7 @@ def job_table(m: BatchManifest) -> str:
             f"{j.status} | {got} | {_cell(j.error)} |"
         )
     return (
-        "| job | part | faces | targets | mode | status | reached, cost | error |\n"
+        "| job | part | faces | targets | mode | status | reached, cost, cycle | error |\n"
         "|---|---|---|---|---|---|---|---|\n" + "\n".join(lines)
     )
 
@@ -279,7 +301,7 @@ SUMMARY_COLUMNS = (
     "cost",
     "run_s",
 )
-SUMMARY_COLUMNS += ("error", "report")
+SUMMARY_COLUMNS += ("cycle_s", "error", "report")
 
 
 def summary_rows(manifest: BatchManifest) -> list[dict]:
@@ -300,6 +322,7 @@ def summary_rows(manifest: BatchManifest) -> list[dict]:
                 "total": s.get("total", ""),
                 "cost": "" if cost is None else f"{cost:.3f}",
                 "run_s": f"{j.run_s:.1f}" if j.run_s else "",
+                "cycle_s": "" if s.get("cycle_s") is None else s["cycle_s"],
                 "error": j.error,
                 "report": s.get("report", ""),
             }

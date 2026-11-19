@@ -1,5 +1,5 @@
-"""Batch runner (ui.batch_job, plan Part 2 step B4): per-job isolation, cancel / resume,
-the manifest on disk after every step, planner settings snapshot, fresh worker per job."""
+"""Batch queue runner (ui.batch_job): jobs -> part packages -> v13's runner (faked here), statuses
+on disk after every step, cancel / resume, package jobs, the CLI."""
 
 import subprocess
 import sys
@@ -9,18 +9,18 @@ from pathlib import Path
 import pytest
 
 from core import batch as bt
+from core import part_package as pp
 from core.golden_parts import flat_plate
-from core.schema import Solution, Station
 from core.target_gen import GenSettings
-from opt.placement import PlannerSettings
 from ui import batch_job as bj
+from ui import batch_summary
 from ui.session import empty_cell, save_project
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _planner(**kw) -> dict:
-    return {"version": 1, "mode": "cost", "settings": bj.settings_dict(PlannerSettings(**kw)), "workers": 1}
+def _planner(mode: str = "cost") -> dict:
+    return {"mode": mode}
 
 
 def _make_batch(tmp_path, n=3, cell=None):
@@ -52,46 +52,57 @@ def _disk(bdir) -> dict:
 
 @pytest.fixture
 def fake(monkeypatch):
-    """station_job streams two plans (1 and 2 stops); export_all writes a stub report. Records
-    the job's on-disk status while it plans."""
-    from ui import plan_job, report_make
+    """ui.batch_run.run_batch without processes: every part is "planned" (1 stop, all targets
+    reached), its results folder and the runner's summary.json written. Records per part the job
+    id (its package folder), the job's status on disk, its targets and its extras."""
+    state = {"seen": [], "bdir": None, "fail": set(), "cancel_after": None, "calls": []}
 
-    state = {"cancel_after_first": None, "seen": [], "bdir": None}
+    def run_batch(project_dir, parts, out_dir, frame_search=False, workers=None, check_workers=1,
+                  on_progress=None, cancelled=lambda: False, parts_folder=""):  # fmt: skip
+        state["calls"].append({"setup": Path(project_dir), "frame_search": frame_search, "workers": workers})
+        bdir = Path(out_dir).parent
+        rows = []
+        for name, d, *extra in parts:
+            job_id = Path(d).name
+            if cancelled():
+                rows.append({"part": name, "status": "cancelled", "reason": "cancelled"})
+                continue
+            pkg = pp.load_part_package(d)
+            state["seen"].append((job_id, _disk(bdir).get(job_id), len(pkg.targets.points), *extra))
+            on_progress(name, "planning", 0.5)
+            folder = Path(out_dir) / pp.safe(name)
+            folder.mkdir(parents=True, exist_ok=True)
+            if name in state["fail"]:
+                row = {
+                    "part": name,
+                    "status": "failed",
+                    "reason": "ValueError: no plan",
+                    "trace": "Traceback ...",
+                }
+            else:
+                (folder / "report.html").write_text("<html></html>", encoding="utf-8")
+                n = len(pkg.targets.points)
+                row = {"part": name, "status": "done", "reason": "", "folder": str(folder),
+                       "report": str(folder / "report.html"), "points": n, "reached": n, "unreached": 0,
+                       "stops": 1, "plan": "1 station", "cost": 2.5, "cycle_s": 42.0}  # fmt: skip
+            row["run_s"] = 3.0
+            rows.append(row)
+            batch_summary.write(out_dir, {}, rows)
+            on_progress(name, row["status"], 1.0)
+            if state["cancel_after"] is not None and len(rows) == state["cancel_after"][0]:
+                state["cancel_after"][1].set()
+        return rows
 
-    def station_job(payload, emit, cancelled):
-        s = payload["session"]
-        assert payload["spec"]["settings"].max_stations == 1  # static base: one station
-        job_id = Path(s.project_dir).name
-        state["seen"].append((job_id, _disk(state["bdir"])[job_id]))
-        emit("progress", ("planning", 0.5))
-        emit("warn", "check pool fell back to serial checks")
-        a = Solution(label="1 station", stations=[Station(xyz=(0, 0, 0))], cost=5.0, unreached=[1])
-        emit("solution", (a, {}))
-        if state["cancel_after_first"] is not None:
-            state["cancel_after_first"].set()
-        if cancelled():
-            return {"best": a, "rules_status": None}
-        b = Solution(label="2 stations", stations=[Station(xyz=(0, 0, 0))] * 2, cost=3.0)
-        emit("solution", (b, {}))
-        return {"best": b, "rules_status": None}
-
-    def export_all(session, sol, out_dir, pdf=False, **kw):
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "report.html").write_text(f"<html>{sol.label}</html>", encoding="utf-8")
-        return {"report.html": out_dir / "report.html", "tcp_poses.csv": "ValueError: no tool loaded"}
-
-    monkeypatch.setattr(plan_job, "station_job", station_job)
-    monkeypatch.setattr(report_make, "export_all", export_all)
+    monkeypatch.setattr(bj, "run_batch", run_batch)
     return state
 
 
-def test_isolation_resume_and_summary(tmp_path, fake):
-    from ui.session import Session, load_project
-
+def test_statuses_packages_and_summary(tmp_path, fake):
     m, bdir = _make_batch(tmp_path)
     fake["bdir"] = bdir
     j2 = m.jobs[1]
-    j2.mesh_sha1 = "0" * 40  # corrupt: the mesh "changed" since it was queued
+    j2.mesh_sha1 = "0" * 40  # the mesh "changed" since it was queued
+    m.jobs[2].planner = _planner("quick")
     bt.save_manifest(m, bdir / bt.MANIFEST_NAME)
     msgs, after_each = [], []
 
@@ -100,132 +111,118 @@ def test_isolation_resume_and_summary(tmp_path, fake):
         if kind == "job":
             after_each.append(_disk(bdir))
 
-    out = bj.drive(bdir, on_msg, in_process=True)
-    assert out["status"] == "done"
+    out = bj.drive(bdir, on_msg)
     ids = [j.id for j in m.jobs]
-    assert after_each == [
-        {ids[0]: "done", ids[1]: "pending", ids[2]: "pending"},
-        {ids[0]: "done", ids[1]: "failed", ids[2]: "pending"},
-        {ids[0]: "done", ids[1]: "failed", ids[2]: "done"},
+    assert out["status"] == "done" and len(out["jobs"]) == 3
+    assert after_each[0] == {ids[0]: "running", ids[1]: "failed", ids[2]: "pending"}  # failed while preparing
+    assert _disk(bdir) == {ids[0]: "done", ids[1]: "failed", ids[2]: "done"}
+    assert [(s[0], s[1], s[3]) for s in fake["seen"]] == [
+        (ids[0], "running", {"quick": False}),
+        (ids[2], "running", {"quick": True}),
     ]
-    assert fake["seen"] == [(ids[0], "running"), (ids[2], "running")]  # running on disk while planning
-    disk = bt.load_manifest(bdir / bt.MANIFEST_NAME)
-    d1, d2, d3 = disk.jobs
+    assert fake["seen"][0][2] > 0  # the package has the generated targets
+    assert fake["calls"][0]["setup"] == (tmp_path / "cell").resolve()  # no _setup: the cell project
+    d1, d2, _d3 = bt.load_manifest(bdir / bt.MANIFEST_NAME).jobs
     assert "changed since it was queued" in d2.error and "\n" not in d2.error
     assert (bdir / ids[1] / "error.txt").read_text(encoding="utf-8").startswith(d2.error)
-    assert d1.summary["stations"] == 2 and d1.summary["cost"] == 3.0 and d1.summary["plans"] == 2
-    assert d1.summary["report"] == f"{ids[0]}/export/report.html" and (bdir / d1.summary["report"]).is_file()
-    assert d1.error.startswith("export failed: tcp_poses.csv") and d1.status == "done"
-    assert d1.summary["reached"] == d1.summary["total"] > 0 and d1.run_s >= 0
-    assert d1.auto_confirmed and d1.out_dir == ids[0]
-    warns = [d for k, d in msgs if k == "warn"]
-    assert warns and warns[0].startswith(f"{ids[0]}: check pool")
+    s = d1.summary
+    assert s["stations"] == 1 and s["cost"] == 2.5 and s["cycle_s"] == 42.0 and s["reached"] == s["total"] > 0
+    assert s["report"] == f"results/{ids[0]}/report.html" and (bdir / s["report"]).is_file()
+    assert d1.out_dir == f"results/{ids[0]}" and d1.run_s == 3.0 and not d1.error
+    assert set(s["review"]) == {"iso", "top"}  # the pictures are kept with the results
     prog = [d for k, d in msgs if k == "progress"]
-    assert prog[0][0].startswith("job 1/3") and all(0 <= f <= 1 for _, f in prog)
-    s = Session()
-    load_project(s, bdir / ids[0])  # the job's study: both plans, best first, stamped
-    assert [r.label for r in s.results] == ["2 stations", "1 station"] and s.results[0].run_s is not None
-    assert set(s.stamps) >= {r.id for r in s.results} and all(r.id for r in s.results)  # v12 #8: ids
+    assert prog[0][0].startswith("preparing") and all(0 <= f <= 1 for _, f in prog)
+    assert any(t.startswith("2/2 planned") for t, _ in prog)
     csv = (bdir / "summary.csv").read_text(encoding="utf-8").splitlines()
     assert csv[0].startswith("job,name,part,status") and len(csv) == 4 and ",failed," in csv[2]
-    assert "report.html" in (bdir / "summary.html").read_text(encoding="utf-8")
+    assert (bdir / "review.html").is_file()
     # resume: done and failed jobs are skipped; a reset job runs again
     fake["seen"].clear()
-    assert bj.drive(bdir, lambda *a: None, in_process=True)["jobs"] == []
+    assert bj.drive(bdir, lambda *a: None)["jobs"] == [] and fake["seen"] == []
     d2.status, d2.mesh_sha1 = "pending", m.jobs[0].mesh_sha1
     bt.update_job(bdir / bt.MANIFEST_NAME, d2)
-    rows = bj.batch_job({"batch_dir": str(bdir)}, lambda *a: None, lambda: False)  # one-process entry
+    rows = bj.drive(bdir, lambda *a: None)["jobs"]
     assert [r["id"] for r in rows] == [ids[1]] and rows[0]["status"] == "done"
-    assert fake["seen"] == [(ids[1], "running")]
 
 
-def test_cancel_keeps_plans_and_stops(tmp_path, fake):
-    from core.feasibility import CancelledError
-    from ui.session import Session, load_project
+def test_runner_failure_and_duplicate_names(tmp_path, fake):
+    m, bdir = _make_batch(tmp_path, n=2)
+    for j in m.jobs:
+        j.name = "plate"  # the same name twice: two results folders all the same
+    bt.save_manifest(m, bdir / bt.MANIFEST_NAME)
+    fake["fail"] = {"plate"}
+    bj.drive(bdir, lambda *a: None)
+    a, b = bt.load_manifest(bdir / bt.MANIFEST_NAME).jobs
+    assert a.status == "failed" and a.error == "ValueError: no plan"
+    assert "Traceback ..." in (bdir / a.id / "error.txt").read_text(encoding="utf-8")
+    assert b.status == "done" and b.out_dir == f"results/plate_{b.id}"
 
+
+def test_cancel_sends_unfinished_jobs_back_to_pending(tmp_path, fake):
     m, bdir = _make_batch(tmp_path)
-    fake["bdir"] = bdir
     ev = threading.Event()
-    fake["cancel_after_first"] = ev
-    msgs = []
-    done = threading.Event()
-    t = bj.run_batch(
-        bdir, lambda k, d: (msgs.append((k, d)), k == "finished" and done.set()), ev.is_set, True
+    fake["cancel_after"] = (1, ev)
+    msgs, done = [], threading.Event()
+    t = bj.run_batch_thread(
+        bdir, lambda k, d: (msgs.append((k, d)), k == "finished" and done.set()), ev.is_set
     )
     t.join(60)
     assert done.is_set()
     fin = next(d for k, d in msgs if k == "finished")
-    assert fin["status"] == "cancelled" and [r["status"] for r in fin["jobs"]] == ["partial"]
     ids = [j.id for j in m.jobs]
-    assert _disk(bdir) == {ids[0]: "partial", ids[1]: "pending", ids[2]: "pending"}
-    s = Session()
-    load_project(s, bdir / ids[0])
-    assert [r.label for r in s.results] == ["1 station"]  # the plan finished before Cancel is kept
-    # run_job itself re-raises the cancel (it stops batch_job's loop)
+    assert fin["status"] == "cancelled" and _disk(bdir) == {
+        ids[0]: "done",
+        ids[1]: "pending",
+        ids[2]: "pending",
+    }
     j = bt.load_manifest(bdir / bt.MANIFEST_NAME).jobs[1]
-    with pytest.raises(CancelledError):
-        bj.run_job(bt.load_manifest(bdir / bt.MANIFEST_NAME), j, bdir, lambda *a: None, ev.is_set)
-    assert _disk(bdir)[ids[1]] == "partial"
+    assert j.error.startswith("cancelled: runs again")
+    ev.clear()
+    fake["cancel_after"] = None
+    assert [r["id"] for r in bj.drive(bdir, lambda *a: None)["jobs"]] == ids[1:]  # resume
 
 
-def test_crashed_worker_marks_the_job_failed(tmp_path):
-    m, bdir = _make_batch(tmp_path, n=1)
-    job = m.jobs[0]
-    job.status = "running"
-    bt.update_job(bdir / bt.MANIFEST_NAME, job)
-    from ui.jobs import WorkerError
+def test_package_job_and_setup_folder(tmp_path, fake):
+    """A v13 part package queued as a job: no target generation; the batch's _setup/ is the cell."""
+    from core.schema import load_project as read_project
 
-    err = RuntimeError(
-        "the worker process ended unexpectedly (exit code -9: killed (possibly out of memory))"
-    )
-    bj._mark_crashed(bdir / bt.MANIFEST_NAME, job.id, err)
-    back = bt.load_manifest(bdir / bt.MANIFEST_NAME).jobs[0]
-    assert back.status == "failed" and "possibly out of memory" in back.error
-    assert (bdir / job.id / "error.txt").is_file()
-    assert bj.one_line(WorkerError("KeyError", "'x'", "tb")) == "KeyError: 'x'"
-
-
-def test_fresh_worker_per_job_isolates_failures(tmp_path):
-    """Real worker processes (one per job): both jobs fail at the mesh check, each recorded."""
-    m, bdir = _make_batch(tmp_path, n=2)
-    for j in m.jobs:
-        j.mesh_sha1 = "f" * 40
+    m, bdir = _make_batch(tmp_path, n=0)
+    rail = ROOT / "examples" / "rail_long_part"
+    proj = read_project(rail / "project.json")
+    pkg = pp.save_part_package("rail", proj.part, proj.targets, lambda r: ROOT / r, bdir / bt.PACKAGES)
+    pkg_mesh = (pkg / pp.load_part_package(pkg).part.mesh).relative_to(bdir).as_posix()
+    bt.add_job(m, part=pkg_mesh, selection=[], source="package", package=f"{bt.PACKAGES}/rail")
+    bt.add_job(m, part=pkg_mesh, selection=[], source="package", package=f"{bt.PACKAGES}/gone")
+    m.frame_search = True
     bt.save_manifest(m, bdir / bt.MANIFEST_NAME)
-    rows = []
-    out = bj.drive(bdir, lambda k, d: k == "job" and rows.append(d))
-    assert out["status"] == "done" and [r["status"] for r in rows] == ["failed", "failed"]
-    assert all("changed since it was queued" in r["error"] for r in rows)
-    assert all((bdir / r["id"] / "error.txt").is_file() for r in rows)
+    save_project(empty_cell(), bdir / bt.SETUP)
+    bj.drive(bdir, lambda *a: None, workers=1)
+    a, b = bt.load_manifest(bdir / bt.MANIFEST_NAME).jobs
+    assert a.status == "done" and a.summary["total"] == len(proj.targets.points)
+    assert b.status == "failed" and "part package packages/gone" in b.error
+    call = fake["calls"][0]
+    assert call["setup"] == bdir / bt.SETUP and call["frame_search"] is True and call["workers"] == 1
+    assert "package" in bt.job_table(bt.load_manifest(bdir / bt.MANIFEST_NAME))
 
 
-def test_planner_settings_roundtrip_and_spec():
-    import json
+def test_no_cell_project_fails_the_batch(tmp_path, fake):
+    m, bdir = _make_batch(tmp_path, n=1)
+    m.cell_project = "../nowhere"
+    bt.save_manifest(m, bdir / bt.MANIFEST_NAME)
+    msgs = []
+    bj.run_batch_thread(bdir, lambda k, d: msgs.append((k, d))).join(30)
+    fin = msgs[-1][1]
+    assert fin["status"] == "failed" and "no cell project" in fin["error"]
 
-    from core.collision_config import current
-    from core.collision_mesh import Geom
-    from core.cycle_time import CycleSettings
 
-    st = PlannerSettings(
-        max_stations=7, candidate_step=0.05, refine_method="tpe", cycle=CycleSettings(settle_s=2)
-    )
-    d = json.loads(json.dumps(bj.settings_dict(st)))  # JSON-safe
-    assert bj.planner_settings_from({"settings": d}) == st
-    s = empty_cell()  # static base: one station
-    cfg = current().replace(dress_m=0.02, geom={"part": Geom("hull")}, link_pad={3: 0.01}, arm_pad=0.004)
-    planner = {"mode": "quick", "settings": d, "collision": bj.collision_dict(cfg)}
-    spec = bj.spec_for(json.loads(json.dumps(planner)), s)
-    assert (
-        spec["settings"].max_stations == 1 and not spec["settings"].refine and spec["settings"].patience == 1
-    )
-    assert spec["collision"] == cfg  # v12 #10: the queued CollisionConfig, through JSON and back
-    from core.schema import Optimizer
-
-    assert spec["weights"] == (s.extra.get("optimizer") or Optimizer()).weights  # the cell's
-    assert "objective" not in spec and spec["rules"] is None
-    cost = bj.spec_for({"settings": d, "weights": {"stations": 9.0}}, s)
-    assert cost["weights"].stations == 9.0 and cost["objective"] == "weighted"
-    with pytest.raises(ValueError, match="unknown planner setting"):
-        bj.planner_settings_from({"settings": {"warp_drive": 1}})
+def test_cli(tmp_path, fake, capsys):
+    _m, bdir = _make_batch(tmp_path, n=1)
+    assert bj.main([str(bdir), "--frame-search"]) == 0
+    assert bt.load_manifest(bdir / bt.MANIFEST_NAME).frame_search is True
+    out = capsys.readouterr().out
+    assert "1/1 job(s) done" in out and "review.html" in out
+    assert bj.main([str(Path(tmp_path) / "nowhere"), "--frame-search"]) == 1
+    assert "batch failed" in capsys.readouterr().out
 
 
 def test_cell_project_is_relative(tmp_path):
@@ -243,69 +240,41 @@ def test_import_is_viser_free():
     assert out.stdout.strip() == "False"
 
 
-def test_snapshot_matches_the_station_panel():
-    import viser
-
-    from app import build_app
-    from core.collision_config import current
-
-    server = viser.ViserServer(host="127.0.0.1", port=8871, verbose=False)
-    try:
-        app = build_app(server)
-        st, s = app["stations"], app["session"]
-        st.step.value = 150.0
-        snap = bj.planner_snapshot(st)
-        assert snap["mode"] == "cost" and snap["objective"] == st.objective_m.key
-        assert bj.planner_settings_from(snap, s) == st.planner_settings()
-        spec = bj.spec_for(snap, s)
-        assert spec["weights"] == st.costs.commit()
-        assert spec["collision"] == current()
-        assert bj.planner_snapshot(st, quick=True)["mode"] == "quick"
-    finally:
-        server.stop()
-
-
 @pytest.mark.slow
-def test_real_two_job_batch(tmp_path):
-    """Two golden-plate jobs (top face; half of it), planned in-process, with exports."""
+def test_real_batch_of_a_mesh_job_and_a_package(tmp_path):
+    """The rail example's cell; a queued mesh job (its part's top) and a v13 package, planned by the
+    real runner (a process per job), each with a saved project and a report."""
     import numpy as np
 
     from core.schema import load_project as read_project
-    from core.transforms import make_T
-    from ui.session import PartState, Session, load_project
+    from ui.session import Session, load_mesh, load_project
 
-    cell = empty_cell()
-    cell.load_tool_from_library("orbital_sander")
-    cell.part = PartState("assets/parts/flat_plate.stl", "m", make_T(p=(0.9, 0.0, 0.3)))
-    m, bdir = _make_batch(tmp_path, n=2, cell=cell)
-    pose = make_T(p=(0.9, 0.0, 0.3)).tolist()
-    mesh = flat_plate()
-    c = mesh.triangles_center
-    for j in m.jobs:
-        j.pose, j.gen = pose, GenSettings(row_m=0.15, col_m=0.15)
-    m.jobs[1].selection = [f for f in m.jobs[0].selection if c[f, 0] < 0]  # the -x half of the top
-    m.jobs[0].planner = m.jobs[1].planner = _planner(refine=False)
+    rail = ROOT / "examples" / "rail_long_part"
+    proj = read_project(rail / "project.json")
+    s = Session()
+    load_project(s, rail)
+    bdir = tmp_path / "batch"
+    save_project(s, bdir / bt.SETUP)
+    m = bt.BatchManifest()
+    src = s.resolve(s.part.mesh_path)
+    (bdir / "parts").mkdir(parents=True)
+    dest = bdir / "parts" / src.name
+    dest.write_bytes(src.read_bytes())
+    mesh = load_mesh(dest, s.part.units)
+    top = np.flatnonzero(mesh.face_normals[:, 2] > 0.9)[:40]
+    bt.add_job(m, part=f"parts/{src.name}", selection=top, units=s.part.units,
+               pose=s.part.T_world_part.tolist(), gen=GenSettings(row_m=0.3, col_m=0.3),
+               mesh_sha1=bt.mesh_sha1(dest), planner=_planner("quick"), name="top")  # fmt: skip
+    pkg = pp.save_part_package("rail", proj.part, proj.targets, lambda r: ROOT / r, bdir / bt.PACKAGES)
+    mesh_rel = (pkg / pp.load_part_package(pkg).part.mesh).relative_to(bdir).as_posix()
+    bt.add_job(m, part=mesh_rel, selection=[], source="package", package=f"{bt.PACKAGES}/rail",
+               planner=_planner("quick"), name="rail")  # fmt: skip
     bt.save_manifest(m, bdir / bt.MANIFEST_NAME)
-    out = bj.drive(bdir, lambda *a: None, in_process=True)
+    out = bj.drive(bdir, lambda *a: None, workers=1)
     jobs = bt.load_manifest(bdir / bt.MANIFEST_NAME).jobs
     assert out["status"] == "done" and [j.status for j in jobs] == ["done", "done"], [j.error for j in jobs]
-    a, b = (j.summary for j in jobs)
-    assert a["total"] > b["total"] > 0 and a["stations"] == b["stations"] == 1
     for j in jobs:
-        exp = bdir / j.id / "export"
-        assert {"tcp_poses.csv", "userframes.csv", "report.html"} <= {p.name for p in exp.iterdir()}
-        assert j.summary["report"] and not j.error
-        p = read_project(bdir / j.id / "project.json")
-        assert p.results and p.work.result_points
-        s = Session()
-        load_project(s, bdir / j.id)
-        assert s.results[0].label == j.summary["label"] and np.isfinite(s.results[0].cost)
-
-
-def test_moved_texts_are_the_old_names():
-    """The viser-free ui.report_text is what log_panel / tolerance_ui still export."""
-    from ui import log_panel, report_text, tolerance_ui
-
-    assert log_panel.unreached_report is report_text.unreached_report
-    assert log_panel.REASONS is report_text.REASONS and log_panel.reason_text is report_text.reason_text
-    assert tolerance_ui.summary is report_text.tolerance_summary
+        p = read_project(bdir / j.out_dir / "project.json")
+        assert p.results and j.summary["stations"] >= 1 and j.summary["report"]
+        assert p.results[0].label.startswith("Quick")
+    assert batch_summary.read(bdir / bt.RESULTS)["rows"][0]["part"] == "top"

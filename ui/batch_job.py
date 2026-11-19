@@ -1,45 +1,35 @@
-"""Batch runner (plan Part 2, step B4): plan every pending job of a batch folder, one study each.
+"""Batch queue runner: plan every pending job of a batch folder with v13's batch runner.
 
-Per job (``run_job``, runs in the worker or in-process): materialise the study folder
-(``ui.batch_materialize``), plan it with ``plan_job.station_job`` using the planner settings
-snapshotted at *Add to queue* (``planner_snapshot`` -> ``BatchJob.planner``), save the
-project, export CSV / userframes / HTML report of the best plan into ``<job>/export/``.
+``drive`` first turns each pending job into a part package (``ui.batch_materialize.make_package``:
+targets generated on the job's selection or on the detected tool surface, the review pictures,
+the setup warnings), then hands the packages to ``ui.batch_run.run_batch``: one fresh process per
+job that plans in a browserless app exactly as the GUI does (stations, optional axis frame search,
+paths, cycle time, saved project, report.pdf), several jobs at once when the PC has room.
 
-- **Failure isolation:** any error marks the job ``failed`` with a one-line ``error`` and the
-  full traceback in ``<job>/error.txt``; the batch goes on with the next job.
-- **Cancel:** the plans finished so far are saved, the job becomes ``partial`` (``cancelled``
-  when none had finished) and the batch stops; the remaining jobs stay ``pending``.
-- **Resume:** done jobs are skipped (``core.batch.pending_jobs``).
-- **Memory:** ``run_batch`` (the GUI-side driver) runs each job in a fresh worker process: it
-  owns a private ``ui.jobs.Runner`` (not the GUI's planner worker) and kills it after every
-  job, so a large part never starves the next one and a crash fails only that job.
+- **Statuses** are written to ``batch.json`` one job at a time (``core.batch.update_job``):
+  running -> done / failed (one-line ``error``, traceback in ``<job id>/error.txt``) /
+  needs_review (the detector is not sure, nothing planned).
+- **Cancel:** jobs not finished go back to ``pending`` and run again on the next run.
+- **Resume:** only pending jobs run (an interrupted ``running`` job is pending again).
+- Output: ``<batch>/results/`` (v13: a project folder per job, ``summary.json`` for Results ->
+  Batch results), ``summary.csv`` / ``summary.html`` / ``review.html`` in the batch folder.
 
-The manifest is written after every status change, one job entry at a time
-(``core.batch.update_job``). Headless: ``python -m ui.batch_job <batch_dir> [--in-process]``.
-This module does not import viser (the planner it calls does, inside the job).
+Headless: ``python -m ui.batch_job <batch_dir>``. This module does not import viser.
 """
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 import traceback
 from pathlib import Path
 
 from core import batch as bt
-from ui.batch_planner import (  # noqa: F401 (re-exported: the batch panel imports them here)
-    COLLISION_KEYS,
-    SNAPSHOT_VERSION,
-    collision_dict,
-    planner_settings_from,
-    planner_snapshot,
-    settings_dict,
-    spec_for,
-)
-from ui.plan_ids import give_id, give_ids
-from ui.plan_ids import key as plan_key
+from ui.batch_run import plan_workers, run_batch
 
-# --- one job --------------------------------------------------------------------------------
+TERMINAL = ("done", "failed", "cancelled")
+REVIEW_KEYS = ("review", "review_note")  # job.summary keys the pictures own
 
 
 def one_line(err: BaseException) -> str:
@@ -53,226 +43,67 @@ def one_line(err: BaseException) -> str:
     return f"{type(err).__name__}: {msg}" if msg else type(err).__name__
 
 
-def _write_error(job_dir: Path, err: BaseException) -> None:
-    tb = getattr(err, "worker_traceback", "") or "".join(
-        traceback.format_exception(type(err), err, err.__traceback__)
-    )
+def _write_error(job_dir: Path, text: str) -> None:
     try:
         job_dir.mkdir(parents=True, exist_ok=True)
-        (job_dir / "error.txt").write_text(f"{one_line(err)}\n\n{tb}", encoding="utf-8")
+        (job_dir / "error.txt").write_text(text, encoding="utf-8")
     except OSError:
         pass  # the one-line error in the manifest still says what happened
 
 
-def _collision_globals():
-    from core.collision_config import current
-
-    return current()
-
-
-def _restore_collision(saved) -> None:
-    from core.collision_config import use
-
-    use(saved)
-
-
-class _Plans:
-    """StationsPanel's streamed bookkeeping on a headless session."""
-
-    def __init__(self, s, quick: bool, job_id: str, emit, save) -> None:
-        from ui.staleness import stamp_for
-
-        self.s, self.quick, self.job_id, self.emit, self.save = s, quick, job_id, emit, save
-        self.new: set[str] = set()
-        self.stamp = stamp_for(s, "plan")
-
-    def _sort(self, plans) -> list:
-        return sorted(plans, key=lambda x: (bool(x.violations), x.cost))
-
-    def streamed(self, sol, res) -> None:
-        s = self.s
-        if self.quick and not sol.label.startswith("Quick: "):
-            sol.label = f"Quick: {sol.label}"
-        sol.planner = sol.planner or ("quick" if self.quick else "cost")
-        same = [r for r in s.results if len(r.stations) == len(sol.stations) and r.tool_values is None]
-        for old in same:  # a refined plan replaces the quick one with the same number of stations
-            s.result_points.pop(plan_key(old), None)
-            s.stamps.pop(plan_key(old), None)
-        keep = [r for r in s.results if not any(r is x for x in same)]
-        k = give_id(sol, keep)  # v12 #8: plans are keyed by id, as in the Station planner panel
-        s.stamps[k] = self.stamp
-        s.result_points[k] = res
-        s.results = self._sort([*keep, sol])
-        self.new.add(k)
-        self.save()  # a crash or kill later keeps the plans finished so far
-
-    def replace(self, plans) -> None:
-        s = self.s
-        for r in [r for r in s.results if r.tool_values is None]:
-            s.result_points.pop(plan_key(r), None)
-            s.stamps.pop(plan_key(r), None)
-        tools = [r for r in s.results if r.tool_values is not None]
-        give_ids([sol for sol, _ in plans], tools)  # v12 #8
-        for sol, res in plans:
-            s.stamps[plan_key(sol)] = self.stamp
-            s.result_points[plan_key(sol)] = res
-            self.new.add(plan_key(sol))
-        s.results = [*(sol for sol, _ in plans), *tools]
-        self.save()
-
-    def __call__(self, kind: str, data) -> None:
-        if kind == "progress":
-            self.emit("progress", data)
-        elif kind == "solution":
-            self.streamed(*data)
-        elif kind == "replace":
-            self.replace(data)
-        elif kind == "max_manip":
-            self.s.max_manip = float(data)
-        elif kind == "warn":
-            self.emit("warn", f"{self.job_id}: {data}")
-
-
-def run_job(manifest: bt.BatchManifest, job: bt.BatchJob, batch_dir, emit, cancelled) -> None:
-    """Plan one job (in this process). Never raises except ``CancelledError`` (job partial or
-    cancelled, plans so far saved); every other error marks the job failed."""
-    from core.feasibility import CancelledError
-
-    batch_dir = Path(batch_dir)
-    path = batch_dir / bt.MANIFEST_NAME
-    job_dir = batch_dir / job.id
-
-    def save() -> None:
-        bt.update_job(path, job, fallback=manifest)
-
-    (job_dir / "error.txt").unlink(missing_ok=True)
-    job.status, job.error, job.summary, job.run_s = "running", "", {}, 0.0
-    save()
-    t0 = time.monotonic()
-    box: dict = {}
-    saved = _collision_globals()  # station_job sets them; in-process runs must not keep them
-    try:
-        _run(manifest, job, batch_dir, emit, cancelled, box, t0)
-        job.status = "done"
-    except CancelledError:
-        n = _keep(box)
-        job.status = "partial" if n else "cancelled"
-        job.error = (
-            f"cancelled; {n} plan(s) finished before and saved" if n else "cancelled before a plan finished"
-        )
-        raise
-    except bt.NeedsReview as err:  # not an error: the detector is not sure, a person must look
-        job.status, job.error = "needs_review", one_line(err)
-    except Exception as err:  # isolation: this job fails, the batch goes on
-        _keep(box)
-        job.status, job.error = "failed", one_line(err)
-        _write_error(job_dir, err)
-    finally:
-        job.run_s = round(time.monotonic() - t0, 1)
-        _restore_collision(saved)
-        if not {"review", "review_note"} & job.summary.keys():  # needs_review, failed, cancelled
-            _pictures(job, batch_dir)
-        save()
-        _write_review(path, batch_dir)
-
-
-def _pictures(job, batch_dir: Path) -> list:
-    """Render the review pictures (never raises); returns the report images."""
+def _pictures(job, batch_dir: Path) -> None:
+    """Render the review pictures (never raises)."""
     from ui.batch_materialize import job_pictures
 
     try:
-        return job_pictures(job, batch_dir)[0]
+        job_pictures(job, batch_dir)
     except Exception:  # noqa: BLE001 - job_pictures already catches; belt and braces
-        return []
-
-
-def _write_review(path: Path, batch_dir: Path) -> None:
-    """Refresh ``review.html`` so a long batch can be looked at while it runs."""
-    try:
-        from core.batch_review import write_review
-
-        write_review(bt.load_manifest(path), batch_dir)
-    except Exception:  # noqa: BLE001 - an extra page must not fail the job
         pass
 
 
-def _keep(box: dict) -> int:
-    """Save the plans finished so far (cancel / failure); returns how many."""
-    plans = box.get("plans")
-    if plans is None or not plans.new:
-        return 0
+def _rel(p: str, batch_dir: Path) -> str:
     try:
-        plans.save()
-    except Exception:  # noqa: BLE001 - the job's status still says what happened
-        traceback.print_exc()
-    return len(plans.new)
+        return Path(p).resolve().relative_to(Path(batch_dir).resolve()).as_posix()
+    except (ValueError, OSError):
+        return str(p)
 
 
-def _run(manifest, job, batch_dir: Path, emit, cancelled, box: dict, t0: float) -> None:
-    from core.feasibility import CancelledError
-    from ui import plan_job, report_make
-    from ui.batch_materialize import materialize
-    from ui.session import Session, load_project, save_project
+def run_name(job: bt.BatchJob, taken: set[str]) -> str:
+    """The job's name in the runner (its results folder): the job's name, made unique."""
+    from core.part_package import safe
 
-    who = job.name or job.id
-    emit("progress", (f"{who}: generating targets", 0.0))
-    cell = manifest  # cell_project may be relative to the batch folder
-    if manifest.cell_project:
-        cell = manifest.model_copy(update={"cell_project": str(bt.cell_path(manifest, batch_dir))})
-    out = materialize(cell, job, batch_dir)
-    s = Session()
-    load_project(s, out)
-    from ui.preflight_run import batch_warnings
+    name = safe(job.name or job.id)
+    if name in taken:
+        name = f"{name}_{job.id}"
+    taken.add(name)
+    return name
 
-    job.warnings = batch_warnings(s, job.warnings)  # e.g. a part 1000 times too small: on the review page
-    spec = spec_for(job.planner, s)
-    cfg = spec.pop("collision", None)  # v12 #10: the job's collision settings, one value
-    if cfg is not None:
-        from core.collision_config import use
 
-        use(cfg)  # run_job puts the process's own settings back
-    plans = _Plans(s, job.planner.get("mode") == "quick", job.id, emit, lambda: save_project(s, out))
-    box["plans"] = plans
-    result = plan_job.station_job({"session": s, "spec": spec}, plans, cancelled)
-    best = result.get("best")
-    if best is not None:  # the streamed object of that label (the run time goes on it)
-        best = next((r for r in s.results if r.label in (best.label, f"Quick: {best.label}")), best)
-    for r in s.results:
-        if plan_key(r) in plans.new and r.run_s is None and r.tool_values is None:
-            r.run_s = round(time.monotonic() - t0, 1)
-    save_project(s, out)
-    if cancelled():  # the planner returned its best so far after Cancel
-        raise CancelledError("cancelled")
-    if best is None:
-        raise ValueError(f"{who}: no station plan found ({len(s.targets.points)} targets)")
-    emit("progress", (f"{who}: writing the exports", 1.0))
-    images = _pictures(job, batch_dir)
-    keep_review = {k: v for k, v in job.summary.items() if k in ("review", "review_note")}
-    files = report_make.export_all(s, best, out / "export", pdf=bool(manifest.pdf), images=images)
-    exports, failed = {}, []
-    for name, v in files.items():
-        if isinstance(v, Path):
-            exports[name] = v.relative_to(batch_dir).as_posix()
-        else:
-            exports[name] = f"error: {v}"
-            failed.append(f"{name} ({str(v).splitlines()[0] if str(v) else 'failed'})")
-    total = len(s.targets.points)
-    report = exports.get("report.html", "")
-    job.summary = {
-        "label": best.label,
-        "plans": len(plans.new),
-        "stations": len(best.stations),
-        "reached": total - len(best.unreached),
-        "total": total,
-        "cost": float(best.cost),
-        "violations": len(best.violations),
-        "cycle_s": best.cycle_s,
-        "report": "" if report.startswith("error") else report,
-        "exports": exports,
-        **keep_review,
-    }
-    if failed:  # the plan is done; say which files are missing
-        job.error = "export failed: " + "; ".join(failed)
+def apply_row(job: bt.BatchJob, row: dict, batch_dir: Path) -> None:
+    """Put a runner summary row (``ui.batch_part.run_part``) on the job."""
+    keep = {k: v for k, v in job.summary.items() if k in REVIEW_KEYS}
+    job.run_s = float(row.get("run_s") or 0.0)
+    st = row.get("status")
+    if st == "done":
+        job.status, job.error = "done", str(row.get("reason") or "")
+        job.out_dir = _rel(row.get("folder", ""), batch_dir) if row.get("folder") else ""
+        job.summary = {
+            "label": row.get("plan", ""),
+            "stations": row.get("stops"),
+            "reached": row.get("reached"),
+            "total": row.get("points"),
+            "cost": row.get("cost"),
+            "cycle_s": row.get("cycle_s"),
+            "report": _rel(row["report"], batch_dir) if row.get("report") else "",
+            **({"peak_mb": row["peak_mb"]} if row.get("peak_mb") else {}),
+            **keep,
+        }
+    elif st == "cancelled":
+        job.status, job.error, job.summary = "pending", "cancelled: runs again on the next Run batch", keep
+    else:
+        job.status, job.summary = "failed", keep
+        job.error = str(row.get("reason") or "failed").splitlines()[0]
+        _write_error(Path(batch_dir) / job.id, f"{job.error}\n\n{row.get('trace', '')}")
 
 
 def job_row(job: bt.BatchJob, index: int = 0, n: int = 0) -> dict:
@@ -289,136 +120,141 @@ def job_row(job: bt.BatchJob, index: int = 0, n: int = 0) -> dict:
     }
 
 
-def _scaled(emit, i: int, n: int, who: str, eta: str = ""):
-    tail = f" - {eta}" if eta else ""  # time left for the batch, from the jobs finished so far
+def prepare(m: bt.BatchManifest, todo: list, bdir: Path, on_msg, cancelled) -> list[tuple]:
+    """Make the part package of every job of ``todo``; returns the runner's part entries
+    ``(name, package folder, {"quick": ...}, job)``. Jobs that cannot run are marked here."""
+    from ui.batch_materialize import make_package
 
-    def inner(kind: str, data) -> None:
-        if kind == "progress":
-            msg, f = data
-            emit("progress", (f"job {i + 1}/{n} ({who}): {msg}{tail}", (i + float(f)) / max(n, 1)))
-        else:
-            emit(kind, data)
-
-    return inner
-
-
-# --- worker entry points --------------------------------------------------------------------
-
-
-def batch_one(payload: dict, emit, cancelled) -> dict:
-    """Worker entry (one job per fresh worker): {"batch_dir", "job_id"} -> the job as a dict."""
-    bdir = Path(payload["batch_dir"])
-    m = bt.load_manifest(bdir / bt.MANIFEST_NAME)
-    job = next((j for j in m.jobs if j.id == payload["job_id"]), None)
-    if job is None:
-        raise ValueError(f"job {payload['job_id']} is no longer in the batch")
-    if job.status in ("pending", "running"):
-        run_job(m, job, bdir, emit, cancelled)
-    return job.model_dump()
-
-
-def batch_job(payload: dict, emit, cancelled) -> list[dict]:
-    """Worker entry (the whole batch in one process, like compare_job): {"batch_dir"}. Emits
-    ``progress`` (job i/n + the planner's) and one ``job`` message per finished job."""
-    from core.feasibility import CancelledError
-
-    bdir = Path(payload["batch_dir"])
     path = bdir / bt.MANIFEST_NAME
-    m = bt.load_manifest(path)
-    todo = bt.pending_jobs(m)
-    bt.save_manifest(m, path)
-    rows: list[dict] = []
-    try:
-        for i, job in enumerate(todo):
-            if cancelled():
-                raise CancelledError("batch cancelled")
-            try:
-                run_job(m, job, bdir, _scaled(emit, i, len(todo), job.name or job.id), cancelled)
-            finally:
-                rows.append(job_row(job, i, len(todo)))
-                emit("job", rows[-1])
-    finally:
-        bt.write_summary(bt.load_manifest(path), bdir)
-    return rows
+    parts, taken = [], set()
+    for i, job in enumerate(todo):
+        if cancelled():
+            break
+        who = job.name or job.id
+        on_msg("progress", (f"preparing {who} ({i + 1}/{len(todo)})", 0.0))
+        (bdir / job.id / "error.txt").unlink(missing_ok=True)
+        job.status, job.error, job.run_s = "running", "", 0.0
+        job.summary = {}
+        bt.update_job(path, job, fallback=m)
+        t0 = time.monotonic()
+        try:
+            pkg = make_package(m, job, bdir)
+        except bt.NeedsReview as err:  # not an error: the detector is not sure, a person must look
+            job.status, job.error = "needs_review", one_line(err)
+        except Exception as err:  # this job fails, the batch goes on
+            job.status, job.error = "failed", one_line(err)
+            tb = "".join(traceback.format_exception(type(err), err, err.__traceback__))
+            _write_error(bdir / job.id, f"{job.error}\n\n{tb}")
+        else:
+            parts.append((run_name(job, taken), pkg, {"quick": job.planner.get("mode") == "quick"}, job))
+        _pictures(job, bdir)
+        if job.status != "running":
+            job.run_s = round(time.monotonic() - t0, 1)
+        bt.update_job(path, job, fallback=m)
+        if job.status != "running":
+            on_msg("job", job_row(job, i, len(todo)))
+    return parts
 
 
-# --- GUI-side driver ------------------------------------------------------------------------
-
-
-def _mark_crashed(path: Path, job_id: str, err: BaseException, status: str = "failed") -> None:
-    """The worker died or was ended: the job (still 'running' on disk) gets the reason."""
-    m = bt.load_manifest(path)
-    job = next((j for j in m.jobs if j.id == job_id), None)
-    if job is None or job.status not in ("running", "pending"):
-        return
-    job.status, job.error = status, one_line(err)
-    if status == "failed":
-        _write_error(path.parent / job_id, err)
-    bt.update_job(path, job)
-
-
-def drive(batch_dir, on_msg, cancelled=lambda: False, in_process: bool = False) -> dict:
-    """Run every pending job (blocking): in-process, or each in a fresh worker process.
-    Messages: ``progress`` (text, 0..1 over the batch), ``warn``, ``job`` (job_row).
-    Returns {"status": done | cancelled, "jobs": [job_row ...]}."""
-    from core.feasibility import CancelledError
-    from ui import jobs
+def drive(
+    batch_dir, on_msg, cancelled=lambda: False, check_workers: int = 1, workers: int | None = None
+) -> dict:
+    """Run every pending job (blocking). Messages: ``progress`` (text, 0..1 over the batch),
+    ``warn``, ``job`` (job_row). Returns {"status": done | cancelled, "jobs": [job_row ...]}."""
+    from ui import batch_summary
+    from ui.batch_materialize import setup_dir
 
     bdir = Path(batch_dir)
     path = bdir / bt.MANIFEST_NAME
     m = bt.load_manifest(path)
-    todo = [(j.id, j.name or j.id) for j in bt.pending_jobs(m)]
+    todo = bt.pending_jobs(m)
     bt.save_manifest(m, path)  # interrupted 'running' jobs are pending again
-    times = [j.run_s for j in m.jobs if j.status == "done"]  # earlier runs of this batch count too
-    runner = None if in_process else jobs.Runner()  # private: the GUI's planner worker stays
-    rows, status = [], "done"
+    setup = setup_dir(m, bdir)
+    if todo and not (setup / "project.json").is_file():
+        raise ValueError(f"the batch has no cell project ({bt.SETUP}/ or {m.cell_project or 'cell_project'})")
+    rows: list[dict] = []
+    lock = threading.Lock()
+
+    def finish(job, row) -> None:
+        with lock:
+            if job.status != "running":
+                return  # already applied
+            apply_row(job, row, bdir)
+            bt.update_job(path, job, fallback=m)
+            rows.append(job_row(job, len(rows), len(todo)))
+            on_msg("job", rows[-1])
+
+    def prep_msg(kind: str, data) -> None:
+        if kind == "job":
+            rows.append(data)
+        on_msg(kind, data)
+
     try:
-        for i, (jid, who) in enumerate(todo):
-            if cancelled():
-                status = "cancelled"
-                break
-            payload = {"batch_dir": str(bdir), "job_id": jid}
-            sub = _scaled(on_msg, i, len(todo), who, bt.eta_text(times, len(todo) - i))
-            try:
-                if runner is None:
-                    batch_one(payload, sub, cancelled)
-                else:
-                    runner.run("ui.batch_job:batch_one", payload, sub, cancelled)
-            except CancelledError:
-                status = "cancelled"
-            except jobs.JobCancelledError as err:  # ended after Cancel: plans streamed so far are saved
-                status = "cancelled"
-                _mark_crashed(path, jid, err, "partial")
-            except Exception as err:  # the worker died (memory?) or the job could not start
-                _mark_crashed(path, jid, err)
-            finally:
-                if runner is not None:
-                    runner.kill()  # a fresh process for the next job frees this one's memory
-            job = next((j for j in bt.load_manifest(path).jobs if j.id == jid), None)
-            if job is not None:
-                rows.append(job_row(job, i, len(todo)))
-                on_msg("job", rows[-1])
-                if job.status == "done":
-                    times.append(job.run_s)
-            if status == "cancelled":
-                break
+        parts = prepare(m, todo, bdir, prep_msg, cancelled)
+        by_name = {p[0]: p[3] for p in parts}
+        if parts and not cancelled():
+            if workers is None:
+                workers, why = plan_workers(len(parts))
+            else:
+                why = f"{workers} at once (set)"
+            on_msg("progress", (f"{len(parts)} job(s) to plan: {why}", 0.0))
+            times = [j.run_s for j in m.jobs if j.status == "done" and j.run_s]
+            stages: dict[str, tuple[str, float]] = {}
+            started: dict[str, float] = {}
+            out = bdir / bt.RESULTS
+
+            def progress(name: str, stage: str, frac: float) -> None:
+                stages[name] = (stage, frac)
+                started.setdefault(name, time.monotonic())
+                if stage in TERMINAL:
+                    times.append(time.monotonic() - started[name])
+                    try:  # the runner writes the summary right after the part ends
+                        row = next(r for r in batch_summary.read(out)["rows"] if r.get("part") == name)
+                        finish(by_name[name], row)
+                    except (ValueError, StopIteration, KeyError):
+                        pass  # applied when the run ends
+                ended = sum(st in TERMINAL for st, _ in stages.values())
+                left = len(parts) - ended
+                eta = bt.eta_text(times, math.ceil(left / max(1, workers)))
+                now = ", ".join(f"{n}: {st}" for n, (st, _) in stages.items() if st not in TERMINAL)
+                text = (
+                    f"{ended}/{len(parts)} planned"
+                    + (f"; {now}" if now else "")
+                    + (f" - {eta}" if eta else "")
+                )
+                on_msg("progress", (text, sum(f for _, f in stages.values()) / len(parts)))
+
+            got = run_batch(
+                setup,
+                [p[:3] for p in parts],
+                out,
+                frame_search=m.frame_search,
+                workers=workers,
+                check_workers=check_workers,
+                on_progress=progress,
+                cancelled=cancelled,
+                parts_folder=str(bdir),
+            )
+            for row in got:
+                finish(by_name[row["part"]], row)
+        for job in todo:  # cancelled before its package was made
+            if job.status == "running":
+                finish(job, {"status": "cancelled"})
     finally:
-        if runner is not None:
-            runner.kill()
         try:
             bt.write_summary(bt.load_manifest(path), bdir)
         except Exception as err:  # noqa: BLE001
             on_msg("warn", f"batch summary not written ({one_line(err)})")
-    return {"status": status, "jobs": rows}
+    return {"status": "cancelled" if cancelled() else "done", "jobs": rows}
 
 
-def run_batch(batch_dir, on_msg, cancelled=lambda: False, in_process: bool = False) -> threading.Thread:
+def run_batch_thread(batch_dir, on_msg, cancelled=lambda: False, check_workers: int = 1) -> threading.Thread:
     """Start ``drive`` in a daemon thread. It ends with a ``finished`` message:
     {"status": done | cancelled | failed, "jobs": [...], "error": one line}."""
 
     def work() -> None:
         try:
-            out = drive(batch_dir, on_msg, cancelled, in_process)
+            out = drive(batch_dir, on_msg, cancelled, check_workers)
             on_msg("finished", {**out, "error": ""})
         except Exception as err:  # e.g. an unreadable batch.json: say so
             on_msg("finished", {"status": "failed", "jobs": [], "error": one_line(err)})
@@ -458,44 +294,49 @@ def main(argv=None) -> int:
 
     ap = argparse.ArgumentParser(description="Run the pending jobs of a batch folder (batch.json).")
     ap.add_argument("batch_dir", type=Path)
-    ap.add_argument("--in-process", action="store_true", help="no worker process per job")
     ap.add_argument("--review-only", action="store_true", help="only (re)build review.html, run no jobs")
-    ap.add_argument("--pdf", action="store_true", help="also print each job's report to PDF (Edge / Chrome)")
+    ap.add_argument("--frame-search", action="store_true", help="rail / gantry: search the frame per job")
     a = ap.parse_args(argv)
     if a.review_only:
         return _review_only(a.batch_dir)
-    if a.pdf:
+    if a.frame_search:
+        p = Path(a.batch_dir) / bt.MANIFEST_NAME
         try:
-            bt.set_pdf(Path(a.batch_dir) / bt.MANIFEST_NAME, True)
+            m = bt.load_manifest(p)
+            m.frame_search = True
+            bt.save_manifest(m, p)
         except ValueError as err:
             print(f"batch failed: {one_line(err)}", flush=True)
             return 1
     cancel = threading.Event()
     done: dict = {}
+    t0 = time.monotonic()
 
     def on_msg(kind: str, data) -> None:
         if kind == "job":
             print(_line(data), flush=True)
+        elif kind == "progress":
+            print(f"[{time.monotonic() - t0:7.1f} s] {data[0]}", flush=True)
         elif kind == "warn":
             print(f"warning: {data}", flush=True)
         elif kind == "finished":
             done.update(data)
 
-    t = run_batch(a.batch_dir, on_msg, cancel.is_set, a.in_process)
+    t = run_batch_thread(a.batch_dir, on_msg, cancel.is_set)
     while t.is_alive():
         try:
             t.join(0.5)
         except KeyboardInterrupt:
-            print("cancelling: the current job keeps its finished plans", flush=True)
+            print("cancelling: unfinished jobs stay pending", flush=True)
             cancel.set()
     if done.get("error"):
         print(f"batch failed: {done['error']}", flush=True)
     rows = done.get("jobs", [])
     bad = [r for r in rows if r["status"] != "done"]
     print(f"batch {done.get('status', 'failed')}: {len(rows) - len(bad)}/{len(rows)} job(s) done", flush=True)
-    review = Path(a.batch_dir) / "review.html"
-    if review.is_file():
-        print(f"review page: {review}", flush=True)
+    for name in ("review.html", f"{bt.RESULTS}/summary.pdf"):
+        if (Path(a.batch_dir) / name).is_file():
+            print(f"{name}: {Path(a.batch_dir) / name}", flush=True)
     return 0 if done.get("status") == "done" and not bad else 1
 
 

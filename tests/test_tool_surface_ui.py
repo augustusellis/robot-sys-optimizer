@@ -140,30 +140,28 @@ def make_batch(tmp_path, names, min_conf=0.7):
     return m, bdir
 
 
-def test_rule_job_materializes_with_targets(tmp_path):
-    from ui.batch_materialize import materialize
-    from ui.session import Session, load_project
+def test_rule_job_packages_with_targets(tmp_path):
+    from core.part_package import load_part_package
+    from ui.batch_materialize import make_package
 
     m, bdir = make_batch(tmp_path, ["plate_coarse"])
     job = m.jobs[0]
     assert bt.check_job(job, bdir) is None  # no face-range check for rule jobs
-    out = materialize(m.model_copy(update={"cell_project": str(bt.cell_path(m, bdir))}), job, bdir)
-    s = Session()
-    load_project(s, out)
-    assert len(s.targets.points) > 0 and job.selection and job.confidence >= 0.7
+    pkg = load_part_package(make_package(m, job, bdir))
+    assert len(pkg.targets.points) > 0 and job.selection and job.confidence >= 0.7
     assert "²" not in job.detect_summary
 
 
 def test_ambiguous_becomes_needs_review_not_planned(tmp_path, fake):  # noqa: F811
     m, bdir = make_batch(tmp_path, ["male_ambiguous_flange", "plate_coarse"])
     fake["bdir"] = bdir
-    out = bj.drive(bdir, lambda k, d: None, in_process=True)
+    out = bj.drive(bdir, lambda k, d: None)
     assert out["status"] == "done"
     assert _disk(bdir) == {"job_001": "needs_review", "job_002": "done"}
     j1 = bt.load_manifest(bdir / bt.MANIFEST_NAME).jobs[0]
     assert j1.confidence < 0.7 and "confidence" in j1.error and "\n" not in j1.error
-    assert fake["seen"] == [("job_002", "running")]  # job_001 was never planned
-    assert not (bdir / "job_001" / "project.json").exists()  # only the review pictures live there
+    assert [s[:2] for s in fake["seen"]] == [("job_002", "running")]  # job_001 was never planned
+    assert not (bdir / bt.PACKAGES / "job_001").exists()  # only the review pictures
     csv = (bdir / "summary.csv").read_text(encoding="utf-8").splitlines()
     assert "confidence" in csv[0] and any("needs_review" in r for r in csv)
     # needs_review is not pending; after Reset it is
@@ -186,7 +184,7 @@ def test_old_manifest_loads(tmp_path):
 
 
 def test_add_folder_queues_and_skips(app, tmp_path):
-    panel = app["batch_queue"]
+    panel = app["batch"]
     panel.batch_dir = None
     load_part(app, case_mesh("plate_coarse"), "plate_f")
     confirm_all(app["session"])

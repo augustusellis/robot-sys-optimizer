@@ -1,16 +1,15 @@
-"""Batch manifest (core.batch) and job materialisation (ui.batch_materialize)."""
+"""Batch manifest (core.batch) and a job as a part package (ui.batch_materialize)."""
 
 import shutil
 
 import pytest
 
 from core import batch as bt
+from core import part_package as pp
 from core.golden_parts import flat_plate
-from core.schema import load_project as read_project
 from core.target_gen import GenSettings
-from ui.batch_materialize import materialize
-from ui.session import Session, empty_cell, load_project, save_project
-from ui.staleness import STEP_COMPONENTS, step_state
+from ui.batch_materialize import make_package
+from ui.session import empty_cell, save_project
 
 
 @pytest.fixture
@@ -63,22 +62,18 @@ def test_check_job(batch):
     assert "changed" in bt.check_job(job, bdir)
 
 
-def test_materialize(batch):
+def test_make_package(batch):
     m, job, bdir, _ = batch
-    out = materialize(m, job, bdir)
-    assert out == bdir / job.id and (out / "assets" / "parts" / "plate.stl").is_file()
-    s = Session()
-    load_project(s, out)
-    assert s.part.mesh_path == "assets/parts/plate.stl" and not s.results
-    assert len(s.targets.points) > 10
-    assert {g.name for g in s.targets.groups} == {"default"}
-    assert {st: step_state(s, st) for st in STEP_COMPONENTS} == dict.fromkeys(STEP_COMPONENTS, "confirmed")
-    assert job.auto_confirmed == list(STEP_COMPONENTS)
-    assert read_project(out / "project.json").work.steps
+    pkg = make_package(m, job, bdir)
+    assert pkg == bdir / bt.PACKAGES / job.id and (pkg / "plate.stl").is_file()
+    p = pp.load_part_package(pkg)
+    assert p.name == job.id and p.part.mesh == "plate.stl" and len(p.targets.points) > 10
+    assert {g.name for g in p.targets.groups} == {"default"}
+    assert make_package(m, job, bdir) == pkg  # made again: replaced
 
 
 def test_materialize_errors(batch):
     m, job, bdir, _ = batch
     shutil.rmtree(bdir / "parts")
     with pytest.raises(ValueError, match="missing"):
-        materialize(m, job, bdir)
+        make_package(m, job, bdir)

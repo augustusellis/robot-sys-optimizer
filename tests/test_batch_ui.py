@@ -1,4 +1,4 @@
-"""ui.batch_queue_ui.BatchPanel (plan Part 2 step B5): queue, edit, run (faked), open a result."""
+"""Optimize -> Several parts (batch), ui.batch_ui.BatchPanel: queue, edit, run (faked), _setup."""
 
 import threading
 
@@ -23,7 +23,7 @@ def app():
 
 @pytest.fixture
 def panel(app):
-    p = app["batch_queue"]
+    p = app["batch"]
     p.batch_dir = None
     app["targets"].selection = np.zeros(0, dtype=int)
     confirm_all(app["session"])
@@ -116,53 +116,60 @@ def test_running_blocks_non_pending_edits(app, panel):
 
 def test_run_streams_and_finishes(app, panel, monkeypatch):
     _queue(app, panel, 2)
-    seen = []
+    seen, opened = [], []
+    panel.on_done = opened.append
 
-    def fake_run_batch(batch_dir, on_msg, cancelled=lambda: False, in_process=False):
+    def fake_thread(batch_dir, on_msg, cancelled=lambda: False, check_workers=1):
         def work():
             path = batch_dir / bt.MANIFEST_NAME
             m = bt.load_manifest(path)
             rows = []
             for i, j in enumerate(m.jobs):
-                on_msg("progress", (f"job {i + 1}", i / 2))
+                on_msg("progress", (f"{i}/2 planned", i / 2))
                 j.status = "done" if i == 0 else "failed"
                 j.error = "" if i == 0 else "mesh broke"
-                j.out_dir = j.id
                 if i == 0:
-                    j.summary = {"stations": 2, "reached": 5, "total": 5, "cost": 1.5}
+                    j.summary = {"stations": 2, "reached": 5, "total": 5, "cost": 1.5, "cycle_s": 30.0}
                 bt.update_job(path, j)
                 seen.append(panel.running)
-                rows.append({"id": j.id, "status": j.status})
+                rows.append({"id": j.id, "name": j.name, "status": j.status, "error": j.error})
                 on_msg("job", rows[-1])
-            bt.write_summary(bt.load_manifest(path), batch_dir)
+            (batch_dir / bt.RESULTS).mkdir()
+            (batch_dir / bt.RESULTS / "summary.json").write_text('{"rows": []}', encoding="utf-8")
             on_msg("finished", {"status": "done", "jobs": rows, "error": ""})
 
         t = threading.Thread(target=work, daemon=True)
         t.start()
         return t
 
-    monkeypatch.setattr("ui.batch_job.run_batch", fake_run_batch)
+    monkeypatch.setattr("ui.batch_job.run_batch_thread", fake_thread)
     panel.run(block=True)
     t = panel.table.content
-    assert "done" in t and "failed" in t and "mesh broke" in t
-    assert "1 done, 1 failed" in panel.status.content and "summary.html" in panel.status.content
-    assert panel.last_summary.is_file() and panel.run_btn.visible and not panel.stop.visible
-    assert seen == [True, True]
+    assert "done" in t and "failed" in t and "mesh broke" in t and "5/5, 1.50, 30 s" in t
+    assert "1 done, 1 failed" in panel.status.content and str(panel.batch_dir) in panel.status.content
+    assert panel.run_btn.visible and not panel.stop.visible
+    assert seen == [True, True] and opened == [panel.batch_dir / bt.RESULTS]
+    setup = panel.batch_dir / bt.SETUP / "project.json"
+    assert setup.is_file()  # the open project as it is, for the runner
 
 
-def test_pdf_checkbox_is_saved_with_the_batch(app, panel, monkeypatch):
+def test_frame_search_and_setup_of_another_project(app, panel, monkeypatch):
     _queue(app, panel, 1)
     done = threading.Thread(target=lambda: None)
     done.start()
-    monkeypatch.setattr("ui.batch_job.run_batch", lambda *a, **k: done)
-    panel.pdf.value = True
+    monkeypatch.setattr("ui.batch_job.run_batch_thread", lambda *a, **k: done)
+    panel.frame_search.value = True
     panel.run(block=True)
-    assert panel.manifest().pdf is True
-    panel.pdf.value = False
-    assert panel.open_batch(panel.batch_dir.name) and panel.pdf.value is True  # reopening shows it
-    panel.pdf.value = False
+    assert panel.manifest().frame_search is True
+    panel.frame_search.value = False
+    assert panel.open_batch(panel.batch_dir.name) and panel.frame_search.value is True  # reopening shows it
+    m = panel.manifest()
+    m.cell_project = "../another_project"  # made in another project: its _setup stays
+    panel._save(m)
+    stamp = (panel.batch_dir / bt.SETUP / "project.json").stat().st_mtime_ns
     panel.run(block=True)
-    assert panel.manifest().pdf is False
+    assert "not the open project" in panel.status.content
+    assert (panel.batch_dir / bt.SETUP / "project.json").stat().st_mtime_ns == stamp
     panel.run_btn.visible, panel.stop.visible, panel.progress.visible = True, False, False
 
 
@@ -175,22 +182,11 @@ def test_run_nothing_pending(app, panel):
     assert panel.running is False and panel.progress.visible is False
 
 
-def test_open_result_loads_study(app, panel):
-    _queue(app, panel, 1)
-    s = app["session"]
-    study = panel.batch_dir / "job_001"
-    app["project"].save_now(study)
-    j = panel.manifest().jobs[0]
-    assert panel.open_result() is False  # pending
-    j.status, j.out_dir = "done", "job_001"
-    bt.update_job(panel.batch_dir / bt.MANIFEST_NAME, j)
-    assert panel.open_result() is True
-    assert s.project_dir.resolve() == study.resolve()
-
-
 def test_open_existing_batch(app, panel):
     _queue(app, panel, 1)
     name = panel.batch_dir.name
     panel.batch_dir = None
     assert name in panel.list_batches()
     assert panel.open_batch(name) and len(panel.manifest().jobs) == 1
+    panel.new_batch()
+    assert panel.batch_dir is None and "Add jobs" in panel.why_not()

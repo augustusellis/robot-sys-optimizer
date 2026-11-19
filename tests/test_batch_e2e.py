@@ -44,7 +44,7 @@ def test_two_jobs_run_in_process_and_open_result(tmp_path, monkeypatch):
     try:
         st = build_app(server)
         assert st["project"].load_example("rail_long_part")
-        panel, tab, cell, s = st["batch_queue"], st["targets"], st["cell"], st["session"]
+        panel, tab, cell, s = st["batch"], st["targets"], st["cell"], st["session"]
         confirm_all(s)
         panel.mode.value = "Quick plan"
 
@@ -73,8 +73,9 @@ def test_two_jobs_run_in_process_and_open_result(tmp_path, monkeypatch):
             assert (panel.batch_dir / j.out_dir / "project.json").is_file()
         rows = list(csv.DictReader(open(panel.batch_dir / "summary.csv", encoding="utf-8")))
         assert len(rows) == 2
-        panel.pick.value = "job_002"
-        assert panel.open_result()
+        view = st["batch_view"]  # Results -> Batch results opened the run
+        assert view.out == panel.batch_dir / bt.RESULTS and len(view.done_parts()) == 2
+        assert view.open_part(name=view.done_parts()[1]["part"])
         assert s.part is not None and s.part.mesh_path.endswith(".step") and s.results
     finally:
         server.stop()

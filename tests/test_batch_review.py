@@ -1,4 +1,4 @@
-"""core.batch_review + the review pictures written by ui.batch_job.run_job."""
+"""core.batch_review + the review pictures written by the batch runner (ui.batch_job)."""
 
 import json
 import re
@@ -138,8 +138,7 @@ def _tool_surface_batch(tmp_path, case_name, min_conf):
 
 
 def _run(m, bdir):
-    job = m.jobs[0]
-    bj.run_job(m, job, bdir, lambda *a: None, lambda: False)
+    bj.drive(bdir, lambda *a: None)
     return bt.load_manifest(bdir / bt.MANIFEST_NAME).jobs[0]
 
 
@@ -157,25 +156,15 @@ def test_needs_review_job_gets_pictures_and_warnings(tmp_path, fake):  # noqa: F
     assert "needs_review" in page and "data:image/png;base64," in page
 
 
-def test_done_job_pictures_and_report_images(tmp_path, fake, monkeypatch):  # noqa: F811
-    from ui import report_make
-
-    seen = {}
-    orig = report_make.export_all
-
-    def spy(session, sol, out_dir, pdf=False, **kw):
-        seen["images"] = kw.get("images")
-        return orig(session, sol, out_dir, pdf, **kw)
-
-    monkeypatch.setattr(report_make, "export_all", spy)
+def test_done_job_pictures(tmp_path, fake):  # noqa: F811
     m, bdir = _tool_surface_batch(tmp_path, "plate_a", 0.0)
     fake["bdir"] = bdir
     j = _run(m, bdir)
     assert j.status == "done", j.error
     assert (bdir / j.id / "review_iso.png").is_file() and (bdir / j.id / "review_top.png").is_file()
     assert j.summary["review"]["top"] == f"{j.id}/review_top.png" and j.selection
-    assert [c for c, _ in seen["images"]] == ["Iso view (offline render)", "Top view (offline render)"]
-    assert "job_001" in (bdir / "review.html").read_text(encoding="utf-8")
+    page = (bdir / "review.html").read_text(encoding="utf-8")
+    assert "job_001" in page and f"results/{j.id}/" in page  # the project folder link
 
 
 def test_render_failure_never_fails_the_job(tmp_path, fake, monkeypatch):  # noqa: F811
