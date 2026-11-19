@@ -60,4 +60,4 @@ def test_run_from_the_panel(app, tmp_path):
     assert opened == [b.batch_dir / bt.RESULTS]
     assert (b.batch_dir / bt.SETUP / "project.json").is_file()
     assert (b.batch_dir / m.jobs[0].out_dir / "project.json").is_file() and m.jobs[0].summary["cycle_s"]
-    assert not b.run_btn.disabled and b.run_btn.visible
+    assert b.run_btn.visible and b.run_btn.disabled and "No pending jobs" in b.reason_md.content  # all done
