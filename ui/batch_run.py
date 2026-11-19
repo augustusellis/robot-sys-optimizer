@@ -104,7 +104,7 @@ def meta_for(project_dir: Path, parts_folder: str, workers: int, why: str) -> di
 
 def run_batch(
     project_dir: Path,
-    parts: list[tuple[str, Path]],
+    parts: list[tuple],
     out_dir: Path,
     frame_search: bool = False,
     workers: int | None = None,
@@ -114,10 +114,12 @@ def run_batch(
     parts_folder: str = "",
 ) -> list[dict]:
     """Plan every ``(name, package folder)`` of ``parts`` with the project at ``project_dir``; the
-    results go to ``out_dir``. ``on_progress(name, stage, fraction)`` is called from a helper
+    results go to ``out_dir``. An entry may carry a third item, a dict merged into that part's job
+    (e.g. ``{"quick": True}``: the quick station plan). ``on_progress(name, stage, fraction)`` is called from a helper
     thread. Returns the summary rows (in the order of ``parts``)."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    parts = [(p[0], Path(p[1]), dict(p[2]) if len(p) > 2 else {}) for p in parts]
     why = ""
     if workers is None:
         workers, why = plan_workers(len(parts))
@@ -127,7 +129,7 @@ def run_batch(
     rows: dict[str, dict] = {}
 
     def summary(pdf: bool = False) -> None:
-        batch_summary.write(out_dir, meta, [rows[n] for n, _ in parts if n in rows], pdf=pdf)
+        batch_summary.write(out_dir, meta, [rows[n] for n, *_ in parts if n in rows], pdf=pdf)
 
     ctx = mp.get_context("spawn")
     manager = ctx.Manager()
@@ -156,8 +158,9 @@ def run_batch(
             "port": PORT0 + 7 * i,
             "queue": q,
             "stop": stop,
+            **extra,
         }
-        for i, (name, d) in enumerate(parts)
+        for i, (name, d, extra) in enumerate(parts)
     ]
     ex = ProcessPoolExecutor(max_workers=workers, mp_context=ctx, max_tasks_per_child=1)
     try:
@@ -191,4 +194,4 @@ def run_batch(
         pumper.join(timeout=2)
         manager.shutdown()
     summary(pdf=True)
-    return [rows[n] for n, _ in parts]
+    return [rows[n] for n, *_ in parts]
