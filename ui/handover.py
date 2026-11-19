@@ -27,7 +27,8 @@ ABOUT = {  # file name (or suffix) -> what it is, for the README
     "are not in this zip).",
     "_optimized.zip": "the tool as a URDF with its meshes.",
     ".step": "the tool extension and flange plate for CAD.",
-    "rso_path": "the robot program of the built paths (URScript .script, FANUC TP .ls or ABB RAPID .mod; Results -> Export -> Program format). Check it on the controller before running it.",
+    "rso_path": "the robot program of the built paths (URScript .script, FANUC TP .ls or ABB RAPID .mod;"
+    " Results -> Export -> Program format). Check it on the controller before running it.",
 }
 
 

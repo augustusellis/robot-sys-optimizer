@@ -180,7 +180,7 @@ def test_heatmap_refresh_with_the_heatmap_on_sends_no_mesh(app):
 def test_area_faces_match_the_per_group_meshes():
     from ui.station_areas import area_faces, area_meshes
 
-    sol = SimpleNamespace(assignment={0: 0, 1: 0, 2: 0, 3: 1}, zones=[])
+    sol = SimpleNamespace(assignment={0: 0, 1: 0, 2: 0, 3: 1}, zones=[], label="fake", id=None)
     cfg = {0: "S+E+W+", 1: "S+E+W-", 2: "S+E+W-", 3: "S+E+W+"}
     mesh = trimesh.creation.box((4, 1, 0.01)).subdivide().subdivide().subdivide()
     P = np.array([[-1.5, 0, 0.005], [-0.5, 0, 0.005], [0.5, 0, 0.005], [1.5, 0, 0.005]])
@@ -195,7 +195,7 @@ def test_area_faces_match_the_per_group_meshes():
 def test_station_areas_are_one_cached_mesh(app):
     s, r = app["session"], app["results"]
     ids = [p.id for p in s.targets.points]
-    sol = SimpleNamespace(assignment={i: k % 3 for k, i in enumerate(ids)}, zones=[], label="fake")
+    sol = SimpleNamespace(assignment={i: k % 3 for k, i in enumerate(ids)}, zones=[], label="fake", id=None)
     n1, _ = sent(lambda: r.draw_areas(sol))
     assert n1["GlbMessage"] == 1 and len(r._areas) == 1 and set(r.area_names) == {"S1_G1", "S2_G1", "S3_G1"}
     h = r._areas[0]

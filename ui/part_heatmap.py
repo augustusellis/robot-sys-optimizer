@@ -78,7 +78,7 @@ def point_scores(s, what: str, sel: dict, label: str | None = None) -> dict[int,
     if what == "Tolerance reach rate":
         tol = getattr(s, "tolerance", None)
         if tol is not None:
-            tol = tolerance_for(s, SimpleNamespace(label=label or tol.label), tol)
+            tol = tolerance_for(s, None if label is None else SimpleNamespace(label=label), tol)
         return {int(p): 100 * t.rate for p, t in tol.points.items()} if tol is not None else {}
     return {}
 
@@ -184,7 +184,7 @@ class HeatmapLayer:
             table = np.array([colour((b + 0.5) / BINS) for b in range(BINS)], np.uint8)
             scene = self.tab.server.scene
             self._handles = [show_patch(scene, self._cache, PATH, mesh, faces, table[fb[faces]], OFFSET)]
-        return shown
+        return bool(len(faces))
 
     def clear(self) -> None:
         """Hide the heatmap (its node stays cached, hidden) and empty the legend."""

@@ -40,7 +40,7 @@ pause
 RUNTIME_MODULES = (
     "pinocchio", "coal", "numpy", "scipy", "numba", "rtree", "yaml", "PIL", "lxml", "pyparsing",
     "dateutil", "fontTools", "viser", "yourdfpy", "pydantic", "trimesh", "ortools", "cma", "shapely",
-    "optuna", "fast_simplification", "cadquery", "collada",
+    "optuna", "fast_simplification", "cadquery", "collada", "manifold3d",
 )  # fmt: skip
 
 
