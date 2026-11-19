@@ -357,7 +357,7 @@ when a part failed).
 
 ### Batch queue
 
-**Optimize tab → Batch queue** (folder, closed): "select now, optimize later". Each job is one part with its surface selection, plus the settings to plan it.
+**Optimize tab → Optimizer: Batch queue**: "select now, optimize later". (Not the same as *Several parts (batch)*, which plans part packages made in the package builder; the queue takes part meshes as they are, with a surface selection or the *Detect tool surface* rule, and adds a review page.) Each job is one part with its surface selection, plus the settings to plan it.
 
 1. Set up the cell as usual (robot, external axis, tool), load a part, select its surfaces and set the generator in the Targets tab, and set the Station planner the way you want it for this part.
 2. Pick **Mode** (*Plan stations* = the full planner, or *Quick plan*) and click **Add to queue**. This saves the project, creates a batch folder on the first job and snapshots the part (copied into the batch), its position, the selected faces, the point-generator settings and the Station planner settings. Jobs may have different settings. A job that would generate 0 targets is refused.

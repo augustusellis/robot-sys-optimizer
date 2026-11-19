@@ -1,11 +1,12 @@
 # Changelog
 
-All changes from `main` (a572f3f, 2026-11-06) to the newest work on `feature/v9-usability`, newest first.
-No release has been tagged yet. The sections below are the development rounds, each a branch built on
-the one before:
+Our changes from `main` (a572f3f, 2026-11-06) up to `feature/v9-usability`, newest first, and since
+2026-11-18 the same work rebased onto upstream `v13` (`rebase/v13`). No release has been tagged yet. The
+sections below are the development rounds, each a branch built on the one before:
 
 | Round | Branch | Dates |
 | --- | --- | --- |
+| Rebased onto upstream v13 | `rebase/v13` | 2026-11-18 |
 | v9 usability | `feature/v9-usability` | 2026-11-16 |
 | Batch, rendering, packaging, tool surface | `feature/v8-batch-render-exe` | 2026-11-13 .. 15 |
 | v8 review fixes | `fix/v8-review` | 2026-11-13 |
@@ -24,6 +25,32 @@ Details per feature are in the user guide (`docs/USER_GUIDE.md`) and in `CLAUDE.
 - Tool-optimizer costs now include carrier travel and the standoff penalty, so they differ from earlier
   versions.
 - `batch.json` is version 2 from v9 on. Version 1 batches open; an older program refuses a version 2 file.
+
+---
+
+## Rebased onto upstream v13 (2026-11-18)
+
+Upstream's own rounds v9 to v13 (one Optimizer dropdown, package builder geometry, gantry placement,
+trajectories, robot programs, compare setups, part-package batches, ...) are described in
+`docs/HISTORY.md` and `docs/V9_PLAN.md` .. `docs/V13_PLAN.md`; this section lists only what changed
+in our work when it moved onto them.
+
+### Changed
+- **Two batch systems.** Upstream's *Several parts (batch)* (part packages) stays; ours is
+  **Optimizer → Batch queue** (meshes with a selection or the tool-surface rule, review page, PDF and
+  time left).
+- **Setup check** is above the Optimizer dropdown.
+- **Compare setups** (upstream's successor of Compare robots) keeps finished rows on Cancel and uses
+  the Station planner's exact settings.
+- **Everything (zip)** also holds the robot program (URScript / TP / RAPID) when the plan's paths
+  are built.
+- GitLab CI lints in its own Linux job, like upstream's GitHub workflow.
+
+### Fixed (in upstream v13 code)
+- The project's clearance and joint margins now reach the parallel check workers.
+- A part file rewritten within the same second is noticed (out-of-date tracking).
+- Changing the collision-geometry mode (reduce / hull / wrap) marks plans out of date.
+- With scipy 1.14 the app and many tests failed ("buffer source array is read-only").
 
 ---
 

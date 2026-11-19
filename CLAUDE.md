@@ -26,6 +26,11 @@ per-task notes to `docs/HISTORY.md`.**
   (`core/feasibility.py`) is the cost of planning (collision checks); reach maps are cached on disk
   (`cache/reachability/`); robot textures are downscaled before viser sends them
   (`ui.robot_view.light_urdf`, v13: PNG encoding of the 2048 px UR atlases was most of the app start).
+- **Our line on v13 (branch `rebase/v13`, 2026-11-18):** the v8 review fixes, the batch queue,
+  rendering, Windows exe / installer / release workflow (GitHub and GitLab), tool-surface detection,
+  STEP parts and the v9 usability round, rebased onto `v13` (51 commits, not pushed). How each was
+  ported: `docs/HISTORY.md`, "Our line rebased onto v13". **Two batch systems** exist (v13's
+  *Several parts* and our *Batch queue*): which to keep is open with the user.
 - **Batch runs (v13):** part packages (`core/part_package.py`) are planned by `ui/batch_run.py`, one
   spawned process per part that drives a browserless app (`ui/batch_part.py`); GUI: Optimize ->
   Several parts, Results -> Batch results; CLI: `scripts/batch_run.py`.
@@ -105,7 +110,7 @@ README.md         landing page -> docs/USER_GUIDE.md (user guide)
 CHANGELOG.md      user-facing changes per development round since main (newest first); add to it with each round
 packaging/        Windows exe: rso.spec (PyInstaller onedir), launch.py (entry point + --selftest + offline guard),
                   RobotCellOptimizer.iss (Inno Setup, per-user), ci_serve_check.ps1, README.md
-.github/workflows tests.yml (lint, guide check, fast tests on Windows + ubuntu-22.04), release.yml (tag -> exe, zip, setup, draft release)
+.github/workflows tests.yml (lint on Linux; guide check + fast tests on Windows + ubuntu-22.04), release.yml (tag -> exe, zip, setup, draft release)
 .gitlab-ci.yml    GitLab twin of both workflows: variables (runner tags, images) + workflow rules; includes .gitlab/ci/setup.yml
                   (conda env, caches), tests.yml, release.yml. Change a check on one host, change it on the other.
 environment.yml   conda env `rso` (all dependencies)
@@ -120,7 +125,7 @@ ui/               session (state ↔ project file), widgets (PoseWidgets, notify
                   placement (heatmap), stations (planner panel), tool_opt (tool-geometry panel),
                   results (Results tab), carrier_ui + carrier_bodies (External Axis tab), target_tools_ui
                   (brush / single points / tessellate), project_panel (+ Examples)
-                  batch_ui (Optimize → Batch queue panel), batch_job (batch runner + CLI `python -m ui.batch_job`, no viser),
+                  batch_queue_ui (Optimizer → Batch queue panel; batch_ui is v13's Several parts), batch_job (batch runner + CLI `python -m ui.batch_job`, no viser),
                   batch_planner (planner settings snapshot of a job), batch_materialize (job → study folder, auto tool surface rule),
                   report_make (report / CSV / userframes without the GUI), report_text (viser-free texts), report_views (framed Iso/Top
                   3D pictures for the report), view_controls (Lighting, Shadows, Fit view, Top/Front/Side/Iso), display_lod (simplified
@@ -140,7 +145,7 @@ core/             schema, golden_parts, robot, ik/{ur,opw,numeric}, transforms, 
                   tool_surface_features (per-region features, ray visibility), tool_surface_pick (scoring, pick-and-grow, confidence,
                   DEFAULT_PARAMS), tool_surface_eval (IoU metrics, labelled-sample loader, baselines), mandrels / mandrel_cases /
                   mandrels_hard (synthetic mandrels with ground truth; EASY and HARD sets), safe_io (validate, then replace),
-                  collision_report (plain-text "collides with" notes), preflight (setup-check findings), app_log (log file),
+                  preflight (setup-check findings), app_log (log file),
                   support_bundle (zip for problem reports, no meshes)
 opt/              reachability (map, offset map, lookup, voting, coverage matrix), placement (stations),
                   sites (floor / carrier search spaces), tool_geometry (L bisection + shape CMA-ES), cost
