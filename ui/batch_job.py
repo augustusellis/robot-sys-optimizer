@@ -161,7 +161,6 @@ def drive(
 ) -> dict:
     """Run every pending job (blocking). Messages: ``progress`` (text, 0..1 over the batch),
     ``warn``, ``job`` (job_row). Returns {"status": done | cancelled, "jobs": [job_row ...]}."""
-    from ui import batch_summary
     from ui.batch_materialize import setup_dir
 
     bdir = Path(batch_dir)
@@ -208,11 +207,6 @@ def drive(
                 started.setdefault(name, time.monotonic())
                 if stage in TERMINAL:
                     times.append(time.monotonic() - started[name])
-                    try:  # the runner writes the summary right after the part ends
-                        row = next(r for r in batch_summary.read(out)["rows"] if r.get("part") == name)
-                        finish(by_name[name], row)
-                    except (ValueError, StopIteration, KeyError):
-                        pass  # applied when the run ends
                 ended = sum(st in TERMINAL for st, _ in stages.values())
                 left = len(parts) - ended
                 eta = bt.eta_text(times, math.ceil(left / max(1, workers)))
@@ -232,6 +226,7 @@ def drive(
                 workers=workers,
                 check_workers=check_workers,
                 on_progress=progress,
+                on_row=lambda row: finish(by_name[row["part"]], row),
                 cancelled=cancelled,
                 parts_folder=str(bdir),
             )

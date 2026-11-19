@@ -58,7 +58,7 @@ def fake(monkeypatch):
     state = {"seen": [], "bdir": None, "fail": set(), "cancel_after": None, "calls": []}
 
     def run_batch(project_dir, parts, out_dir, frame_search=False, workers=None, check_workers=1,
-                  on_progress=None, cancelled=lambda: False, parts_folder=""):  # fmt: skip
+                  on_progress=None, on_row=None, cancelled=lambda: False, parts_folder=""):  # fmt: skip
         state["calls"].append({"setup": Path(project_dir), "frame_search": frame_search, "workers": workers})
         bdir = Path(out_dir).parent
         rows = []
@@ -89,6 +89,7 @@ def fake(monkeypatch):
             rows.append(row)
             batch_summary.write(out_dir, {}, rows)
             on_progress(name, row["status"], 1.0)
+            on_row(row)
             if state["cancel_after"] is not None and len(rows) == state["cancel_after"][0]:
                 state["cancel_after"][1].set()
         return rows

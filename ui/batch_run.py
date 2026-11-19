@@ -110,13 +110,15 @@ def run_batch(
     workers: int | None = None,
     check_workers: int = 1,
     on_progress=None,
+    on_row=None,
     cancelled=lambda: False,
     parts_folder: str = "",
 ) -> list[dict]:
     """Plan every ``(name, package folder)`` of ``parts`` with the project at ``project_dir``; the
     results go to ``out_dir``. An entry may carry a third item, a dict merged into that part's job
     (e.g. ``{"quick": True}``: the quick station plan). ``on_progress(name, stage, fraction)`` is
-    called from a helper thread. Returns the summary rows (in the order of ``parts``)."""
+    called from a helper thread, ``on_row(row)`` from this one as each part ends. Returns the
+    summary rows (in the order of ``parts``)."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     parts = [(p[0], Path(p[1]), dict(p[2]) if len(p) > 2 else {}) for p in parts]
@@ -176,6 +178,8 @@ def run_batch(
                 except Exception as err:  # the worker died (killed, out of memory, ...)
                     rows[name] = {"part": name, "status": "failed", "reason": f"worker ended: {err}"}
                 summary()
+                if on_row is not None:
+                    on_row(rows[name])
             if cancelled() and cancel_at is None:
                 cancel_at = time.monotonic()
                 stop.set()
