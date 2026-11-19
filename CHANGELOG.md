@@ -1,11 +1,13 @@
 # Changelog
 
 Our changes from `main` (a572f3f, 2026-11-06) up to `feature/v9-usability`, newest first, and since
-2026-11-18 the same work rebased onto upstream `v13` (`rebase/v13`). No release has been tagged yet. The
+2026-11-18 the same work rebased onto upstream `v13` (`rebase/v13`), then the batch merge
+(`feature/batch-merge`). No release has been tagged yet. The
 sections below are the development rounds, each a branch built on the one before:
 
 | Round | Branch | Dates |
 | --- | --- | --- |
+| One batch system | `feature/batch-merge` | 2026-11-19 |
 | Rebased onto upstream v13 | `rebase/v13` | 2026-11-18 |
 | v9 usability | `feature/v9-usability` | 2026-11-16 |
 | Batch, rendering, packaging, tool surface | `feature/v8-batch-render-exe` | 2026-11-13 .. 15 |
@@ -24,9 +26,37 @@ Details per feature are in the user guide (`docs/USER_GUIDE.md`) and in `CLAUDE.
   the mesh content.
 - Tool-optimizer costs now include carrier travel and the standoff penalty, so they differ from earlier
   versions.
-- `batch.json` is version 2 from v9 on. Version 1 batches open; an older program refuses a version 2 file.
+- `batch.json` is version 2 from v9 on and version 3 from the batch merge. Older batches open; an older
+  program refuses a newer file.
+- Batch jobs no longer keep their own planner settings: every job of a batch plans with the cell's
+  settings (only *Quick plan* is per job), and a cancelled job runs again from the start.
 
 ---
+
+## One batch system (2026-11-19)
+
+Upstream's *Several parts (batch)* and our *Batch queue* are one tool now: **Optimize → Optimizer:
+Several parts (batch)**.
+
+- **Add jobs** three ways: the current part with its face selection; a folder of **part packages**
+  (from the package builder); a folder of **part files** (STL / OBJ / PLY / STEP) with the tool surface
+  detected automatically (below *Min confidence* the part waits for review). One **Add folder** button
+  takes packages and part files from the same folder.
+- **Planned like the GUI:** each job runs in its own process in a browserless app, several at once
+  when the PC has the cores and memory: stations, optional axis frame search per part, paths and cycle
+  time, a saved project and a PDF report per part.
+- **Kept from the queue:** statuses, remove / reorder / reset, resume (only pending jobs run, also
+  after a restart), *Open for review*, the review page with pictures, setup warnings per part, the
+  time-left estimate.
+- **Results → Batch results** opens the finished parts (it opens by itself when the batch ends);
+  *Open result* in the panel is gone.
+- **Run batch** uses the open project as it is (no need to save); a batch made in another project keeps
+  the cell it was made with.
+- **Command line:** `scripts/batch_run.py <batch folder>` runs a batch's pending jobs;
+  `scripts/batch_run.py <project> <parts folder> <output>` still runs a parts folder directly.
+- **Removed:** the *Batch queue* entry, per-job planner settings, the *partial* status (a cancelled job
+  goes back to pending), the PDF checkbox (a PDF is always printed when Edge or Chrome is found), the
+  per-job CSV / userframes exports (open the part's project to export them).
 
 ## Rebased onto upstream v13 (2026-11-18)
 

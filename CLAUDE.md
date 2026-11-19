@@ -29,11 +29,17 @@ per-task notes to `docs/HISTORY.md`.**
 - **Our line on v13 (branch `rebase/v13`, 2026-11-18):** the v8 review fixes, the batch queue,
   rendering, Windows exe / installer / release workflow (GitHub and GitLab), tool-surface detection,
   STEP parts and the v9 usability round, rebased onto `v13` (51 commits, not pushed). How each was
-  ported: `docs/HISTORY.md`, "Our line rebased onto v13". **Two batch systems** exist (v13's
-  *Several parts* and our *Batch queue*): which to keep is open with the user.
-- **Batch runs (v13):** part packages (`core/part_package.py`) are planned by `ui/batch_run.py`, one
-  spawned process per part that drives a browserless app (`ui/batch_part.py`); GUI: Optimize ->
-  Several parts, Results -> Batch results; CLI: `scripts/batch_run.py`.
+  ported: `docs/HISTORY.md`, "Our line rebased onto v13".
+- **Batch (one system since 2026-11-19, branch `feature/batch-merge`):** the queue (`core/batch.py`,
+  `batch.json`; jobs from the current part + selection, part files with the tool-surface rule, or
+  v13 part packages) turns each job into a part package (`ui.batch_materialize.make_package`), and
+  v13's runner plans them (`ui/batch_run.py`: one spawned process per part driving a browserless
+  app, `ui/batch_part.py`; several at once). Every job uses the cell's settings (`_setup/`, the
+  open project at Run); per job only *Quick plan*. Cancel sends unfinished jobs back to pending.
+  GUI: Optimize -> Several parts (batch) (`ui/batch_ui.py` + `ui/batch_queue_ui.py`), Results ->
+  Batch results (`<batch>/results`); CLI: `scripts/batch_run.py` (a batch folder, or project +
+  parts folder). Keep v13's runner files close to upstream (small hooks only: part extras,
+  `on_row`) so later upstream rounds rebase easily.
 
 ## Working notes for this repo
 
@@ -125,8 +131,9 @@ ui/               session (state ↔ project file), widgets (PoseWidgets, notify
                   placement (heatmap), stations (planner panel), tool_opt (tool-geometry panel),
                   results (Results tab), carrier_ui + carrier_bodies (External Axis tab), target_tools_ui
                   (brush / single points / tessellate), project_panel (+ Examples)
-                  batch_queue_ui (Optimizer → Batch queue panel; batch_ui is v13's Several parts), batch_job (batch runner + CLI `python -m ui.batch_job`, no viser),
-                  batch_planner (planner settings snapshot of a job), batch_materialize (job → study folder, auto tool surface rule),
+                  batch_ui + batch_queue_ui (Optimizer → Several parts (batch) panel: run / queue edits), batch_job (queue runner
+                  over v13's batch_run + CLI `python -m ui.batch_job`, no viser), batch_materialize (job → part package, auto tool
+                  surface rule, review pictures),
                   report_make (report / CSV / userframes without the GUI), report_text (viser-free texts), report_views (framed Iso/Top
                   3D pictures for the report), view_controls (Lighting, Shadows, Fit view, Top/Front/Side/Iso), display_lod (simplified
                   display copy above 300k triangles, overlay lift, mesh cache), colour_mesh (vertex-coloured GLB overlays),
@@ -193,7 +200,7 @@ $RUFF check . && $RUFF format --check .   # lint + format
 $PY scripts/make_portable.py              # dist/*-portable-<sha>.zip: last commit + conda-pack'd env (offline PCs; guide 2.6; the installer is the recommended route, guide 2.1)
 $PY scripts/build_exe.py --zip            # PyInstaller onedir + selftest + zip (--maps --installer for a release; packaging/README.md)
 $PY scripts/tool_surface_eval.py --synthetic --detector core.tool_surface_pick:detect   # IoU table of the detector
-$PY -m ui.batch_job <batch dir> [--pdf]   # run the pending jobs of a batch without the GUI
+$PY scripts/batch_run.py <batch dir>       # run the pending jobs of a batch without the GUI (or <project> <parts> <out>)
 $PY -m ui.preflight_run <project dir>     # setup check of a saved project (exit 1 on an error)
 $PY scripts/make_golden_parts.py          # regenerate assets/parts/*.stl
 $PY scripts/import_ur_description.py <clone> ur20   # re-import a UR model (see the script docstring)

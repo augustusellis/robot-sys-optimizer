@@ -437,6 +437,35 @@ Launch with `scripts/run_app.bat` (Windows, uses the rso env) or `$PY app.py [--
   opening a part's project replaces the project. `scripts/batch_run.py` is the same code without
   the GUI; `scripts/make_batch_example.py` writes `examples/batch_parts/`.
 
+## One batch system (branch `feature/batch-merge`, 2026-11-19)
+
+v13's *Several parts (batch)* and our *Batch queue* were merged at the user's request ("combine the
+best parts"), with the trade-offs the user accepted: every job uses the cell's settings, and a
+cancelled job runs again from the start.
+
+- **Front: our queue** (`batch.json`, `core.batch`): statuses, remove / reorder / reset, resume,
+  needs_review with *Open for review*, review page, setup warnings, time left. New job source
+  `"package"` (`BatchJob.source` / `package`, manifest version 3): *Add folder* queues the part
+  packages of a folder (copied to `<batch>/packages/<job id>/`) beside part files (tool-surface
+  rule). `BatchManifest.frame_search` replaces the v13 checkbox state; `pdf` is unused.
+- **Engine: v13's runner.** `ui.batch_job.drive` makes a part package per pending job
+  (`ui.batch_materialize.make_package`: detection, target generation, pictures; the old study
+  folder per job is gone), then calls `ui.batch_run.run_batch` on `<batch>/_setup` (the open project,
+  written at Run when the batch belongs to it, `ui.batch_ui.write_setup`). Results land in
+  `<batch>/results` (v13 layout: `summary.json` for Results -> Batch results). Two small hooks in
+  v13's files: a part entry may carry extras (`{"quick": True}` -> `StationsPanel.start(quick=True)`
+  in `run_part`), and `on_row(row)` as each part ends (reading `summary.json` from the progress
+  thread failed with access denied while the runner replaced it).
+- **Removed:** `ui/batch_planner.py` (the per-job planner snapshot: the runner plans with the
+  project's saved panel settings), `run_job` / `batch_one` / the partial status on cancel, *Open
+  result* (Batch results opens a part), the per-job CSV / userframes exports (the saved project has
+  them one click away), the *Batch queue* entry of the Optimizer dropdown (app state `batch_queue`).
+- **Panel:** `ui/batch_ui.py` (batch folder, run, review page) + `ui/batch_queue_ui.QueueEdits`
+  (add / edit). CLI: `scripts/batch_run.py <batch folder>` runs a queue (`ui.batch_job.main`).
+- Tests: `tests/test_batch_job.py` fakes `run_batch` (`fake` fixture: package, status on disk and
+  extras per part); the slow `test_real_batch_of_a_mesh_job_and_a_package` and
+  `test_v13_batch_ui.test_run_from_the_panel` run the real runner.
+
 ## Our line rebased onto v13 (branch `rebase/v13`, 2026-11-18)
 
 The work of `fix/v8-review`, `feature/v8-batch-render-exe` and `feature/v9-usability` (51 commits on
