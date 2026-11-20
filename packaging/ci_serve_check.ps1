@@ -45,8 +45,10 @@ try {
 
     $edgeProfile = Join-Path $tmp "edge-profile"
     $domFile = Join-Path $tmp "dom.html"
-    # --timeout: a wall-clock cap after which Edge dumps the page anyway (virtual time alone hung on the
-    # GitHub runner, 2026-11-19). An Edge that wrote the page but does not exit is ended, not a failure.
+    # Two kinds of proof that the page works offline: (a) the page's own script connected its websocket to
+    # the exe (viser logs "Connection opened"), (b) Edge dumped a DOM with the React root and a canvas.
+    # On the GitHub runner (no GPU, 2026-11-19) Edge's software WebGL never let it dump the DOM, not even
+    # with --timeout, while (a) came within seconds; locally both come in about 5 s. Either one passes.
     $edgeArgs = @("--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
         "--user-data-dir=`"$edgeProfile`"", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
         "--virtual-time-budget=$VirtualTimeMs", "--timeout=$(2 * $VirtualTimeMs)", "--dump-dom",
@@ -54,19 +56,28 @@ try {
     $t0 = Get-Date
     $edgeProc = Start-Process -FilePath $edge -ArgumentList $edgeArgs -RedirectStandardOutput $domFile `
         -RedirectStandardError (Join-Path $tmp "edge-err.txt") -PassThru -WindowStyle Hidden
-    $exited = $edgeProc.WaitForExit(180000)
-    Write-Host "headless Edge: exited $exited after $([int]((Get-Date) - $t0).TotalSeconds) s"
+    $connectedAt = $null
+    $deadline = $t0.AddSeconds(180)
+    while ((Get-Date) -lt $deadline -and -not $edgeProc.HasExited) {
+        if (-not $connectedAt -and (Select-String -Path $out -Pattern "Connection opened" -Quiet)) {
+            $connectedAt = Get-Date
+            $deadline = $connectedAt.AddSeconds(60)  # then give Edge one more minute to write the page
+        }
+        Start-Sleep -Milliseconds 500
+    }
+    $exited = $edgeProc.HasExited
+    $secs = [int]((Get-Date) - $t0).TotalSeconds
+    $conn = if ($connectedAt) { "after $([int]($connectedAt - $t0).TotalSeconds) s" } else { "no" }
+    Write-Host "headless Edge: exited $exited after $secs s; page connected to the exe: $conn"
     if (-not $exited) { & taskkill /PID $edgeProc.Id /T /F | Out-Null; Start-Sleep -Seconds 2 }
     $dom = if (Test-Path $domFile) { Get-Content $domFile -Raw } else { "" }
-    if (-not $exited -and -not $dom) { throw "headless Edge timed out without writing the page" }
-    if (-not $dom) { throw "headless Edge returned no DOM" }
     # the Viser client mounts React into #root; once connected it adds a canvas and the control panel
-    $hasRoot = $dom -match '<div id="root"[^>]*>\s*<'
-    $hasCanvas = $dom -match '<canvas'
+    $hasRoot = [bool]$dom -and ($dom -match '<div id="root"[^>]*>\s*<')
+    $hasCanvas = [bool]$dom -and ($dom -match '<canvas')
     Write-Host "DOM: $($dom.Length) chars, root populated: $hasRoot, canvas: $hasCanvas"
-    if (-not ($hasRoot -and $hasCanvas)) {
-        $dom.Substring(0, [Math]::Min(2000, $dom.Length)) | Write-Host
-        throw "the Viser page did not render (root populated: $hasRoot, canvas: $hasCanvas)"
+    if (-not (($hasRoot -and $hasCanvas) -or $connectedAt)) {
+        if ($dom) { $dom.Substring(0, [Math]::Min(2000, $dom.Length)) | Write-Host }
+        throw "the Viser page did not render or connect (root populated: $hasRoot, canvas: $hasCanvas)"
     }
     if (Select-String -Path $out, $err -Pattern "offline-guard\] blocked" -Quiet) {
         throw "the app tried to reach the network (see [offline-guard] lines in its output)"
