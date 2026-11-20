@@ -53,7 +53,10 @@ jobs:
 
       - name: Create the env from environment.yml (cache miss)
         if: steps.env-cache.outputs.cache-hit != 'true'
-        run: mamba env update -n rso -f environment.yml
+        # conda, not mamba: on Windows `mamba` in bash is a cmd shim that opened a prompt and did nothing
+        run: |
+          conda env update -n rso -f environment.yml
+          python -c "import viser, pinocchio, coal, trimesh"  # fail here, not three steps later
 
       - name: Reachability map cache
         uses: actions/cache@v6
