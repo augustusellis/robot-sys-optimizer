@@ -1,11 +1,12 @@
 """Build the Windows executable folder (PyInstaller, onedir) and check it.
 
-    python scripts/build_exe.py [--maps] [--zip] [--installer] [--skip-selftest] [--no-cad]
+    python scripts/build_exe.py [--maps [--map-jobs N]] [--zip] [--installer] [--skip-selftest] [--no-cad]
 
 Run it with the ``rso`` conda env's Python (the tested native libraries get bundled). Steps:
 1. env check; PYTHONNOUSERSITE=1 and <env>/Library/bin on PATH;
 2. ``_version.py`` (git describe, commit, date) into a stage folder that the spec bundles;
-3. ``--maps``: prebuild the reachability maps of the bundled robots into cache/reachability;
+3. ``--maps``: prebuild the reachability maps of the bundled robots into cache/reachability
+   (``--map-jobs N`` builds N at once: CI runners; default 1 for a PC short of memory);
 4. PyInstaller with packaging/rso.spec -> dist/RobotCellOptimizer/;
 5. the built exe's ``--selftest`` (RSO_DATA = temp folder, RSO_OFFLINE_GUARD=1); a failure fails the build;
 6. ``--zip`` -> dist/RobotCellOptimizer-<version>-win64.zip; ``--installer`` -> Inno Setup (iscc) setup exe;
@@ -78,25 +79,46 @@ def write_version(stage: Path, info: dict[str, str]) -> None:
     (stage / "_version.py").write_text(text, encoding="utf-8")
 
 
-def prebuild_maps() -> int:
-    """Flange reachability maps (shared by every straight or pose tool, see opt.reachability.map_for_tool)
-    for each bundled robot with an analytic IK, into cache/reachability (the spec bundles that folder)."""
-    sys.path.insert(0, str(ROOT))
+def _build_map(name: str) -> tuple[str, float, str]:
+    """One robot's flange map (in a worker process with --map-jobs); (name, seconds, skip reason)."""
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
     import numpy as np
 
-    from core.robot import Robot, list_robots
+    from core.robot import Robot
     from opt.reachability import DEFAULT_SETTINGS, ReachMap
 
+    t0 = time.monotonic()
+    try:
+        ReachMap.load_or_build(Robot.from_registry(name), np.eye(4), DEFAULT_SETTINGS)
+    except NotImplementedError as err:
+        return name, 0.0, str(err)
+    return name, time.monotonic() - t0, ""
+
+
+def prebuild_maps(jobs: int = 1) -> int:
+    """Flange reachability maps (shared by every straight or pose tool, see opt.reachability.map_for_tool)
+    for each bundled robot with an analytic IK, into cache/reachability (the spec bundles that folder).
+    ``jobs`` > 1 builds that many at once in worker processes (2026-11-19: one after another took 22 min
+    of a 38 min GitHub release run)."""
+    sys.path.insert(0, str(ROOT))
+    from concurrent.futures import ProcessPoolExecutor
+
+    from core.robot import list_robots
+
+    names = list(list_robots())
+    if jobs > 1:
+        with ProcessPoolExecutor(min(jobs, len(names))) as pool:
+            done = list(pool.map(_build_map, names))
+    else:
+        done = [_build_map(n) for n in names]
     n = 0
-    for name in list_robots():
-        t0 = time.monotonic()
-        try:
-            ReachMap.load_or_build(Robot.from_registry(name), np.eye(4), DEFAULT_SETTINGS)
-        except NotImplementedError as err:
-            print(f"  map {name}: skipped ({err})")
+    for name, secs, skipped in done:
+        if skipped:
+            print(f"  map {name}: skipped ({skipped})")
             continue
         n += 1
-        print(f"  map {name}: {time.monotonic() - t0:.1f} s")
+        print(f"  map {name}: {secs:.1f} s")
     return n
 
 
@@ -201,6 +223,9 @@ def main() -> None:
     ap.add_argument(
         "--zip", action="store_true", help="zip the folder (dist/RobotCellOptimizer-<version>-win64.zip)"
     )
+    ap.add_argument(
+        "--map-jobs", type=int, default=1, metavar="N", help="with --maps: build N maps at once (default 1)"
+    )
     ap.add_argument("--installer", action="store_true", help="build the Inno Setup installer (needs iscc)")
     ap.add_argument("--skip-selftest", action="store_true", help="do not run the exe's --selftest")
     ap.add_argument(
@@ -217,7 +242,11 @@ def main() -> None:
     write_version(stage, info)
     if a.maps:
         print("prebuilding reachability maps")
-        print(f"  {prebuild_maps()} maps in cache/reachability")
+        t = time.monotonic()
+        n = prebuild_maps(max(1, a.map_jobs))
+        print(
+            f"  {n} maps in cache/reachability ({time.monotonic() - t:.0f} s, {max(1, a.map_jobs)} at once)"
+        )
     exe = run_pyinstaller(stage, env, a.no_cad)
     if not a.skip_selftest and not selftest(exe, env):
         fail("the built exe failed its selftest (output above); no release files were written")
