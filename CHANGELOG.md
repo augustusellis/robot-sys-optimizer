@@ -57,6 +57,12 @@ Several parts (batch)**.
 - **Removed:** the *Batch queue* entry, per-job planner settings, the *partial* status (a cancelled job
   goes back to pending), the PDF checkbox (a PDF is always printed when Edge or Chrome is found), the
   per-job CSV / userframes exports (open the part's project to export them).
+- **CI, first runs on GitHub** (on a fork): the tests passed; the release build failed its offline
+  browser check (headless Edge did not exit) and took 38 minutes. Now: the browser check caps Edge's time
+  and prints Edge's own errors; the release builds 4 reachability maps at once (`build_exe.py
+  --map-jobs`); the conda env is cached; test batches run 3 at a time (`test_batches.py --jobs`); tests
+  no longer run twice on a tag; the actions are on Node 24 (GitHub's deprecation warning). GitLab gets
+  the same commands.
 
 ## Rebased onto upstream v13 (2026-11-18)
 

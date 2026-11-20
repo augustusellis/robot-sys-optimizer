@@ -465,6 +465,24 @@ cancelled job runs again from the start.
 - Tests: `tests/test_batch_job.py` fakes `run_batch` (`fake` fixture: package, status on disk and
   extras per part); the slow `test_real_batch_of_a_mesh_job_and_a_package` and
   `test_v13_batch_ui.test_run_from_the_panel` run the real runner.
+- **CI on GitHub (first runs, on the user's fork):** `tests` passed (Windows 1033, Ubuntu 1032; 18 min,
+  of which 4.7 min building the conda env and 12.8 min tests one batch after another). `release` took
+  38 min and failed in `packaging/ci_serve_check.ps1`: headless Edge (`--virtual-time-budget`, no
+  wall-clock cap) never exited behind the firewall rule, while locally it exits in 5 s. The script now
+  adds `--timeout` (2 x the budget), judges a page Edge wrote even if Edge has to be ended, and prints
+  `edge-err.txt` on failure. Speed: 22 of the 38 min were the 10 reachability maps built one at a time
+  (crx30ia 5.6 min; tag runs cannot read caches saved by branch runs), so `build_exe.py --map-jobs N`
+  builds them in worker processes (CI: 4); the conda env is cached on `environment.yml` (`ENV_CACHE`
+  bumps it); `test_batches.py --jobs N` runs batches at once with a pytest temp folder each (CI: 3, the
+  runners have 4 cores / 16 GB; a PC short of memory keeps 1); `tests.yml` runs on branch pushes only;
+  the release timeout is 45 min; actions moved to their Node 24 majors (checkout 7, setup-python 7,
+  cache 6, upload-artifact 7, download-artifact 8, setup-miniconda 4, which also drops the spurious
+  "EnvironmentNameNotFound: rso" line), `conda-remove-defaults` silences the defaults-channel warning.
+  The GitLab twin runs the same commands (`tests/test_gitlab_ci.py`). Build warnings judged harmless:
+  PyInstaller's missing hidden imports `scipy.special._cdflib`, `pysqlite2`, `MySQLdb` (hooks for
+  modules this env does not have), conda virtual package `__win`, SyntaxWarnings in the `future`
+  package's backports, and the selftest's `external URL markers: [b'http://']` (the report's SVG
+  namespace, not a link).
 
 ## Our line rebased onto v13 (branch `rebase/v13`, 2026-11-18)
 

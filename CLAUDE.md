@@ -195,10 +195,12 @@ $PY app.py [--port 8080]                  # serve the GUI → http://localhost:8
 $PY -m pytest -q                          # all tests in one process (~13 min; can run out of memory)
 $PY scripts/test_batches.py               # same tests, 4 files per process (low memory, ~60 min)
 $PY scripts/test_batches.py --fast        # skip the tests marked slow (plans, tool optimizer, paths; ~14 min, v13)
+                                          # --jobs N: N batches at once (CI uses 3; keep 1 on this PC)
 # tests/conftest.py points RSO_WORKSPACE at a temporary folder: tests never write the user's workspace/
 $RUFF check . && $RUFF format --check .   # lint + format
 $PY scripts/make_portable.py              # dist/*-portable-<sha>.zip: last commit + conda-pack'd env (offline PCs; guide 2.6; the installer is the recommended route, guide 2.1)
-$PY scripts/build_exe.py --zip            # PyInstaller onedir + selftest + zip (--maps --installer for a release; packaging/README.md)
+$PY scripts/build_exe.py --zip            # PyInstaller onedir + selftest + zip (--maps --installer for a release; packaging/README.md;
+                                          # --map-jobs N builds N maps at once, CI uses 4)
 $PY scripts/tool_surface_eval.py --synthetic --detector core.tool_surface_pick:detect   # IoU table of the detector
 $PY scripts/batch_run.py <batch dir>       # run the pending jobs of a batch without the GUI (or <project> <parts> <out>)
 $PY -m ui.preflight_run <project dir>     # setup check of a saved project (exit 1 on an error)
