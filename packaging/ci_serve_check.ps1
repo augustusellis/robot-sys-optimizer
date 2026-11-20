@@ -45,13 +45,20 @@ try {
 
     $edgeProfile = Join-Path $tmp "edge-profile"
     $domFile = Join-Path $tmp "dom.html"
-    $edgeArgs = @("--headless=new", "--disable-gpu", "--no-first-run", "--user-data-dir=`"$edgeProfile`"",
-        "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--virtual-time-budget=$VirtualTimeMs",
-        "--dump-dom", "http://localhost:$Port/")
+    # --timeout: a wall-clock cap after which Edge dumps the page anyway (virtual time alone hung on the
+    # GitHub runner, 2026-11-19). An Edge that wrote the page but does not exit is ended, not a failure.
+    $edgeArgs = @("--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
+        "--user-data-dir=`"$edgeProfile`"", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
+        "--virtual-time-budget=$VirtualTimeMs", "--timeout=$(2 * $VirtualTimeMs)", "--dump-dom",
+        "http://localhost:$Port/")
+    $t0 = Get-Date
     $edgeProc = Start-Process -FilePath $edge -ArgumentList $edgeArgs -RedirectStandardOutput $domFile `
         -RedirectStandardError (Join-Path $tmp "edge-err.txt") -PassThru -WindowStyle Hidden
-    if (-not $edgeProc.WaitForExit(180000)) { & taskkill /PID $edgeProc.Id /T /F | Out-Null; throw "headless Edge timed out" }
+    $exited = $edgeProc.WaitForExit(180000)
+    Write-Host "headless Edge: exited $exited after $([int]((Get-Date) - $t0).TotalSeconds) s"
+    if (-not $exited) { & taskkill /PID $edgeProc.Id /T /F | Out-Null; Start-Sleep -Seconds 2 }
     $dom = if (Test-Path $domFile) { Get-Content $domFile -Raw } else { "" }
+    if (-not $exited -and -not $dom) { throw "headless Edge timed out without writing the page" }
     if (-not $dom) { throw "headless Edge returned no DOM" }
     # the Viser client mounts React into #root; once connected it adds a canvas and the control panel
     $hasRoot = $dom -match '<div id="root"[^>]*>\s*<'
@@ -68,7 +75,9 @@ try {
 }
 catch {
     Write-Host "serve check: FAIL: $($_.Exception.Message)"
-    foreach ($f in @($out, $err)) { if (Test-Path $f) { Write-Host "--- $f"; Get-Content $f -Tail 40 } }
+    foreach ($f in @($out, $err, (Join-Path $tmp "edge-err.txt"))) {
+        if (Test-Path $f) { Write-Host "--- $f"; Get-Content $f -Tail 40 }
+    }
     $script:failed = $true
 }
 finally {
