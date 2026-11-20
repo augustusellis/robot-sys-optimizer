@@ -58,7 +58,7 @@ publishes its own release; the build, the checks and the three files are the sam
 Cut a release (GitHub):
 1. Merge to the branch you want to ship, then `git tag vX.Y.Z` and `git push origin vX.Y.Z`. (Or Actions ->
    release -> Run workflow; its `draft` input is ticked by default.)
-2. The `windows` job builds with `scripts/build_exe.py --maps --zip --installer` (prebuilt reachability maps,
+2. The `windows` job builds with `scripts/build_exe.py --maps --zip --installer --map-jobs 4` (prebuilt reachability maps,
    zip, Inno Setup installer, SHA256SUMS.txt). The version comes from `git describe`, so the tag is the version.
 3. The `release` job creates a **draft** GitHub release `vX.Y.Z` with the zip, the setup exe and SHA256SUMS.txt
    (it refuses files over GitHub's 2 GB per-file limit; use `--no-cad` if that ever happens).
@@ -114,7 +114,7 @@ Set up once in the GitLab project:
   who pushed the tag or started the pipeline (Developer or higher; for a protected tag, someone allowed to
   create it). Only if your instance refuses that: add a project access token (scope `api`) as the masked,
   protected CI/CD variable `RELEASE_TOKEN`.
-- **Settings -> CI/CD -> General pipelines -> Timeout:** the `windows` job asks for 90 minutes; a runner's own
+- **Settings -> CI/CD -> General pipelines -> Timeout:** the `windows` job asks for 45 minutes; a runner's own
   maximum job timeout must allow that.
 - **Limits:** job artifacts of one job must fit the instance limit (gitlab.com: 1 GB; the zip alone is
   about 0.3 GB with CadQuery, the setup exe is not measured yet). `RELEASE_MAX_FILE_BYTES` (default 5 GB, gitlab.com's package file limit) is

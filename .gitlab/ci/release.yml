@@ -28,7 +28,7 @@ windows:
   extends: [.windows-conda, .release-rules]
   stage: build
   needs: [] # like GitHub, the release build does not wait for the tests
-  timeout: 90 minutes
+  timeout: 45 minutes # = GitHub (first run 38 min, 22 of them maps one at a time; now 4 at once)
   variables:
     GIT_DEPTH: "0" # git describe needs the tags
     ARTIFACT_COMPRESSION_LEVEL: fastest # already compressed (needs FF_USE_FASTZIP, set in .windows-conda)
@@ -82,7 +82,7 @@ windows:
       $env:PATH = "$(Split-Path $iscc);$env:PATH"
       Write-Host "Inno Setup: $iscc"
     # Build exe, zip and installer (includes the exe's own selftest)
-    - python scripts/build_exe.py --maps --zip --installer
+    - python scripts/build_exe.py --maps --zip --installer --map-jobs 4
     - |
       # Block outbound network (firewall rule), offline selftest of the built exe, offline serve check
       # (exe + headless Edge). Loopback is not "Internet", so the app's own localhost server keeps

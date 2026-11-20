@@ -22,26 +22,41 @@ jobs:
   windows:
     name: windows build + offline test
     runs-on: windows-latest
-    timeout-minutes: 90
+    # 2026-11-19 first GitHub run: 38 min, 22 of them building the maps one at a time (now 4 at once)
+    timeout-minutes: 45
     env:
       PYTHONUTF8: "1"
+      ENV_CACHE: "1" # bump to rebuild the cached conda env without changing environment.yml
     defaults:
       run:
         shell: bash -el {0}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # git describe needs the tags
 
-      - uses: conda-incubator/setup-miniconda@v3
+      # Miniforge with an empty env `rso`; the cache below fills it, else environment.yml does
+      # (same steps as tests.yml)
+      - uses: conda-incubator/setup-miniconda@v4
         with:
           miniforge-version: latest
-          environment-file: environment.yml
           activate-environment: rso
+          conda-remove-defaults: "true"
           use-mamba: true
 
+      - name: Conda env cache
+        id: env-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.CONDA }}/envs/rso
+          key: env-${{ runner.os }}-${{ hashFiles('environment.yml') }}-${{ env.ENV_CACHE }}
+
+      - name: Create the env from environment.yml (cache miss)
+        if: steps.env-cache.outputs.cache-hit != 'true'
+        run: mamba env update -n rso -f environment.yml
+
       - name: Reachability map cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: cache/reachability
           key: maps-${{ runner.os }}-${{ hashFiles('assets/robots/**/spec.yaml', 'opt/reachability.py') }}
@@ -56,7 +71,7 @@ jobs:
           $dir | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
 
       - name: Build exe, zip and installer (includes the exe's own selftest)
-        run: python scripts/build_exe.py --maps --zip --installer
+        run: python scripts/build_exe.py --maps --zip --installer --map-jobs 4
 
       - name: Block outbound network (firewall rule)
         shell: pwsh
@@ -120,7 +135,7 @@ jobs:
           cat dist/SHA256SUMS.txt
           ls -l dist/*.zip dist/*-setup.exe
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-release
           path: |
@@ -141,14 +156,14 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4 # only the notes template and its script (sparse)
+      - uses: actions/checkout@v7 # only the notes template and its script (sparse)
         with:
           sparse-checkout: |
             packaging/RELEASE_NOTES.md.in
             scripts/release_notes.py
           sparse-checkout-cone-mode: false
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: windows-release
           path: release

@@ -73,7 +73,9 @@ def test_no_duplicate_branch_and_merge_request_pipelines():
 
 def test_fast_jobs_run_the_same_checks_as_the_github_workflow():
     gh = GH_TESTS["jobs"]["fast"]
-    gh_cmds = [ln.strip() for s in gh["steps"] if "run" in s for ln in s["run"].splitlines() if ln.strip()]
+    # the checks only: GitHub's conditional env step (cache miss) is GitLab's before_script
+    checks = [s for s in gh["steps"] if "run" in s and "if" not in s]
+    gh_cmds = [ln.strip() for s in checks for ln in s["run"].splitlines() if ln.strip()]
     for name in ("fast:windows", "fast:linux"):
         j = job(name)
         assert j["script"] == gh_cmds
@@ -95,7 +97,8 @@ def test_lint_job_matches_the_github_lint_job():  # v12 #12: lint on Linux with 
 
 @pytest.mark.parametrize("name", ["fast:windows", "fast:linux", "windows"])
 def test_reachability_cache_has_the_github_key_inputs(name):
-    gh_key = [s for s in GH_TESTS["jobs"]["fast"]["steps"] if "actions/cache" in s.get("uses", "")][0]["with"]
+    steps = GH_TESTS["jobs"]["fast"]["steps"]
+    gh_key = [s for s in steps if s.get("name") == "Reachability map cache"][0]["with"]
     inputs = re.findall(r"'([^']+)'", gh_key["key"])
     maps = [c for c in job(name)["cache"] if c["paths"] == [gh_key["path"]]]
     assert len(maps) == 1
@@ -113,7 +116,7 @@ def test_release_jobs_run_on_v_tags_and_manual_runs_only():
             "$CI_COMMIT_TAG =~ /^v/",
             '$CI_PIPELINE_SOURCE == "web" && $RELEASE_RUN == "true"',
         ]
-    assert job("windows")["needs"] == [] and job("windows")["timeout"] == "90 minutes"
+    assert job("windows")["needs"] == [] and job("windows")["timeout"] == "45 minutes"
     assert job("windows")["variables"]["GIT_DEPTH"] == "0"  # git describe needs the tags
     assert job("release-notes")["needs"] == ["windows"]
     assert job("release")["needs"] == ["windows", "release-notes"]
@@ -131,7 +134,7 @@ def test_release_waits_for_a_click_unless_a_manual_run_says_otherwise():
 def test_windows_job_carries_every_github_verification_step():
     s = text("windows")
     script = job("windows")["script"]
-    assert "python scripts/build_exe.py --maps --zip --installer" in script
+    assert "python scripts/build_exe.py --maps --zip --installer --map-jobs 4" in script
     assert "WindowsBuiltInRole]::Administrator" in script[0]  # checked before the long build
     order = [
         "choco install innosetup",

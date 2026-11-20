@@ -32,13 +32,13 @@ def test_triggers():
 def test_windows_job_setup():
     job = WF["jobs"]["windows"]
     assert job["runs-on"] == "windows-latest"
-    assert job["timeout-minutes"] == 90
+    assert job["timeout-minutes"] == 45
     assert any(s.get("with", {}).get("fetch-depth") == 0 for s in steps("windows"))
     assert any("setup-miniconda" in s.get("uses", "") for s in steps("windows"))
-    cache = [s for s in steps("windows") if "actions/cache" in s.get("uses", "")][0]
+    cache = step("windows", "Reachability map cache")
     assert "runner.os" in cache["with"]["key"]
     assert "innosetup" in step("windows", "Inno Setup")["run"]
-    assert "scripts/build_exe.py --maps --zip --installer" in step("windows", "Build exe")["run"]
+    assert "scripts/build_exe.py --maps --zip --installer --map-jobs 4" in step("windows", "Build exe")["run"]
 
 
 def test_default_permissions_are_read_only_and_write_is_scoped_to_release():
